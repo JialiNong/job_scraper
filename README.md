@@ -36,7 +36,7 @@ job_scraper/
 │   │   ├── indeed_scraper.py          # Indeed scraper (24-hour window)
 │   │   ├── linkedin_scraper.py        # LinkedIn scraper (24-hour window)
 │   │   ├── linkedin_quick_scraper.py  # LinkedIn quick scraper (12-hour window)
-│   │   └── manual_apply_scraper.py    # Manual-apply URL processor
+│   │   └── manual_apply_scraper.py    # Manual job URL logger (default: Not Applied)
 │   ├── matching/
 │   │   └── ai_matcher.py              # AI matching engine
 │   ├── web/

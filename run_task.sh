@@ -19,6 +19,28 @@ log() {
 # Log errors but don't stop the pipeline on failure
 trap 'log "ERROR: Script failed at line $LINENO"' ERR
 
+release_pipeline_lock() {
+    "$PYTHON" -c "
+import sys
+sys.path.insert(0, '$PROJECT_DIR/src')
+from core.pipeline_lock import release_pipeline_lock
+release_pipeline_lock(pid=int('$$'))
+" 2>/dev/null || true
+}
+
+if ! "$PYTHON" -c "
+import sys
+sys.path.insert(0, '$PROJECT_DIR/src')
+from core.pipeline_lock import acquire_pipeline_lock
+ok, msg = acquire_pipeline_lock(pid=int('$$'))
+print(msg)
+raise SystemExit(0 if ok else 75)
+"; then
+    log "⚠️  Pipeline already running — not starting a second Chrome (that would kill the first scrape). Exiting."
+    exit 0
+fi
+trap release_pipeline_lock EXIT
+
 log "=== Job Scraping Pipeline Started ==="
 
 # Step 1: Launch Chrome in remote debug mode (background).
@@ -61,7 +83,7 @@ source "$PROJECT_DIR/scripts/pipeline_common.sh"
 FULL_PAGES="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.config import FULL_MAX_PAGES; print(FULL_MAX_PAGES)")"
 INDEED_JOBS="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.config import INDEED_JOBS_PER_PAGE; print(INDEED_JOBS_PER_PAGE)")"
 LINKEDIN_JOBS="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.config import LINKEDIN_JOBS_PER_PAGE; print(LINKEDIN_JOBS_PER_PAGE)")"
-STAMP="$(date +%Y%m%d)"
+STAMP="$(date +%Y%m%d_%H%M%S)"
 
 log "Step 1/3: Full lanes — ${FULL_PAGES} pages/keyword, Indeed ${INDEED_JOBS}/page, LinkedIn ${LINKEDIN_JOBS}/page"
 run_source_lane "Indeed" "indeed" \

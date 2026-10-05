@@ -1,17 +1,21 @@
 #!/usr/bin/env python3
 """
-Manual Apply Scraper
-For jobs you already applied to manually (LinkedIn / Indeed / any career page).
+Manual Job Logger
+Log job URLs into the tracker (LinkedIn / Indeed / any career page), whether or
+not you have already applied.
 
 Usage:
-    # Pass URLs directly on the command line
+    # Pass URLs directly on the command line (default status: pending / Not Applied)
     python src/scrapers/manual_apply_scraper.py \
         "https://www.linkedin.com/jobs/view/1234567890/" \
         "https://de.indeed.com/viewjob?jk=abcdef123" \
         "https://careers.example.com/jobs/frontend-engineer"
 
+    # Mark as already applied
+    python src/scrapers/manual_apply_scraper.py --status applied "URL1" "URL2"
+
     # Or point to a text file with one URL per line
-    python src/scrapers/manual_apply_scraper.py --file my_applied_urls.txt
+    python src/scrapers/manual_apply_scraper.py --file my_job_urls.txt
 
 What it does for EACH url
 --------------------------
@@ -20,7 +24,7 @@ What it does for EACH url
    - LinkedIn / Indeed: site-specific selectors
    - Other URLs: trafilatura main-content extract + AI metadata
 3. Runs AI matching (score stored but NOT used as a filter).
-4. Saves the job to matched_jobs with status="applied".
+4. Saves the job to matched_jobs with status="pending" (default) or "applied".
 5. Also upserts a record in the main jobs collection.
 """
 import sys
@@ -465,44 +469,57 @@ def infer_job_metadata_with_ai(description_text: str) -> dict:
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
-def force_save_applied_job(job: dict, analysis: dict, applied_date: datetime = None) -> bool:
+def force_save_manual_job(
+    job: dict,
+    analysis: dict,
+    status: str = "pending",
+    applied_date: datetime = None,
+) -> bool:
     """
-    Save to matched_jobs with status='applied', regardless of AI score.
+    Save to matched_jobs regardless of AI score.
     If the job already exists in matched_jobs, update it instead of inserting.
     Also upsert the record in the main jobs collection.
 
     Args:
         job: Scraped job data dict
         analysis: AI analysis result dict
-        applied_date: The date the user applied (defaults to now)
+        status: Tracker status — "pending" (Not Applied, default) or "applied"
+        applied_date: Date the user applied (only used when status=applied; defaults to now)
     """
+    if status not in ("pending", "applied"):
+        status = "pending"
+
     jobs_col = get_collection("jobs")
     matched_col = get_collection("matched_jobs")
 
-    # All timestamps use the user-provided applied date (defaults to now)
-    t          = applied_date or datetime.utcnow()
-    job_id     = job["job_id"]
-    source     = job["source"]
+    now = datetime.utcnow()
+    # For applied jobs, timestamps use the user-provided applied date (defaults to now)
+    t = (applied_date or now) if status == "applied" else now
+    job_id = job["job_id"]
+    source = job["source"]
+
+    jobs_set = {
+        "title":       job.get("title", ""),
+        "company":     job.get("company", ""),
+        "location":    job.get("location", ""),
+        "description": job.get("description", ""),
+        "applicants":  job.get("applicants", ""),
+        "status":      status,
+        "source":      source,
+        "matched_at":  t,
+        "updated_at":  t,
+        "match_score": analysis.get("match_score", 0),
+        **_analysis_fields(analysis),
+    }
+    if status == "applied":
+        jobs_set["applied_at"] = t
 
     # ── 1. Upsert into main jobs collection ──────────────────────────────
     jobs_col.update_one(
         {"job_id": job_id, "source": source},
         {
             "$setOnInsert": {"created_at": t, "link": job.get("link", "")},
-            "$set": {
-                "title":       job.get("title", ""),
-                "company":     job.get("company", ""),
-                "location":    job.get("location", ""),
-                "description": job.get("description", ""),
-                "applicants":  job.get("applicants", ""),
-                "status":      "applied",
-                "source":      source,
-                "matched_at":  t,
-                "applied_at":  t,
-                "updated_at":  t,
-                "match_score": analysis.get("match_score", 0),
-                **_analysis_fields(analysis),
-            },
+            "$set": jobs_set,
         },
         upsert=True,
     )
@@ -523,15 +540,17 @@ def force_save_applied_job(job: dict, analysis: dict, applied_date: datetime = N
         "applicants":  job.get("applicants", ""),
         "match_score": analysis.get("match_score", 0),
         **_analysis_fields(analysis),
-        "status":      "applied",
+        "status":      status,
         "matched_at":  t,
-        "applied_at":  t,
         "updated_at":  t,
         # created_at is intentionally omitted here — set only on first insert below
         "notes":       "",
         "application_qa": [],
-        "manually_applied": True,
+        "manually_logged": True,
     }
+    if status == "applied":
+        matched_data["applied_at"] = t
+        matched_data["manually_applied"] = True
 
     try:
         matched_col.update_one(
@@ -545,21 +564,34 @@ def force_save_applied_job(job: dict, analysis: dict, applied_date: datetime = N
     return True
 
 
+# Keep old name as alias for any external callers
+force_save_applied_job = force_save_manual_job
+
+
 # ── main processor ────────────────────────────────────────────────────────────
 
-def process_urls(urls: list[str], applied_date: datetime = None):
+def process_urls(
+    urls: list[str],
+    applied_date: datetime = None,
+    status: str = "pending",
+):
     """
-    Scrape, AI-match, and mark as applied for each URL.
+    Scrape, AI-match, and save each URL to the tracker.
 
     Args:
         urls: LinkedIn / Indeed / any company career-page job URLs
-        applied_date: Date the user applied (defaults to now if not provided)
+        applied_date: Date the user applied (only used when status=applied)
+        status: "pending" (Not Applied, default) or "applied"
     """
+    if status not in ("pending", "applied"):
+        status = "pending"
+
     if not urls:
         print("No URLs provided.")
         return
 
-    print(f"\n🔗 Processing {len(urls)} URL(s)…")
+    status_label = "applied" if status == "applied" else "pending (Not Applied)"
+    print(f"\n🔗 Processing {len(urls)} URL(s) as {status_label}…")
 
     user_profile = load_user_profile()
     if not user_profile:
@@ -634,12 +666,12 @@ def process_urls(urls: list[str], applied_date: datetime = None):
                 job["title"] = f"(Unknown title — job_id {job.get('job_id', '')})"
                 print(f"  ⚠️  Title not found, using fallback: {job['title']}")
 
-            # Language check (English-only gate; non-EN still saved for manual apply)
+            # Language check (English-only gate; non-EN still saved for manual log)
             should_skip, lang, de_share = is_non_english_job_detail(job.get("description", ""))
             if should_skip:
                 print(
                     f"  ⚠️  Description is non-English ({lang}, de_share={de_share:.0%}) "
-                    f"— saving anyway (you applied manually)"
+                    f"— saving anyway (manual job log)"
                 )
 
             # AI matching
@@ -651,17 +683,22 @@ def process_urls(urls: list[str], applied_date: datetime = None):
                 analysis = {
                     "match_score": 0,
                     "recommendation": "Unknown",
-                    "summary": "AI analysis failed for this manually-applied job.",
+                    "summary": "AI analysis failed for this manually logged job.",
                 }
 
             score = analysis.get("match_score", 0)
             print(f"  ✨ AI score: {score}/10  ({analysis.get('recommendation', '?')})")
             print(f"  💬 {analysis.get('summary', '')}")
 
-            # Save — always as applied regardless of score
-            force_save_applied_job(job, analysis, applied_date=applied_date)
-            date_str = applied_date.strftime("%Y-%m-%d") if applied_date else "today"
-            print(f"  ✅ Saved to matched_jobs (status=applied, applied_at={date_str})")
+            # Save regardless of score — status chosen by user (default: pending)
+            force_save_manual_job(
+                job, analysis, status=status, applied_date=applied_date
+            )
+            if status == "applied":
+                date_str = applied_date.strftime("%Y-%m-%d") if applied_date else "today"
+                print(f"  ✅ Saved to matched_jobs (status=applied, applied_at={date_str})")
+            else:
+                print("  ✅ Saved to matched_jobs (status=pending / Not Applied)")
             results["ok"].append(url)
 
             pause(2, 4, "  ⏳ Brief pause before next URL")
@@ -676,7 +713,8 @@ def process_urls(urls: list[str], applied_date: datetime = None):
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Scrape manually-applied job URLs, AI-match, and mark as applied."
+        description="Scrape job URLs, AI-match, and save to the tracker "
+                    "(default status: pending / Not Applied)."
     )
     parser.add_argument(
         "urls",
@@ -689,6 +727,12 @@ def main():
         "-f",
         metavar="FILE",
         help="Text file with one URL per line",
+    )
+    parser.add_argument(
+        "--status",
+        choices=("pending", "applied"),
+        default="pending",
+        help="Tracker status after save (default: pending / Not Applied)",
     )
     args = parser.parse_args()
 
@@ -708,7 +752,7 @@ def main():
         sys.exit(0)
 
     init_db()
-    process_urls(urls)
+    process_urls(urls, status=args.status)
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Manual Apply · Job Tracker</title>
+  <title>Log Job · Job Tracker</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     :root {
@@ -56,6 +56,40 @@
     .page { max-width: 780px; margin: 0 auto; padding: 32px 24px 80px; }
     h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 6px; }
     .subtitle { color: var(--muted); font-size: .9rem; margin-bottom: 28px; line-height: 1.55; }
+
+    /* ── options row ── */
+    .options-row {
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .option-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .option-group label {
+      font-size: .88rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .option-input {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 7px 12px;
+      font-size: .88rem;
+      outline: none;
+      cursor: pointer;
+      transition: border-color .15s;
+    }
+    .option-input:focus { border-color: var(--accent); }
+    .option-hint { font-size: .8rem; color: var(--muted); }
+    #appliedDateGroup { display: none; align-items: center; gap: 10px; }
+    #appliedDateGroup.visible { display: flex; }
 
     /* ── textarea ── */
     .url-box {
@@ -186,35 +220,27 @@
 </header>
 
 <div class="page">
-  <h1>✍️ Log Manually Applied Jobs</h1>
+  <h1>📝 Log Manually Job</h1>
   <p class="subtitle">
     Paste one job URL per line (LinkedIn, Indeed, or any company careers page).<br>
-    The scraper will open each URL, run AI matching, and save everything to your tracker with status <strong>Applied</strong> — regardless of score.
+    The scraper opens each URL, runs AI matching, and saves to your tracker.
+    Default status is <strong>Not Applied</strong> — switch to Applied only when you already applied.
   </p>
 
-  <!-- Date picker -->
-  <div style="margin-bottom:14px; display:flex; align-items:center; gap:12px;">
-    <label for="appliedDate" style="font-size:.88rem; color:var(--muted); white-space:nowrap;">
-      📅 Applied on
-    </label>
-    <input
-      type="date"
-      id="appliedDate"
-      style="
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 8px;
-        color: var(--text);
-        padding: 7px 12px;
-        font-size: .88rem;
-        outline: none;
-        cursor: pointer;
-        transition: border-color .15s;
-      "
-      onfocus="this.style.borderColor='var(--accent)'"
-      onblur="this.style.borderColor='var(--border)'"
-    />
-    <span style="font-size:.8rem; color:var(--muted);">(Leave blank to default to today)</span>
+  <!-- Status + optional applied date -->
+  <div class="options-row">
+    <div class="option-group">
+      <label for="jobStatus">Status</label>
+      <select id="jobStatus" class="option-input" onchange="onStatusChange()">
+        <option value="pending" selected>Not Applied</option>
+        <option value="applied">Applied</option>
+      </select>
+    </div>
+    <div id="appliedDateGroup">
+      <label for="appliedDate">📅 Applied on</label>
+      <input type="date" id="appliedDate" class="option-input" />
+      <span class="option-hint">(Leave blank to default to today)</span>
+    </div>
   </div>
 
   <textarea
@@ -227,7 +253,7 @@ https://careers.example.com/jobs/frontend-engineer"
 
   <div class="btn-row">
     <button id="submitBtn" class="btn btn-primary" onclick="submitUrls()">
-      🚀 Scrape &amp; Mark Applied
+      🚀 Scrape &amp; Log Job
     </button>
     <button class="btn btn-clear" onclick="document.getElementById('urlBox').value=''">
       🗑 Clear
@@ -252,6 +278,7 @@ https://careers.example.com/jobs/frontend-engineer"
     • Other sites: paste the job detail URL — main content is extracted automatically.<br>
     • You can also run from the terminal:<br>
     &nbsp;&nbsp;<code>python src/scrapers/manual_apply_scraper.py "URL1" "URL2"</code><br>
+    &nbsp;&nbsp;<code>python src/scrapers/manual_apply_scraper.py --status applied "URL1"</code><br>
     &nbsp;&nbsp;<code>python src/scrapers/manual_apply_scraper.py --file my_urls.txt</code>
   </div>
 </div>
@@ -259,6 +286,7 @@ https://careers.example.com/jobs/frontend-engineer"
 <script>
 let _pollTimer = null;
 let _knownLogLen = 0;
+let _submittedStatus = 'pending';
 
 function colorLine(line) {
   const l = line.trim();
@@ -270,13 +298,24 @@ function colorLine(line) {
 }
 function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-// Set today's date as default on page load
+function onStatusChange() {
+  const status = document.getElementById('jobStatus').value;
+  const dateGroup = document.getElementById('appliedDateGroup');
+  if (status === 'applied') {
+    dateGroup.classList.add('visible');
+  } else {
+    dateGroup.classList.remove('visible');
+  }
+}
+
+// Set today's date as default on page load (used only when Applied is selected)
 document.addEventListener('DOMContentLoaded', () => {
   const d = new Date();
   const yyyy = d.getFullYear();
   const mm   = String(d.getMonth() + 1).padStart(2, '0');
   const dd   = String(d.getDate()).padStart(2, '0');
   document.getElementById('appliedDate').value = `${yyyy}-${mm}-${dd}`;
+  onStatusChange();
 });
 
 async function submitUrls() {
@@ -289,9 +328,14 @@ async function submitUrls() {
 
   if (urls.length === 0) { alert('No valid URLs found.'); return; }
 
-  const appliedDate = document.getElementById('appliedDate').value || '';
+  const status = document.getElementById('jobStatus').value || 'pending';
+  const appliedDate = status === 'applied'
+    ? (document.getElementById('appliedDate').value || '')
+    : '';
+  _submittedStatus = status;
 
-  setBanner('running', `<div class="spinner"></div> Scraping ${urls.length} URL(s) in the background…`);
+  const statusLabel = status === 'applied' ? 'Applied' : 'Not Applied';
+  setBanner('running', `<div class="spinner"></div> Scraping ${urls.length} URL(s) as ${statusLabel}…`);
   document.getElementById('submitBtn').disabled = true;
   document.getElementById('logWrap').classList.add('visible');
   document.getElementById('logBody').innerHTML = '';
@@ -301,7 +345,7 @@ async function submitUrls() {
     const res = await fetch('/api/manual-apply', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls, applied_date: appliedDate }),
+      body: JSON.stringify({ urls, status, applied_date: appliedDate }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -343,12 +387,13 @@ async function pollStatus() {
     if (!data.running) {
       clearInterval(_pollTimer);
       document.getElementById('submitBtn').disabled = false;
+      const statusLabel = _submittedStatus === 'applied' ? 'Applied' : 'Not Applied';
       if (data.fail_count > 0 && data.done_count === 0) {
         setBanner('error', `❌ All ${data.fail_count} URL(s) failed. Check the log above.`);
       } else if (data.fail_count > 0) {
-        setBanner('success', `✅ Done — ${data.done_count} saved, ${data.fail_count} failed. <a href="/" style="color:var(--accent)">View Matched →</a>`);
+        setBanner('success', `✅ Done — ${data.done_count} saved as ${statusLabel}, ${data.fail_count} failed. <a href="/" style="color:var(--accent)">View Matched →</a>`);
       } else {
-        setBanner('success', `✅ Done — ${data.done_count} job(s) saved as Applied. <a href="/" style="color:var(--accent)">View Matched →</a>`);
+        setBanner('success', `✅ Done — ${data.done_count} job(s) saved as ${statusLabel}. <a href="/" style="color:var(--accent)">View Matched →</a>`);
       }
     }
   } catch(e) {

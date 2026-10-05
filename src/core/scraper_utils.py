@@ -94,6 +94,14 @@ _INDEED_LOCATION_SKIP = {
 _INDEED_META_SEP_RE = re.compile(r"[•·∙⋅|]+")
 _INDEED_SEP_ONLY_RE = re.compile(r"^[\s•·∙⋅|\-\u2013\u2014]+$")
 
+# Company rating chip next to the company name (e.g. "3.8", "4,2", "3.8 ★",
+# "3.8 (152)"). That token sits on the company row; the real address is the
+# next line — never treat the score as location.
+_INDEED_RATING_RE = re.compile(
+    r"^[0-5](?:[.,]\d)?\s*(?:★|⭐)?\s*(?:\([\d.,\s]+\))?$",
+    re.IGNORECASE,
+)
+
 
 def _indeed_meta_parts(text: str) -> list:
     """Split a metadata line on Indeed bullet separators; drop empties."""
@@ -107,12 +115,26 @@ def _indeed_meta_parts(text: str) -> list:
     return parts
 
 
+def _is_indeed_company_rating(text: str) -> bool:
+    """True for Indeed company-rating chips like '3.8' / '4,2 ★'."""
+    if not text:
+        return False
+    return bool(_INDEED_RATING_RE.match(text.strip()))
+
+
 def _is_plausible_indeed_location(text: str, company: str) -> bool:
-    """Reject separators, company name echoes, and work-mode chips."""
+    """Reject separators, ratings, company name echoes, and work-mode chips."""
     if not text or _INDEED_SEP_ONLY_RE.match(text):
+        return False
+    if _is_indeed_company_rating(text):
         return False
     if company and text == company:
         return False
+    # "Acme Corp 3.8" when company link text is "Acme Corp"
+    if company and text.startswith(company):
+        rest = text[len(company):].strip(" \t•·∙⋅|-–—")
+        if not rest or _is_indeed_company_rating(rest):
+            return False
     if text.lower() in _INDEED_LOCATION_SKIP:
         return False
     return True
@@ -125,6 +147,13 @@ def extract_indeed_detail_meta(scope) -> tuple:
     Indeed puts these in the sticky/compact header
     ([data-testid="company-info-metadata"]), not in the JD body —
     so scrapers that only store description leave them empty.
+
+    Typical layout:
+      1. job title
+      2. company name (+ optional rating chip like 3.8)
+      3. location / address
+
+    The rating must never be stored as location.
 
     Args:
         scope: Playwright Page or Locator that contains the detail panel
@@ -166,7 +195,7 @@ def extract_indeed_detail_meta(scope) -> tuple:
             compact_text = safe_text(compact)
             for line in compact_text.splitlines():
                 parts = _indeed_meta_parts(line)
-                # Prefer the left-most non-company, non-work-mode token
+                # Prefer the left-most non-company, non-rating, non-work-mode token
                 for part in parts:
                     if _is_plausible_indeed_location(part, company):
                         location = part
@@ -182,9 +211,19 @@ def extract_indeed_detail_meta(scope) -> tuple:
                 for ln in safe_text(meta).splitlines()
                 if ln.strip() and not _INDEED_SEP_ONLY_RE.match(ln.strip())
             ]
-            if company and lines and lines[0] == company:
-                lines = lines[1:]
+            # Drop the company row (and a rating chip that rode on the same /
+            # following line) so the next remaining line is the address.
+            cleaned = []
             for ln in lines:
+                if company and (ln == company or ln.startswith(company)):
+                    rest = ln[len(company):].strip(" \t•·∙⋅|-–—") if ln.startswith(company) else ""
+                    if rest and not _is_indeed_company_rating(rest) and _is_plausible_indeed_location(rest, company):
+                        cleaned.append(rest)
+                    continue
+                if _is_indeed_company_rating(ln):
+                    continue
+                cleaned.append(ln)
+            for ln in cleaned:
                 parts = _indeed_meta_parts(ln) or [ln]
                 for part in parts:
                     if _is_plausible_indeed_location(part, company):
@@ -193,7 +232,7 @@ def extract_indeed_detail_meta(scope) -> tuple:
                 if location:
                     break
 
-    # Final guard: never persist a bullet/separator as location
+    # Final guard: never persist a bullet/separator/rating as location
     if location and not _is_plausible_indeed_location(location, company):
         location = ""
 
@@ -202,12 +241,14 @@ def extract_indeed_detail_meta(scope) -> tuple:
 
 def scrub_bullet_location(location: str) -> str:
     """
-    Clear location values that are only Indeed/UI separators (e.g. '·' / '•').
+    Clear location values that are only Indeed/UI separators or rating chips
+    (e.g. '·' / '•' / '3.8').
 
-    Safe for any source — a separator-only string is never a real place.
+    Safe for any source — a separator-only or rating-only string is never a
+    real place.
     """
     text = (location or "").strip()
-    if not text or _INDEED_SEP_ONLY_RE.match(text):
+    if not text or _INDEED_SEP_ONLY_RE.match(text) or _is_indeed_company_rating(text):
         return ""
     return text
 
@@ -651,6 +692,15 @@ def open_scraper_page(context, bring_to_front=False):
         except Exception:
             pass
     return page
+
+
+def is_target_closed_error(exc: BaseException) -> bool:
+    """True when Playwright lost the tab/browser (TargetClosedError)."""
+    name = type(exc).__name__
+    if name == "TargetClosedError":
+        return True
+    msg = str(exc)
+    return "Target page, context or browser has been closed" in msg
 
 
 def goto_page(page, url, wait_until="domcontentloaded", attempts=3, timeout=60000):

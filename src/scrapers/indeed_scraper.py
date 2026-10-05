@@ -41,6 +41,8 @@ from core.scraper_utils import (
     normalize_indeed_job_id,
     extract_indeed_jk_from_url,
     extract_indeed_detail_meta,
+    goto_page,
+    is_target_closed_error,
     DESCRIPTION_FETCH_RETRIES,
 )
 from core.challenge_wait import (
@@ -102,7 +104,9 @@ def _wait_for_job_cards(page, *, context: str, timeout_ms: int = 15000) -> bool:
             return False
 
         label = context if attempt == 0 else f"{context}, still blocked"
-        handle_indeed_challenge_if_needed(page, context=label)
+        handle_indeed_challenge_if_needed(
+            page, context=label, ready_selector=JOB_CARD_SELECTOR
+        )
         _reload_after_challenge(page)
 
     try:
@@ -213,6 +217,59 @@ def extract_card_fields(card):
     return title, job_id, href
 
 
+class _IndeedSession:
+    """CDP session that can reopen a tab if Chrome dropped the previous one."""
+
+    def __init__(self, playwright):
+        self.playwright = playwright
+        self.browser = None
+        self.page = None
+        self.connect(announce=True)
+
+    def connect(self, *, announce: bool = False) -> None:
+        self.browser = connect_browser(self.playwright, "Indeed")
+        context = self.browser.contexts[0]
+        self.page = open_scraper_page(context)
+        if announce:
+            print(
+                "Use the debug Chrome window. "
+                "Dismiss Indeed cookie banners if prompted."
+            )
+
+    def ensure(self) -> bool:
+        """Reconnect if the tab is gone. Returns True when a new tab was opened."""
+        try:
+            if self.page is not None and not self.page.is_closed():
+                _ = self.page.url
+                return False
+        except Exception:
+            pass
+        print("⚠ Indeed tab/browser was closed — reconnecting to debug Chrome…")
+        self.connect()
+        return True
+
+
+def _goto_serp(session: _IndeedSession, url: str) -> None:
+    """Navigate to a SERP; reconnect once if the tab died mid-goto."""
+    last_error = None
+    for attempt in range(1, 4):
+        session.ensure()
+        try:
+            goto_page(session.page, url)
+            return
+        except Exception as exc:
+            last_error = exc
+            if is_target_closed_error(exc) and attempt < 3:
+                print(
+                    f"⚠ Tab closed during navigation "
+                    f"(attempt {attempt}/3) — reconnecting"
+                )
+                session.connect()
+                continue
+            raise
+    raise last_error
+
+
 def scrape_jobs(page, max_jobs=INDEED_JOBS_PER_PAGE, keyword=""):
     """
     Scrape job listings from the current Indeed search results page.
@@ -278,7 +335,9 @@ def scrape_jobs(page, max_jobs=INDEED_JOBS_PER_PAGE, keyword=""):
             except PlaywrightTimeoutError:
                 if is_indeed_challenge_page(page):
                     handle_indeed_challenge_if_needed(
-                        page, context=f"after click job {index + 1}"
+                        page,
+                        context=f"after click job {index + 1}",
+                        ready_selector=JOB_CARD_SELECTOR,
                     )
                     pause(2.0, 4.0, "Settle after challenge")
                     # Re-click the same card if the SERP is still open
@@ -394,7 +453,9 @@ def scrape_jobs(page, max_jobs=INDEED_JOBS_PER_PAGE, keyword=""):
             if is_indeed_challenge_page(page):
                 try:
                     handle_indeed_challenge_if_needed(
-                        page, context=f"timeout on job {index + 1}"
+                        page,
+                        context=f"timeout on job {index + 1}",
+                        ready_selector=JOB_CARD_SELECTOR,
                     )
                 except RuntimeError as exc:
                     print(f"Job {index + 1}: {exc}")
@@ -415,6 +476,12 @@ def scrape_jobs(page, max_jobs=INDEED_JOBS_PER_PAGE, keyword=""):
             print(f"Job {index + 1}: {e}")
             break
         except Exception as e:
+            if is_target_closed_error(e):
+                print(
+                    f"Job {index + 1}: tab/browser closed "
+                    f"({type(e).__name__}) — will reconnect and retry this page"
+                )
+                raise
             print(f"Job {index + 1}: error {type(e).__name__}: {e}")
             continue
 
@@ -422,28 +489,40 @@ def scrape_jobs(page, max_jobs=INDEED_JOBS_PER_PAGE, keyword=""):
     return jobs_data
 
 
-def scrape_keyword(page, keyword, max_pages, max_jobs_per_page=INDEED_JOBS_PER_PAGE):
+def scrape_keyword(
+    session: _IndeedSession,
+    keyword,
+    max_pages,
+    max_jobs_per_page=INDEED_JOBS_PER_PAGE,
+):
     """
     Scrape multiple pages of Indeed results for a single keyword.
-    
+
     Args:
-        page: Playwright page object
+        session: Live Indeed CDP session (reopens the tab if Chrome dropped it)
         keyword: Search keyword
         max_pages: Maximum number of pages to scrape
         max_jobs_per_page: Maximum jobs to process per page
-        
+
     Returns:
         List of all job data dictionaries saved for this keyword
     """
     print(f"\n========== Keyword: {keyword} ==========")
     all_jobs = []
+    page = session.page
 
     for page_index in range(max_pages):
         start = page_index * RESULTS_PER_PAGE
         print(f"\n--- {keyword}: page {page_index + 1}/{max_pages} (start={start}) ---")
         url = jobs_search_url(keyword, start=start)
         print(f"URL: {url}")
-        page.goto(url, wait_until="domcontentloaded")
+        cards_ready = False
+        try:
+            _goto_serp(session, url)
+        except Exception as exc:
+            print(f"{keyword}: navigation failed ({type(exc).__name__}: {exc})")
+            break
+        page = session.page
         pause(4, 8, f"Waiting for search results: {keyword}")
         dismiss_overlays(page)
 
@@ -454,13 +533,68 @@ def scrape_keyword(page, keyword, max_pages, max_jobs_per_page=INDEED_JOBS_PER_P
         except RuntimeError as exc:
             print(f"{keyword}: {exc}")
             break
+        except Exception as exc:
+            if is_target_closed_error(exc):
+                print(
+                    f"{keyword}: tab closed while waiting for cards — "
+                    "reconnect and retry this page"
+                )
+                session.connect()
+                try:
+                    _goto_serp(session, url)
+                    page = session.page
+                    pause(4, 8, f"Waiting for search results: {keyword}")
+                    dismiss_overlays(page)
+                    cards_ready = _wait_for_job_cards(
+                        page, context=f"{keyword} page {page_index + 1} retry"
+                    )
+                except Exception as retry_exc:
+                    print(
+                        f"{keyword}: retry failed "
+                        f"({type(retry_exc).__name__}: {retry_exc})"
+                    )
+                    break
+            else:
+                print(f"{keyword}: {type(exc).__name__}: {exc}")
+                break
 
         if not cards_ready:
             print(f"No job cards for {keyword} on page {page_index + 1}, stop paging")
             break
 
-        jobs = scrape_jobs(page, max_jobs=max_jobs_per_page, keyword=keyword)
+        try:
+            jobs = scrape_jobs(page, max_jobs=max_jobs_per_page, keyword=keyword)
+        except Exception as exc:
+            if not is_target_closed_error(exc):
+                raise
+            print(
+                f"{keyword}: tab closed mid-page — reconnect and retry "
+                f"page {page_index + 1}"
+            )
+            session.connect()
+            try:
+                _goto_serp(session, url)
+                page = session.page
+                pause(4, 8, f"Waiting for search results: {keyword}")
+                dismiss_overlays(page)
+                if not _wait_for_job_cards(
+                    page, context=f"{keyword} page {page_index + 1} retry"
+                ):
+                    print(
+                        f"No job cards for {keyword} on page {page_index + 1} "
+                        "after reconnect, stop paging"
+                    )
+                    break
+                jobs = scrape_jobs(page, max_jobs=max_jobs_per_page, keyword=keyword)
+            except Exception as retry_exc:
+                print(
+                    f"{keyword}: retry failed "
+                    f"({type(retry_exc).__name__}: {retry_exc})"
+                )
+                break
+
         all_jobs.extend(jobs)
+        page = session.page
 
         if page_index < max_pages - 1:
             pause(*_BETWEEN_PAGES_PAUSE, "Rest between pages")
@@ -483,13 +617,12 @@ def main():
     all_jobs = []
 
     with sync_playwright() as playwright:
-        browser = connect_browser(playwright, "Indeed")
-        context = browser.contexts[0]
-        page = open_scraper_page(context)
-        print("Use the debug Chrome window. Dismiss Indeed cookie banners if prompted.")
+        session = _IndeedSession(playwright)
 
         for i, keyword in enumerate(keywords):
-            jobs = scrape_keyword(page, keyword, max_pages, max_jobs_per_page=max_jobs)
+            jobs = scrape_keyword(
+                session, keyword, max_pages, max_jobs_per_page=max_jobs
+            )
             all_jobs.extend(jobs)
             if i < len(keywords) - 1:
                 pause(*_BETWEEN_KEYWORDS_PAUSE, "Rest between keywords")

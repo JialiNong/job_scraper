@@ -126,15 +126,40 @@ def is_indeed_challenge_page(page) -> bool:
     return any(hint in text for hint in _CHALLENGE_TEXT_HINTS)
 
 
+def _challenge_looks_cleared(page, ready_selector: str = "") -> bool:
+    """True when the challenge UI is gone and (optionally) job cards are back."""
+    try:
+        if page.is_closed():
+            return False
+    except Exception:
+        return False
+    try:
+        if is_indeed_challenge_page(page):
+            return False
+    except Exception:
+        return False
+    if not ready_selector:
+        return True
+    try:
+        return page.locator(ready_selector).count() > 0
+    except Exception:
+        return False
+
+
 def wait_for_indeed_human_resume(
     *,
     reason: str = "Indeed human verification required",
     timeout_sec: float = DEFAULT_RESUME_TIMEOUT_SEC,
+    page=None,
+    ready_selector: str = "",
 ) -> bool:
     """
-    Notify via Telegram and block until the user signals resume (or timeout).
+    Notify via Telegram and block until resume is safe.
 
-    Returns True if a resume signal arrived in time.
+    Resume when any of these happen:
+      - user taps Continue / sends /indeed_ok (resume flag)
+      - the challenge UI is gone and the SERP looks ready again
+      - timeout (returns False)
     """
     clear_resume_flag()
     _LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -142,8 +167,9 @@ def wait_for_indeed_human_resume(
     message = (
         "⚠️ Indeed needs human verification\n\n"
         f"{reason}\n\n"
-        "1. Switch to the debug Chrome window and solve the challenge\n"
-        "2. Tap Continue below, or send /indeed_ok\n\n"
+        "1. Switch to the debug Chrome window and complete the check\n"
+        "2. When the job list is back, the scraper continues on its own\n"
+        "   (or tap Continue / send /indeed_ok)\n\n"
         f"Fallback (bot offline): touch {RESUME_FLAG_PATH}"
     )
     sent = send_telegram_message(
@@ -151,7 +177,10 @@ def wait_for_indeed_human_resume(
         reply_markup=indeed_challenge_keyboard(),
     )
     if sent:
-        print("Telegram alert sent — waiting for /indeed_ok or Continue button…")
+        print(
+            "Telegram alert sent — waiting for the job list to return, "
+            "or /indeed_ok / Continue…"
+        )
     else:
         print(
             f"Telegram alert failed — waiting for resume flag: "
@@ -163,8 +192,11 @@ def wait_for_indeed_human_resume(
         if resume_flag_exists():
             clear_resume_flag()
             print("✅ Resume signal received — continuing Indeed scrape")
-            # Brief settle so Chrome finishes post-challenge navigation
             time.sleep(2.0)
+            return True
+        if page is not None and _challenge_looks_cleared(page, ready_selector):
+            print("✅ Indeed challenge looks cleared — continuing without a tap")
+            time.sleep(1.5)
             return True
         time.sleep(POLL_INTERVAL_SEC)
 
@@ -175,13 +207,21 @@ def wait_for_indeed_human_resume(
     return False
 
 
-def handle_indeed_challenge_if_needed(page, *, context: str = "") -> bool:
+def handle_indeed_challenge_if_needed(
+    page,
+    *,
+    context: str = "",
+    ready_selector: str = "",
+) -> bool:
     """
     If the current page looks like a challenge, wait for the user then return.
 
     Returns True when a challenge was detected (whether or not resume succeeded).
     Returns False when no challenge was found.
     Callers should re-check readiness after a True return + successful resume.
+
+    Does not solve the challenge. It only waits until you finish it in Chrome
+    (auto-continue) or confirm via Telegram.
     """
     if not is_indeed_challenge_page(page):
         return False
@@ -195,7 +235,11 @@ def handle_indeed_challenge_if_needed(page, *, context: str = "") -> bool:
     except Exception:
         pass
 
-    resumed = wait_for_indeed_human_resume(reason=reason)
+    resumed = wait_for_indeed_human_resume(
+        reason=reason,
+        page=page,
+        ready_selector=ready_selector,
+    )
     if not resumed:
         raise RuntimeError(
             "Indeed human verification was not confirmed in time; aborting scrape"

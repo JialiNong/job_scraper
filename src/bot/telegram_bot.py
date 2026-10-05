@@ -24,6 +24,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from core.challenge_wait import signal_indeed_resume  # noqa: E402
+from core.pipeline_lock import pipeline_is_running  # noqa: E402
 from core.match_digest import (  # noqa: E402
     build_match_messages,
     fetch_todays_matched_jobs,
@@ -178,7 +179,7 @@ async def _start_pipeline(
     if not is_allowed(update):
         return
 
-    if _pipeline_running:
+    if _pipeline_running or pipeline_is_running():
         await _reply(
             update,
             "⏳ Pipeline is already running. I'll notify you when it finishes.",

@@ -28,6 +28,28 @@ log() {
 
 trap 'log "ERROR: Script failed at line $LINENO"' ERR
 
+release_pipeline_lock() {
+    "$PYTHON" -c "
+import sys
+sys.path.insert(0, '$PROJECT_DIR/src')
+from core.pipeline_lock import release_pipeline_lock
+release_pipeline_lock(pid=int('$$'))
+" 2>/dev/null || true
+}
+
+if ! "$PYTHON" -c "
+import sys
+sys.path.insert(0, '$PROJECT_DIR/src')
+from core.pipeline_lock import acquire_pipeline_lock
+ok, msg = acquire_pipeline_lock(pid=int('$$'))
+print(msg)
+raise SystemExit(0 if ok else 75)
+"; then
+    log "⚠️  Pipeline already running — not starting a second Chrome (that would kill the first scrape). Exiting."
+    exit 0
+fi
+trap release_pipeline_lock EXIT
+
 log "=== Light Scrape Pipeline Started ==="
 
 # ---------------------------------------------------------------------------
@@ -74,7 +96,7 @@ INDEED_PAGES="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.con
 INDEED_JOBS="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.config import INDEED_JOBS_PER_PAGE; print(INDEED_JOBS_PER_PAGE)")"
 LINKEDIN_PAGES="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.config import LIGHT_LINKEDIN_MAX_PAGES; print(LIGHT_LINKEDIN_MAX_PAGES)")"
 LINKEDIN_JOBS="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.config import LINKEDIN_JOBS_PER_PAGE; print(LINKEDIN_JOBS_PER_PAGE)")"
-STAMP="$(date +%Y%m%d)"
+STAMP="$(date +%Y%m%d_%H%M%S)"
 
 log "Step 1/1: Light lanes — Indeed ${INDEED_PAGES} pages/keyword × ${INDEED_JOBS}, LinkedIn quick ${LINKEDIN_PAGES} pages × ${LINKEDIN_JOBS}"
 run_source_lane "Indeed" "indeed" \

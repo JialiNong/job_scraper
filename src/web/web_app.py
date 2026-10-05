@@ -1074,9 +1074,11 @@ def manual_apply_page():
 @app.route("/api/manual-apply", methods=["POST"])
 def api_manual_apply():
     """
-    Accepts a JSON body: {"urls": [...], "applied_date": "YYYY-MM-DD"}
-    Runs the manual-apply scraper in a background thread.
+    Accepts a JSON body:
+      {"urls": [...], "status": "pending"|"applied", "applied_date": "YYYY-MM-DD"}
+    Runs the manual job logger in a background thread.
     Returns immediately with {"status": "started"} or an error.
+    Default tracker status is pending (Not Applied).
     """
     data = request.get_json(silent=True) or {}
     urls = data.get("urls", [])
@@ -1086,17 +1088,22 @@ def api_manual_apply():
     if not urls:
         return jsonify({"error": "No valid URLs provided"}), 400
 
-    # Parse optional applied_date
+    # Tracker status: pending (Not Applied, default) or applied
+    job_status = (data.get("status") or "pending").strip().lower()
+    if job_status not in ("pending", "applied"):
+        return jsonify({"error": "status must be 'pending' or 'applied'"}), 400
+
+    # Parse optional applied_date (only meaningful when status=applied)
     applied_date = None
-    raw_date = data.get("applied_date", "").strip()
+    raw_date = (data.get("applied_date") or "").strip()
     if raw_date:
         try:
             applied_date = datetime.strptime(raw_date, "%Y-%m-%d")
         except ValueError:
-            return jsonify({"error": f"Invalid applied_date format, expected YYYY-MM-DD"}), 400
+            return jsonify({"error": "Invalid applied_date format, expected YYYY-MM-DD"}), 400
 
     if not _manual_apply_lock.acquire(blocking=False):
-        return jsonify({"error": "A manual-apply run is already in progress. Please wait."}), 429
+        return jsonify({"error": "A manual job log run is already in progress. Please wait."}), 429
 
     def run():
         try:
@@ -1119,7 +1126,7 @@ def api_manual_apply():
 
             builtins.print = _capture_print
             try:
-                _process_urls(urls, applied_date=applied_date)
+                _process_urls(urls, applied_date=applied_date, status=job_status)
                 # Count results from log
                 for line in _manual_apply_state["log"]:
                     if "✅ Saved to matched_jobs" in line:
@@ -1136,7 +1143,7 @@ def api_manual_apply():
 
     t = threading.Thread(target=run, daemon=True)
     t.start()
-    return jsonify({"status": "started", "total": len(urls)})
+    return jsonify({"status": "started", "total": len(urls), "job_status": job_status})
 
 
 @app.route("/api/manual-apply/status")

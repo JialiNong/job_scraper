@@ -23,7 +23,7 @@ flowchart TB
         Indeed["indeed_scraper.py<br/>last 24h"]
         LI["linkedin_scraper.py<br/>last 24h × keywords"]
         LIQ["linkedin_quick_scraper.py<br/>light run · 12h OR URL"]
-        Manual["manual_apply_scraper.py<br/>already-applied URLs"]
+        Manual["manual_apply_scraper.py<br/>manual job URLs"]
     end
 
     subgraph Filters["Per-card filters (before/after click)"]
@@ -99,20 +99,24 @@ caffeinate -i ./run_quick.sh
 
 **Match card push:** `run_task.sh` / `run_quick.sh` call `core.match_digest.push_todays_matched_jobs()` only after **both** lanes finish. That covers Telegram `/jobs` / `/quick_jobs`, launchd, and any manual shell run. `/matches` uses the same digest helper without scraping.
 
+**Single-flight lock:** `run_task.sh` / `run_quick.sh` write `logs/pipeline.pid`. A second `/jobs`, `/quick_jobs`, or shell run exits immediately instead of launching another debug Chrome (same `--user-data-dir` would kill the first Chrome and abort Indeed with `TargetClosedError`). Telegram also checks this pidfile. If Indeed’s tab still dies mid-run, `indeed_scraper` reconnects over CDP and retries that page instead of exiting 1.
+
 **Destination:** Job cards, pipeline Done/error status, and Indeed challenge alerts go to the configured forum topic (`TELEGRAM_CHAT_ID` + `TELEGRAM_MESSAGE_THREAD_ID` — Jiali Personal Hub → Job Assistance). Command authorization stays on `TELEGRAM_ALLOWED_USER_ID` (your personal account). Slash-command replies (`/start`, Started, …) stay in the topic you typed in; send commands from Job Assistance so those stay there too.
 
 Start the bot: `python3 src/bot/telegram_bot.py`
 
 ### 2.2.1 Indeed human verification handshake
 
-Indeed sometimes shows a captcha / “press and hold” challenge. The scraper:
+Indeed sometimes shows a captcha / “press and hold” challenge. The scraper **does not solve** that check. It:
 
 1. Detects the challenge page (URL / captcha widgets / challenge copy)
 2. Sends a Telegram alert with a **Continue** button
-3. Pauses (up to 45 minutes) until you confirm
+3. Pauses (up to 45 minutes) until **either** the job list is back in Chrome **or** you confirm
 4. Reloads the SERP and continues the same keyword / page
 
-Confirm by tapping **Continue**, sending `/indeed_ok`, or (bot offline) `touch logs/indeed_human_resume.flag`.
+You complete the check in the debug Chrome window. When the SERP returns, the scraper continues on its own. Optional confirm: tap **Continue**, send `/indeed_ok`, or (bot offline) `touch logs/indeed_human_resume.flag`.
+
+If Indeed’s tab/browser closes mid-run (`TargetClosedError`), the scraper reconnects to the debug Chrome and retries the current results page instead of aborting the lane.
 
 Indeed pacing is slower and more human-like than LinkedIn: random think-time before each card click, hold-delay on click, longer rests between cards (~5–11s), pages (~35–80s), and keywords (~30–70s).
 
@@ -124,7 +128,7 @@ Indeed pacing is slower and more human-like than LinkedIn: random think-time bef
 | `python3 src/scrapers/linkedin_scraper.py [-k …] [-p N] [-j N]` | Full LinkedIn keyword loop (default 3 pages × 30) |
 | `python3 src/scrapers/linkedin_quick_scraper.py [-p N] [-j N]` | LinkedIn 12h quick URL (default 3 pages × 30) |
 | `python3 src/matching/ai_matcher.py [-l N] [-s source] [-t 7.0]` | AI match only (jobs without `matched_at`) |
-| `python3 src/scrapers/manual_apply_scraper.py <urls…>` | Already-applied jobs → scrape + score → `matched_jobs` with `status=applied` |
+| `python3 src/scrapers/manual_apply_scraper.py <urls…>` | Manual job URLs → scrape + score → `matched_jobs` (default `status=pending`; `--status applied` optional) |
 | `python3 scripts/cleanup_unmatched_descriptions.py …` | Clear old unmatched JD text (also run at end of full pipeline) |
 | `python3 scripts/cleanup_excluded_titles.py …` | Cleanup DB rows by title blacklist |
 | `python3 scripts/eval_matcher.py …` | Matcher evaluation |
@@ -326,11 +330,13 @@ Details: [`matching_criteria.md`](./matching_criteria.md).
 | Collection | Written by | Contents |
 |------------|------------|----------|
 | `jobs` | scrapers; matcher writes analysis back | Jobs that passed the language gate (including empty-description placeholders) |
-| `matched_jobs` | matcher (≥ threshold); manual_apply; unmatched **Can Apply** override; **timeout review Add as Not Applied** | High-score matches / already applied / user-promoted unmatched or timeout jobs. UI can store manual `highlights` tags (separate from AI `special_match`). |
+| `matched_jobs` | matcher (≥ threshold); manual job log (`/manual-apply`, default `pending`); unmatched **Can Apply** override; **timeout review Add as Not Applied** | High-score matches / manually logged jobs / user-promoted unmatched or timeout jobs. UI can store manual `highlights` tags (separate from AI `special_match`). |
 | `timeout_jobs` | scrapers, when the title passed but the JD panel timed out | Title + link for later review (`/timeouts`). Open → **Add as Not Applied** (`pending`) or Dismiss. |
 | `scraper_stats` | scrapers | Counters: `title_passed_clicked`, `german_filtered`, `ai_title_filtered`, `detail_timeout`, … |
 
 Web UI (`web_app.py`) reads these for today’s funnel, match list, unmatched reasons, and scrape timeouts.
+
+**Log Job page (`/manual-apply`):** paste job URLs (LinkedIn / Indeed / career pages). Scrapes + AI-scores each URL into `matched_jobs`. Default status is **Not Applied** (`pending`); choose **Applied** only when you already applied (optional applied date).
 
 **Timeouts page (`/timeouts`):** cards whose **title already passed** the scrape gates but the detail panel did not load in time. These are not saved to `jobs` (no JD). You open the original link and, if it is a real match, **Add as Not Applied** — that copies the card into `matched_jobs` as `pending`. Cards with no readable title (typical Indeed ad/empty slots, ~1 per SERP page) are not listed.
 
@@ -356,7 +362,8 @@ job_scraper/
 │   │   ├── config.py            # keywords, title blacklist, platform URLs
 │   │   ├── db_mongo.py          # Mongo helpers
 │   │   ├── scraper_utils.py     # title gates, Lingua, CDP helpers
-│   │   ├── challenge_wait.py    # Indeed captcha detect + Telegram resume flag
+│   │   ├── challenge_wait.py    # Indeed captcha detect + auto-continue / Telegram resume
+│   │   ├── pipeline_lock.py     # Single-flight pidfile for run_task / run_quick
 │   │   ├── telegram_notify.py   # Sync Bot API helper (scraper alerts)
 │   │   └── match_digest.py      # Today's match cards → Telegram (pipeline + /matches)
 │   ├── scrapers/                # Indeed / LinkedIn / Quick / Manual
