@@ -3,6 +3,7 @@ from pymongo import MongoClient, errors
 from datetime import datetime
 import os
 import re
+import threading
 from dotenv import load_dotenv
 
 from core.scraper_utils import indeed_job_id_variants
@@ -17,11 +18,31 @@ MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
 DATABASE_NAME = "job_scraper"
 COLLECTION_NAME = "jobs"
 
+# Reuse one client across the process. Creating MongoClient per call costs ~1–2s
+# on Atlas (TLS + handshake) and made every Web UI refresh feel multi-second.
+_mongo_client = None
+_mongo_client_lock = threading.Lock()
+_indexes_ready = False
+_indexes_lock = threading.Lock()
+
+
+def get_mongo_client() -> MongoClient:
+    """Return a process-wide MongoClient (connection pool)."""
+    global _mongo_client
+    if _mongo_client is None:
+        with _mongo_client_lock:
+            if _mongo_client is None:
+                _mongo_client = MongoClient(
+                    MONGO_URI,
+                    maxPoolSize=20,
+                    serverSelectionTimeoutMS=8000,
+                )
+    return _mongo_client
+
 
 def get_db():
     """Get database connection"""
-    client = MongoClient(MONGO_URI)
-    return client[DATABASE_NAME]
+    return get_mongo_client()[DATABASE_NAME]
 
 
 def get_collection(collection_name=None):
@@ -40,22 +61,49 @@ def get_collection(collection_name=None):
     return db[collection_name]
 
 
+def ensure_indexes():
+    """
+    Create indexes used by scrapers and the Web UI.
+
+    Safe to call repeatedly (create_index is idempotent). Web UI calls this
+    once on startup so matched_jobs sorts / status counts stay indexed.
+    """
+    global _indexes_ready
+    if _indexes_ready:
+        return
+    with _indexes_lock:
+        if _indexes_ready:
+            return
+        db = get_db()
+        jobs = db[COLLECTION_NAME]
+        jobs.create_index("link", unique=True)
+        jobs.create_index("job_id")
+        jobs.create_index("source")
+        jobs.create_index("created_at")
+        jobs.create_index("matched_at")
+        jobs.create_index("match_score")
+        # Unmatched list / count: matched_at exists + score below threshold
+        jobs.create_index([("match_score", 1), ("matched_at", -1)])
+
+        matched = db["matched_jobs"]
+        matched.create_index([("matched_at", -1)])
+        matched.create_index("status")
+        matched.create_index([("status", 1), ("applied_at", -1)])
+        matched.create_index("source")
+        matched.create_index("link")
+
+        timeouts = db["timeout_jobs"]
+        timeouts.create_index("status")
+        timeouts.create_index([("created_at", -1)])
+
+        _indexes_ready = True
+
+
 def init_db():
     """Initialize database and create indexes"""
-    db = get_db()
-    collection = db[COLLECTION_NAME]
-    
-    # Create unique index to prevent duplicates
-    collection.create_index("link", unique=True)
-    collection.create_index("job_id")
-    collection.create_index("source")
-    collection.create_index("created_at")
-    collection.create_index("matched_at")
-    collection.create_index("match_score")
-    
-    print(f"MongoDB initialized: {DATABASE_NAME}.{COLLECTION_NAME}")
-    print(f"Indexes created: link (unique), job_id, source, created_at, matched_at, match_score")
-
+    ensure_indexes()
+    print(f"MongoDB initialized: {DATABASE_NAME}.{COLLECTION_NAME} (+ matched_jobs indexes)")
+    print("Indexes ready for jobs, matched_jobs, timeout_jobs")
 
 def save_job(job_data):
     """

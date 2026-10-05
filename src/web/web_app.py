@@ -21,6 +21,7 @@ from flask import Flask, render_template, request, jsonify
 from dotenv import load_dotenv
 from core.db_mongo import (
     get_collection,
+    ensure_indexes,
     get_scraper_stats,
     get_daily_activity_stats,
     get_applied_location_stats,
@@ -114,6 +115,16 @@ STATUS_REVERSE = {v: k for k, v in STATUS_MAP.items()}
 
 MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "7.0"))
 UNMATCHED_PAGE_SIZE = 20
+
+# List payload omits full JD text (often multi-KB per job). Lazy-load via
+# GET /api/jobs/<id>/description when the user expands "Original description".
+JOBS_LIST_PROJECTION = {"description": 0}
+
+# Ensure indexes once at import (Flask reloader may import twice; ensure_indexes is idempotent)
+try:
+    ensure_indexes()
+except Exception as exc:
+    print(f"[web] ensure_indexes skipped: {exc}")
 
 
 def _parse_timeline_at(value) -> Optional[datetime]:
@@ -315,10 +326,28 @@ def api_jobs():
             time_filter["$lte"] = end
         query["matched_at"] = time_filter
 
-    jobs = list(collection.find(query).sort("matched_at", -1).limit(500))
+    jobs = list(
+        collection.find(query, JOBS_LIST_PROJECTION)
+        .sort("matched_at", -1)
+        .limit(500)
+    )
     jobs = [_serialize(j) for j in jobs]
 
     return jsonify({"jobs": jobs, "total": len(jobs)})
+
+
+@app.route("/api/jobs/<job_id>/description")
+def api_job_description(job_id: str):
+    """Return full JD text for one matched job (lazy-loaded by the Tracker UI)."""
+    try:
+        oid = ObjectId(job_id)
+    except Exception:
+        return jsonify({"error": "Invalid job ID"}), 400
+
+    job = get_collection("matched_jobs").find_one({"_id": oid}, {"description": 1})
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify({"description": job.get("description") or ""})
 
 
 @app.route("/api/unmatched-jobs")

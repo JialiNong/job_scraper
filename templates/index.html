@@ -1877,6 +1877,8 @@ let currentStatusFilter = 'all';
 let highlightsOnly = false;
 let debounceTimer = null;
 let dateDebounceTimer = null;
+let jobsAbortController = null;
+const SEARCH_DEBOUNCE_MS = 600; // wait until typing pauses before searching
 const collapsedGroups = new Set(); // tracks which date groups are collapsed
 let currentLayout = localStorage.getItem('jobLayout') || 'compact';
 const jobHighlights = {}; // job_id -> string[]
@@ -2486,7 +2488,7 @@ function toggleHighlightsFilter() {
 /* ── Debounce search ─────────────────────────────────────────────── */
 function debounceLoad() {
   clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(loadJobs, 350);
+  debounceTimer = setTimeout(loadJobs, SEARCH_DEBOUNCE_MS);
 }
 
 /* ── Date helpers ────────────────────────────────────────────────── */
@@ -2713,11 +2715,10 @@ function renderCard(job) {
 
       ${matchReasons ? `<ul style="font-size:.78rem;color:var(--muted);padding-left:16px;line-height:1.6;">${matchReasons}</ul>` : ''}
 
-      ${job.description ? `
-      <details class="job-description">
+      <details class="job-description" data-job-id="${job._id}" ontoggle="loadJobDescription(this)">
         <summary><span>Original description</span></summary>
-        <div class="job-description-body">${escHtml(job.description)}</div>
-      </details>` : ''}
+        <div class="job-description-body" data-loaded="0">Expand to load…</div>
+      </details>
 
       <div class="card-actions-row">
         <a class="btn-apply ${['applied','interview','rejected','offer'].includes(status) ? 'btn-applied' : ''}"
@@ -2884,11 +2885,34 @@ function renderProgressBlock(job) {
 }
 
 /* ── Load jobs ───────────────────────────────────────────────────── */
+async function loadJobDescription(detailsEl) {
+  if (!detailsEl.open) return;
+  const body = detailsEl.querySelector('.job-description-body');
+  if (!body || body.dataset.loaded === '1') return;
+  const jobId = detailsEl.dataset.jobId;
+  if (!jobId) return;
+  body.textContent = 'Loading…';
+  try {
+    const res = await fetch(`/api/jobs/${jobId}/description`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+    const text = (data.description || '').trim();
+    body.textContent = text || 'No description saved.';
+    body.dataset.loaded = '1';
+  } catch (err) {
+    body.textContent = `Failed to load: ${err.message}`;
+  }
+}
+
 async function loadJobs() {
   const grid   = document.getElementById('jobGrid');
   const search = document.getElementById('searchInput').value.trim();
   const source = document.getElementById('sourceFilter').value;
   const dates  = currentDateRange();
+
+  if (jobsAbortController) jobsAbortController.abort();
+  jobsAbortController = new AbortController();
+  const signal = jobsAbortController.signal;
 
   grid.innerHTML = '<div class="spinner"></div>';
   grid.classList.toggle('layout-compact', currentLayout === 'compact');
@@ -2903,7 +2927,7 @@ async function loadJobs() {
   if (dates.to)   params.set('date_to',   dates.to);
 
   try {
-    const res  = await fetch('/api/jobs?' + params.toString());
+    const res  = await fetch('/api/jobs?' + params.toString(), { signal });
     const data = await res.json();
 
     grid.innerHTML = '';
@@ -2947,6 +2971,7 @@ async function loadJobs() {
       grid.appendChild(container);
     });
   } catch (err) {
+    if (err.name === 'AbortError') return;
     grid.innerHTML = `<div class="empty"><h2>Loading Failed</h2><p>${err.message}</p></div>`;
   }
 }
@@ -3482,11 +3507,14 @@ function escHtml(str) {
 
 /* ── Init ────────────────────────────────────────────────────────── */
 function refreshAll() {
+  // Critical path first (chips + job list), then heavier widgets
   loadStats();
-  loadJourney();
-  loadLocationStats();
-  loadDailyStats();
   loadJobs();
+  setTimeout(() => {
+    loadJourney();
+    loadLocationStats();
+    loadDailyStats();
+  }, 0);
 }
 
 // Auto-refresh the page when HTML templates change (no server restart needed)
@@ -3521,12 +3549,14 @@ function refreshAll() {
   });
 });
 
-loadStats();
-loadJourney();
-loadLocationStats();
-loadDailyStats();
 setLayout(currentLayout);
+loadStats();
 loadJobs();
+setTimeout(() => {
+  loadJourney();
+  loadLocationStats();
+  loadDailyStats();
+}, 0);
 </script>
 </body>
 </html>
