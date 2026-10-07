@@ -99,6 +99,37 @@ _AI_ML_TITLE = re.compile(
     re.I,
 )
 
+# Tokens used to detect explicit OR language lists in the raw JD text.
+_OR_LANG_TOKEN = (
+    r"(?:node\.?js|nodejs|node|typescript|javascript|python|java|golang|go|"
+    r"kotlin|php|ruby|scala|rust|c#|csharp|\.net|django|flask|fastapi|"
+    r"spring(?:\s*boot)?|express(?:\.js)?|nestjs?|nest\.js)"
+)
+# "TypeScript, Python or similar" / "Node.js or Python" / "Python and/or TypeScript"
+_OR_LANG_LIST_RE = re.compile(
+    rf"\b({_OR_LANG_TOKEN})(?:\s*,\s*({_OR_LANG_TOKEN}))*"
+    rf"\s+(?:and\s+)?or\s+"
+    rf"(?:similar|equivalent|comparable|related(?:\s+modern)?(?:\s+languages?)?"
+    rf"|{_OR_LANG_TOKEN})\b",
+    re.I,
+)
+_OR_AND_OR_RE = re.compile(
+    rf"\b({_OR_LANG_TOKEN})\s+and/or\s+({_OR_LANG_TOKEN})\b",
+    re.I,
+)
+# Independent hard ask outside an OR phrase (do not demote these to or_list).
+_INDEPENDENT_HARD_PATTERNS = (
+    r"strong\s+{lang}\b",
+    r"{lang}\s+is\s+the\s+primary\b",
+    r"primary\s+language[^.]*\b{lang}\b",
+    r"production\s+experience\s+with\s+{lang}\b",
+    r"familiarity\s+with\s+{lang}[^.]*\bis\s+required\b",
+    r"\b{lang}\b[^.]*\bis\s+required\b",
+    r"required[^.]*\b{lang}\b",
+    r"must\s+(?:have|know|use)\s+[^.]*\b{lang}\b",
+    r"experience\s+with\s+{lang}\s+for\s+backend\b",
+)
+
 
 def _canonical_backend(name: str) -> Optional[str]:
     raw = re.sub(r"\s+", " ", str(name or "").strip().lower())
@@ -112,6 +143,148 @@ def _canonical_backend(name: str) -> Optional[str]:
         if re.search(rf"\b{re.escape(alias)}\b", raw):
             return canonical
     return raw.replace(" ", "_")[:40]
+
+
+def _or_match_languages(match: re.Match) -> List[str]:
+    """Parse every language token from an OR-phrase match (not just capture groups)."""
+    chunk = match.group(0)
+    chunk = re.sub(
+        r"\s+(?:and\s+)?or\s+(?:similar|equivalent|comparable|"
+        r"related(?:\s+modern)?(?:\s+languages?)?)\s*$",
+        "",
+        chunk,
+        flags=re.I,
+    )
+    chunk = re.sub(r"\s+and/or\s+", ",", chunk, flags=re.I)
+    chunk = re.sub(r"\s+or\s+", ",", chunk, flags=re.I)
+    names: List[str] = []
+    for part in re.split(r"\s*,\s*", chunk):
+        part = part.strip()
+        if not part:
+            continue
+        canonical = _canonical_backend(part)
+        if canonical:
+            names.append(canonical)
+    return list(dict.fromkeys(names))
+
+
+def find_or_language_groups(text: str) -> List[List[str]]:
+    """Deterministic OR groups from JD wording (comma+or, or, and/or)."""
+    if not text:
+        return []
+    groups: List[List[str]] = []
+    seen = set()
+    for pattern in (_OR_LANG_LIST_RE, _OR_AND_OR_RE):
+        for match in pattern.finditer(text):
+            names = _or_match_languages(match)
+            if len(names) < 2:
+                continue
+            key = tuple(names)
+            if key in seen:
+                continue
+            seen.add(key)
+            groups.append(names)
+    return groups
+
+
+def _independently_hard_required(lang: str, text: str, or_spans: List[tuple]) -> bool:
+    """True when the JD hard-requires `lang` outside any detected OR phrase."""
+    if not text or not lang:
+        return False
+
+    surfaces = {re.escape(lang)}
+    for alias, canonical in _BACKEND_ALIASES.items():
+        if canonical == lang:
+            surfaces.add(re.escape(alias))
+    lang_alt = "|".join(sorted(surfaces, key=len, reverse=True))
+
+    for pattern_tmpl in _INDEPENDENT_HARD_PATTERNS:
+        pattern = re.compile(pattern_tmpl.format(lang=rf"(?:{lang_alt})"), re.I)
+        for match in pattern.finditer(text):
+            start, _end = match.span()
+            if any(span_start <= start < span_end for span_start, span_end in or_spans):
+                continue
+            return True
+    return False
+
+
+def _or_phrase_spans(text: str) -> List[tuple]:
+    spans: List[tuple] = []
+    for pattern in (_OR_LANG_LIST_RE, _OR_AND_OR_RE):
+        for match in pattern.finditer(text or ""):
+            spans.append(match.span())
+    return spans
+
+
+def _evidence_for_group(description: str, group: List[str]) -> str:
+    for pattern in (_OR_LANG_LIST_RE, _OR_AND_OR_RE):
+        for match in pattern.finditer(description or ""):
+            names = set(_or_match_languages(match))
+            if names.issuperset(group) or names == set(group):
+                return match.group(0).strip()[:240]
+    return ""
+
+
+def apply_or_list_heuristics(description: str, extract: Dict) -> Dict:
+    """
+    Force explicit JD OR language lists to `or_list`, even if the model labeled
+    them implied/required (e.g. duties said "work across TypeScript, Python").
+
+    Does not demote a language that is independently hard-required outside the
+    OR phrase (e.g. "Strong Python skills, it's the primary language").
+    """
+    groups = find_or_language_groups(description)
+    if not groups:
+        return extract
+
+    spans = _or_phrase_spans(description)
+    languages = list(extract.get("backend_languages") or [])
+    by_name = {item.get("name"): item for item in languages if item.get("name")}
+
+    for group in groups:
+        demote = [
+            name for name in group
+            if not _independently_hard_required(name, description, spans)
+        ]
+        if len(demote) < 2:
+            # Need at least two soft OR options; otherwise leave model labels.
+            continue
+        evidence = _evidence_for_group(description, demote)
+        for name in demote:
+            existing = by_name.get(name)
+            if existing:
+                if existing.get("requiredness") in HARD_REQUIREDNESS:
+                    existing["requiredness"] = "or_list"
+                    if evidence and not existing.get("evidence"):
+                        existing["evidence"] = evidence
+            else:
+                item = {
+                    "name": name,
+                    "requiredness": "or_list",
+                    "evidence": evidence,
+                }
+                languages.append(item)
+                by_name[name] = item
+
+    or_groups: List[List[str]] = list(extract.get("backend_or_groups") or [])
+    existing_keys = {tuple(g) for g in or_groups}
+    for group in groups:
+        soft = [
+            name for name in group
+            if by_name.get(name, {}).get("requiredness") == "or_list"
+        ]
+        soft = list(dict.fromkeys(soft))
+        if len(soft) < 2:
+            continue
+        key = tuple(soft)
+        if key not in existing_keys:
+            or_groups.append(soft)
+            existing_keys.add(key)
+
+    extract = dict(extract)
+    extract["backend_languages"] = languages
+    extract["backend_or_groups"] = or_groups
+    return extract
 
 
 def find_ai_ml_title_requirement(job: Dict) -> Optional[str]:
@@ -164,11 +337,19 @@ For each item set `requiredness` to exactly one of:
 - company_uses — another team or the existing system uses it; this role does not have to write it (e.g. frontend owns React, "our backend is Go"; or a company tech dump like "our platform is built with Go, Python, Scala")
 - willingness — junior/learn-on-the-job / "basic knowledge, exposure, or willingness to develop"
 
-AND is the default. Two bullets both asking for production Python and production Node are AND, not OR.
+AND is the default when Requirements list languages without or / and/or / either.
+Two separate bullets both asking for production Python and production Node are AND, not OR.
 Only use `or_list` and `backend_or_groups` when the JD clearly says or / and/or / either.
 Do NOT put AND languages into `backend_or_groups`.
 
-TypeScript/JavaScript belong here only when they are a **backend** ask (Node/Express/Nest). Frontend-only TS/JS must be omitted.
+Explicit OR examples (all members `or_list`, and one `backend_or_groups` entry):
+- "Experience with TypeScript, Python or similar modern languages"
+- "Backend in Node.js or Python" / "Python and/or TypeScript"
+
+Duties / tech dumps are NOT hard AND by themselves:
+- "Work across TypeScript, Python, React and modern full-stack technologies" alone does not make Python `required`/`implied` when Requirements use OR (or state no backend language).
+
+TypeScript/JavaScript: include them when they are a backend ask (Node/Express/Nest) **or** when they appear in an OR language list with other backends ("TypeScript, Python or similar"). Omit only frontend-only TS/JS with no backend/OR language meaning.
 
 ### AI/ML-core
 `ai_ml_core` is true only when the **job itself** is AI/ML engineering: AI Engineer, ML Engineer, LLM Engineer, training/fine-tuning models, ML platforms, research, PyTorch/TensorFlow as core work.
@@ -215,7 +396,8 @@ TypeScript/JavaScript belong here only when they are a **backend** ask (Node/Exp
         )
         raw = response.choices[0].message.content
         parsed = json.loads(raw)
-        return _normalize_extract(parsed)
+        normalized = _normalize_extract(parsed)
+        return apply_or_list_heuristics(description, normalized)
     except Exception as e:
         print(f"Warning: stack extract failed ({e}) — fail-open to full scorer")
         return None

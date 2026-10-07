@@ -461,6 +461,29 @@
       "warnings": []
     },
     {
+      "eval_id": "typescript-python-or-similar",
+      "expected_band": "good",
+      "note": "Requirements 写 TypeScript, Python or similar → OR 放行；duties 的 work across 不算硬 AND",
+      "job": {
+        "title": "Product Engineer",
+        "company": "Voice AI Startup",
+        "location": "Berlin, Germany – On-site",
+        "link": "https://example.com/jobs/ts-python-or",
+        "job_id": "eval-ts-python-or",
+        "source": "manual",
+        "description": "About the role\n\nJoin a fast-growing AI company building voice AI agents for businesses.\n\nAs a Product Engineer, you won't just receive tickets and write code. You'll identify problems, decide what to build, own projects end-to-end and ship directly to production.\n\nWhat you'll do\n\nBuild and ship AI-powered products used by real customers\nWork across TypeScript, Python, React and modern full-stack technologies\nBuild products around AI agents, real-time voice and distributed systems\nTurn customer problems into practical technical solutions\nOwn features from idea through production and iteration\n\nWhat we're looking for\n\nStrong full-stack software engineering experience\nExcellent engineering fundamentals and ability to learn quickly\nExperience with TypeScript, Python or similar modern languages\nProven experience owning projects or products end-to-end\nA product mindset: you care about what should be built and why, not only how to build it\nExperience in a fast-moving startup environment\n\nImportant\n\nThis is a 100% on-site role in Berlin. Candidates must be able to relocate to Berlin and work on-site.",
+        "applicants": ""
+      },
+      "baseline_from_db": {
+        "match_score": 1.0,
+        "recommendation": "No",
+        "special_match": null,
+        "disqualification_reason": "python (hard backend; candidate has no production experience)",
+        "summary": "Old extract treated work-across Python as hard AND; OR heuristic should pass stack gate."
+      },
+      "warnings": []
+    },
+    {
       "eval_id": "ai-ml-core-software-engineer",
       "expected_band": "fail",
       "note": "Title 是 Software Engineer，但 JD 核心是训模型 / LLM stack → AI/ML-core gate fail",

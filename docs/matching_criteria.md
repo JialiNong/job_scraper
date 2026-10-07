@@ -49,6 +49,12 @@ In code this is a pre-AI extract + local gate (`stack_gate.py`). The extract lab
 
 - "Backend in Node.js or Python"
 - "Experience with Python and/or Node.js"
+- "Experience with TypeScript, Python or similar modern languages"
+
+Duties / tech dumps are **not** hard AND by themselves. Prefer the Requirements wording when both appear:
+
+- "Work across TypeScript, Python, React and modern full-stack technologies" (What you'll do) **plus** "TypeScript, Python or similar" (What we're looking for) → **OR, pass**
+- Do not fail just because a duties line lists Python next to TypeScript with "and"
 
 **Also pass** when:
 

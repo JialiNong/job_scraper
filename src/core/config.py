@@ -80,6 +80,7 @@ TITLE_EXCLUDE_KEYWORDS = [
     r"\bApplied\s+Researcher\b",
     r"\bApplied\s+AI\s+Engineer\b",
     r"\bAI\s+Engineer\b",
+    r"\bAI\s+Training\b",
     r"\bLLM(?:\s+\w+){0,3}\s+Engineer\b",
     r"\bGenerative\s+AI\b",
     r"\bPrompt\s+Engineer\b",
