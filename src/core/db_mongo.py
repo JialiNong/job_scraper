@@ -816,7 +816,13 @@ def get_daily_activity_stats(days: int = 120) -> list:
     return out
 
 
-def mark_job_as_matched(job_id, source, match_score=None, analysis=None):
+def mark_job_as_matched(
+    job_id,
+    source,
+    match_score=None,
+    analysis=None,
+    clear_description=False,
+):
     """
     Mark a job as AI-analyzed and persist the full analysis on the jobs document.
 
@@ -828,6 +834,7 @@ def mark_job_as_matched(job_id, source, match_score=None, analysis=None):
         source (str): Job source website
         match_score (float): Match score (0-10)
         analysis (dict): Full AI analysis payload to store on the job
+        clear_description (bool): Drop JD text (stack-gate stubs keep title + link)
 
     Returns:
         bool: True if updated successfully
@@ -856,7 +863,15 @@ def mark_job_as_matched(job_id, source, match_score=None, analysis=None):
             "summary": analysis.get("summary", ""),
             "what_youll_do": analysis.get("what_youll_do") or {"matched": [], "unmatched": []},
             "what_theyre_looking_for": analysis.get("what_theyre_looking_for") or {"matched": [], "unmatched": []},
+            "match_gate": analysis.get("match_gate") or "",
+            "requirement_extract": analysis.get("requirement_extract") or {},
         })
+
+    if clear_description:
+        update_data["description"] = ""
+        update_data["description_cleared_at"] = datetime.now()
+        # Extract quotes duplicate the JD; unmatched review only needs title + link.
+        update_data["requirement_extract"] = {}
 
     result = collection.update_one(
         {"job_id": job_id, "source": source},
@@ -895,12 +910,13 @@ def get_unmatched_jobs(
     score_min=None,
     score_max=None,
     user_status=None,
+    match_gate=None,
 ):
     """
     Return AI-analyzed jobs that scored below the match threshold.
 
-    Newest matched_at first. Optional time range and score range filters
-    are applied on top of the unmatched threshold.
+    Newest matched_at first. Optional time range, score range, and match_gate
+    filters are applied on top of the unmatched threshold.
     """
     db = get_db()
     collection = db[COLLECTION_NAME]
@@ -931,8 +947,10 @@ def get_unmatched_jobs(
 
     if source:
         filter_dict["source"] = source
+    if match_gate:
+        filter_dict["match_gate"] = match_gate
     if user_status == "watchlist":
-        filter_dict["user_status"] = "watchlist"
+        filter_dict["user_status"] = "watchlist""
     if search:
         filter_dict["$or"] = [
             {"title": {"$regex": search, "$options": "i"}},

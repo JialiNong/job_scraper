@@ -6,15 +6,15 @@ Score 0–10. Apply the steps in order. Each rule is stated once.
 
 - **Languages**: English (professional). Chinese (native). Does **not** speak German.
 - **Frontend**: 7 years with React, Angular, Vue, and strong vanilla JavaScript / ES6+. Also TypeScript, Tailwind, Next.js, Nuxt, Webpack, Vite.
-- **Backend**: 1 year full-stack in the Node.js ecosystem (Express, Nest, Fastify, Koa, TypeScript/JavaScript). A little Python — **not** enough when Python is the only / primary backend. Does **not** know Java, Go, PHP, Ruby, C#, .NET, Scala, Rust, or Kotlin as a backend.
-- **Also on resume**: MongoDB, Git, Sentry, Jest, Cypress, Playwright, AI-assisted development.
+- **Backend**: 1 year full-stack in the Node.js ecosystem (Express, Nest, Fastify, Koa, TypeScript/JavaScript). A little Python — **not** production backend. Treat Python like Java/Go when it is a hard or implied backend requirement. Does **not** know Java, Go, PHP, Ruby, C#, .NET, Scala, Rust, or Kotlin as a backend.
+- **Also on resume**: MongoDB, Git, Sentry, Jest, Cypress, Playwright, AI-assisted development (using Copilot / ChatGPT / product LLM features). Not an AI/ML engineer: no model training, fine-tuning, or ML-platform work.
 - **Background**: B2B SaaS, B2C e-commerce, startups, and food compliance / regulatory. Consumer apps, admin tools, high-traffic work (3M+ daily views), UX, complex forms, roles and permissions, product-management UIs, component libraries / design systems, performance optimization.
 
 ## Step 1 — Hard gates
 
 If **any** gate fails: `match_score` ≤ 3, `recommendation` **No**, `special_match` false. Do not apply bonuses or Special Match.
 
-The **German gate** also stops the rest of the evaluation: do not score stack, years, domain, or Special Match.
+The **German gate**, **backend-stack gate**, and **AI/ML-core gate** also stop the rest of the evaluation: do not score remaining stack, years, domain, or Special Match.
 
 ### 1. German language (check first)
 
@@ -33,18 +33,31 @@ Non-English postings (mostly German; French etc. rare) are already filtered out 
 
 ### 2. Backend language
 
-**Fail** only if the JD's **only / clearly primary** mandatory backend is a language the candidate does not know (Python-only, Java-only, Go-only, and the others listed above), **and** Node.js / TypeScript-backend / JavaScript-backend is **not** an accepted or required option.
+In code this is a pre-AI extract + local gate (`stack_gate.py`). The extract labels each backend language as `required`, `implied`, `or_list`, `nice_to_have`, `company_uses`, or `willingness`. Do **not** wait for the words must-have / required. A language in Requirements / What you'll bring / Our stack for **this role** is hard even without that wording.
 
-**Do not fail** when a known backend and an unknown one are both required or both listed. These stay in scoring as approximate matches:
+**Production backends the candidate has:** Node.js / TypeScript-backend / JavaScript-backend (Express, Nest, Fastify, Koa, and similar).
 
-- "Python, TypeScript, and modern web technologies"
+**Not production (treat as a gap):** Python, Django, Flask, FastAPI, Java, Go, PHP, Ruby, C#, .NET, Scala, Rust, Kotlin, Spring.
+
+**Fail** if any **hard** backend ask (`required` or `implied`) is a language the candidate cannot do in production. AND means fail even when a known language is listed next to an unknown one:
+
+- "Python, TypeScript, and modern web technologies" (Python is a hard backend ask)
+- "Working experience in a JVM backend — Kotlin or Java with Spring"
+- "Strong Python skills, it's the primary language"
+
+**OR-list is different.** **Pass** when at least one option is a production backend the candidate has:
+
 - "Backend in Node.js or Python"
 - "Experience with Python and/or Node.js"
-- Full-stack with React + "Python / TypeScript"
 
-Put that gap in `red_flags`, `missing_requirements`, `what_theyre_looking_for.unmatched`, and `summary`. Recommendation **Maybe** when the unknown language is the main caveat. **Floor**: if the other required skills largely fit, the final score is **≥ 7.0**. Explain the gap in text; do not drop the score below 7.0 to represent it.
+**Also pass** when:
 
-**Also do not fail** when no backend language is required, backend is nice-to-have, the role is frontend-focused with optional backend, the required backend is Node.js / TypeScript / JavaScript only, or the unknown language is only nice-to-have.
+- No backend language is required
+- Backend is only nice-to-have
+- The role is frontend; an unknown language is `company_uses` (another team's stack, e.g. "you own the React dashboard; our backend is Go")
+- The unknown language is only `willingness` / learn-on-the-job / "basic knowledge or exposure" (typical junior listings)
+
+Do not keep mixed AND-stack jobs for review and do not floor them at 7.0.
 
 ### 3. Years of experience
 
@@ -60,6 +73,18 @@ Do not fail on the title "Senior" alone when the stated years are in range. Nice
 **Fail** if the title includes DevOps, SRE, or Infrastructure; the JD says DevOps or SRE experience is required / mandatory; or infrastructure / operations is a core responsibility (more than half the job).
 
 **Pass** if DevOps/SRE is only nice-to-have, the JD only mentions basic CI/CD, Docker, or Git, or there is no explicit DevOps requirement.
+
+### 5. AI / ML core role
+
+**Fail** if the job is primarily AI/ML *engineering* — building, training, or operating models — not a product/frontend/fullstack role that happens to use AI.
+
+Typical fails: AI Engineer, Machine Learning Engineer, LLM Engineer, MLOps, Applied AI / NLP / Prompt Engineer as the role; core work is training or fine-tuning models, research, ML platforms, or owning an LLM stack (PyTorch / TensorFlow / CUDA / training pipelines).
+
+**Pass** if AI is a product feature or a coding aid:
+
+- AI-assisted development, Copilot, ChatGPT
+- Frontend/fullstack at an AI company (UI on top of existing models)
+- Shipping practical LLM product loops (prompt → structured output → human review) as one feature of a web product
 
 ## Step 2 — Ordinary score
 
@@ -128,7 +153,7 @@ Do not be conservative on A/B/C. Hard gates override this step. If a gate in Ste
 
 - The role is frontend-only (Frontend Developer / Engineer, UI Engineer, JavaScript Developer). Not backend-heavy (more than about 70% backend work), not DevOps/SRE.
 - The required frontend stack fully matches: React and/or Vue and/or Angular and/or TypeScript/JavaScript. Next.js, Nuxt, Redux, and the rest of those ecosystems count. Vanilla-JS frontend roles count.
-- There is no sole mandatory backend in an unknown language.
+- There is no hard/implied required backend in an unknown language. `company_uses` (another team's stack) does not count.
 
 ### B. Junior fullstack + Node.js → 9.0
 
@@ -161,5 +186,5 @@ A perfect React frontend role in Leipzig should be **9.5–10**, not 8.
 
 - **0–3**: A hard gate failed
 - **4–6**: Weak ordinary match
-- **7–8**: Good ordinary match, including mixed-stack jobs held for review. Stay here when A/B/C do not apply.
+- **7–8**: Good ordinary match. Stay here when A/B/C do not apply. Mixed AND-stack jobs with an unknown required backend are fails (0–3), not this band.
 - **9–10**: Special Match only. Leipzig jobs sit at the top of this band.

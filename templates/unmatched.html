@@ -256,6 +256,20 @@
       color: var(--muted);
     }
     .source-pill { text-transform: capitalize; }
+    .gate-pill { background: #3f2a16; color: #fdba74; }
+    .gate-pill.gate-stack { background: #3f2a16; color: #fdba74; }
+    .row-open {
+      flex-shrink: 0;
+      color: var(--accent);
+      font-size: .78rem;
+      font-weight: 600;
+      text-decoration: none;
+      padding: 4px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      white-space: nowrap;
+    }
+    .row-open:hover { border-color: var(--accent); }
 
     .reason-box {
       background: #ef444415;
@@ -424,6 +438,13 @@
     <option value="all">All Sources</option>
     <option value="linkedin">LinkedIn</option>
     <option value="indeed">Indeed</option>
+  </select>
+  <select id="gateFilter" onchange="goPage(1)">
+    <option value="all">All gates</option>
+    <option value="stack">Stack reject</option>
+    <option value="ai_ml">AI/ML reject</option>
+    <option value="german">German reject</option>
+    <option value="scored">Scored below threshold</option>
   </select>
   <div class="watchlist-chip" id="watchlistChip" onclick="toggleWatchlistFilter()">
     <span class="watchlist-dot"></span>
@@ -698,10 +719,20 @@ function renderList(label, items, cls) {
     </div>`;
 }
 
+function gateLabel(gate) {
+  if (gate === 'stack') return 'Stack';
+  if (gate === 'ai_ml') return 'AI/ML';
+  if (gate === 'german') return 'German';
+  if (gate === 'scored') return 'Scored';
+  return '';
+}
+
 function renderCard(job) {
   const score = Number(job.match_score || 0);
   const reason = (job.disqualification_reason || '').trim();
   const summary = (job.summary || '').trim();
+  const gate = job.match_gate || '';
+  const isStackStub = gate === 'stack';
   const hasAnalysis = Boolean(
     reason || summary ||
     (job.what_youll_do && ((job.what_youll_do.matched || []).length || (job.what_youll_do.unmatched || []).length)) ||
@@ -710,6 +741,12 @@ function renderCard(job) {
   const userStatus = job.user_status || '';
   const statusLabel = userStatus === 'watchlist' ? 'Can Apply' : 'Unmatched';
   const statusCls = userStatus === 'watchlist' ? 's-watchlist' : 's-unmatched';
+  const gatePill = gateLabel(gate)
+    ? `<span class="meta-pill gate-pill${gate === 'stack' ? ' gate-stack' : ''}">${escHtml(gateLabel(gate))}</span>`
+    : '';
+  const openLink = job.link
+    ? `<a class="row-open" href="${escHtml(job.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open ↗</a>`
+    : '';
 
   const card = document.createElement('div');
   card.className = 'card';
@@ -722,8 +759,10 @@ function renderCard(job) {
       </div>
       <div class="row-meta">
         ${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">📍 ${escHtml(job.location)}</span>` : ''}
+        ${gatePill}
         <span class="meta-pill source-pill">${escHtml(job.source || '')}</span>
         <span class="status-pill ${statusCls}" data-status-pill>${statusLabel}</span>
+        ${openLink}
         <div class="score-badge ${scoreCls(score)}">${score.toFixed(1)}</div>
       </div>
     </div>
@@ -739,18 +778,19 @@ function renderCard(job) {
 
       <div class="card-meta">
         <span class="meta-pill source-pill">${escHtml(job.source || '')}</span>
+        ${gatePill}
         ${job.matched_at ? `<span class="meta-pill">📅 ${escHtml(job.matched_at)}</span>` : ''}
         ${job.recommendation ? `<span class="meta-pill">${escHtml(job.recommendation)}</span>` : ''}
       </div>
 
       ${reason ? `<div class="reason-box"><strong>Rejection Reason</strong>${escHtml(reason)}</div>` : ''}
-      ${summary && summary !== reason ? `<div class="card-summary">${escHtml(summary)}</div>` : ''}
+      ${summary && summary !== reason && !isStackStub ? `<div class="card-summary">${escHtml(summary)}</div>` : ''}
       ${!hasAnalysis ? `<div class="card-summary">This match has not saved detailed analysis yet. Run matcher again to write full analysis.</div>` : ''}
 
-      ${renderBreakdown("What you'll do", job.what_youll_do)}
-      ${renderBreakdown("What they're looking for", job.what_theyre_looking_for)}
+      ${isStackStub ? '' : renderBreakdown("What you'll do", job.what_youll_do)}
+      ${isStackStub ? '' : renderBreakdown("What they're looking for", job.what_theyre_looking_for)}
       ${renderList('Missing Requirements', job.missing_requirements, 'bd-no')}
-      ${renderList('Red Flags', job.red_flags, 'bd-no')}
+      ${isStackStub ? '' : renderList('Red Flags', job.red_flags, 'bd-no')}
 
       <a class="btn-apply" href="${escHtml(job.link || '#')}" target="_blank" rel="noopener">View Original</a>
 
@@ -804,6 +844,7 @@ async function loadJobs() {
   const grid = document.getElementById('jobGrid');
   const search = document.getElementById('searchInput').value.trim();
   const source = document.getElementById('sourceFilter').value;
+  const gate = document.getElementById('gateFilter').value;
 
   grid.innerHTML = '<div class="spinner"></div>';
   grid.classList.toggle('layout-compact', currentLayout === 'compact');
@@ -815,6 +856,7 @@ async function loadJobs() {
   params.set('page', String(currentPage));
   params.set('page_size', String(PAGE_SIZE));
   if (source !== 'all') params.set('source', source);
+  if (gate && gate !== 'all') params.set('match_gate', gate);
   if (search) params.set('q', search);
   if (dates.from) params.set('date_from', dates.from);
   if (dates.to) params.set('date_to', dates.to);

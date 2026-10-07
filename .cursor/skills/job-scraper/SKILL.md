@@ -52,13 +52,13 @@ If the change is docs-only typography with no flow change, skip the architecture
 
 - Scoring rules live in [`docs/matching_criteria.md`](../../../docs/matching_criteria.md).
 - Candidate profile lives in `docs/user_profile.md`.
-- Do **not** invent hard gates or Special Match rules only in `ai_matcher.py` prompts. If scoring logic changes, update `matching_criteria.md` first (or together), then align prompt text and any code gates (`german_gate.py`).
+- Do **not** invent hard gates or Special Match rules only in `ai_matcher.py` prompts. If scoring logic changes, update `matching_criteria.md` first (or together), then align prompt text and any code gates (`german_gate.py`, `stack_gate.py`).
 
 ## Pipeline mental model (do not confuse)
 
 One-line funnel (must stay true in architecture + code):
 
-> Title gates (exclude → DEFAULT_KEYWORDS → AI title) → click detail → non-English JD discarded → English JD saved → matcher empty-desc skip → mandatory-German rule gate → AI score → ≥ threshold → `matched_jobs`.
+> Title gates (exclude → DEFAULT_KEYWORDS → AI title) → click detail → non-English JD discarded → English JD saved → matcher empty-desc skip → mandatory-German rule gate → stack extract + backend/AI-ML local gate → AI score → ≥ threshold → `matched_jobs`.
 
 ### Two German-related gates
 

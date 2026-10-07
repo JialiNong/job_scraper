@@ -42,7 +42,8 @@ flowchart TB
 
     subgraph Match["Match layer · ai_matcher.py"]
         M0["Empty description → skip AI"]
-        M1["German gate (rules)<br/>mandatory German in English JD"]
+        M1["German gate (rules)"]
+        M1b["Stack extract + local gate<br/>hard backend / AI-ML-core"]
         M2["Full AI match<br/>matching_criteria.md"]
         M3["Score ≥ threshold<br/>→ matched_jobs"]
     end
@@ -57,7 +58,7 @@ flowchart TB
     F5 -->|English JD saved| Jobs
     F5 -->|non-English| Stats
 
-    Jobs --> M0 --> M1 --> M2
+    Jobs --> M0 --> M1 --> M1b --> M2
     M2 -->|≥ 7.0| Matched
     M2 -->|write analysis back| Jobs
 
@@ -292,13 +293,22 @@ flowchart TD
     Empty -->|yes| Gate{"German gate (rules)<br/>find_mandatory_german_requirement()<br/>English JD requires mandatory German?"}
 
     Gate -->|mandatory German| FailDE["Local reject<br/>score≈1 · no full AI match<br/>write analysis"]
-    Gate -->|pass| AI["analyze_job_with_ai()<br/>user_profile.md<br/>+ matching_criteria.md"]
+    Gate -->|pass| TitleML{"AI/ML title?<br/>find_ai_ml_title_requirement()"}
+    TitleML -->|AI Engineer / ML / LLM…| FailML["Local reject · ai_ml"]
+    TitleML -->|pass| Extract["extract_jd_requirements()<br/>cheap JSON, no resume"]
+    Extract -->|fail-open on API error| AI
+    Extract -->|ok| ReqGate{"evaluate_requirement_gate()<br/>hard unknown backend<br/>or AI/ML-core JD?"}
+    ReqGate -->|fail| FailStack["Local reject · stack / ai_ml<br/>stack: keep title+link, clear JD"]
+    ReqGate -->|pass| AI["analyze_job_with_ai()<br/>inject extract + profile + criteria"]
 
     AI --> Score{"match_score ≥ MATCH_THRESHOLD<br/>default 7.0?"}
     Score -->|yes| MJ["Write matched_jobs<br/>status=pending"]
     Score -->|no| OnlyJobs["Write AI analysis on jobs only"]
     MJ --> Mark["mark_job_as_matched"]
     OnlyJobs --> Mark
+    FailDE --> Mark
+    FailML --> Mark
+    FailStack --> Mark
 ```
 
 ### Do not confuse the two German-related gates
@@ -314,9 +324,24 @@ flowchart TD
 
 The AI prompt / `matching_criteria.md` also describes a German gate as a fallback. In code, the rule-based `german_gate` runs first and skips the model when it hits.
 
+### Match-stage gates after German
+
+| | Backend-stack gate | AI/ML-core gate |
+|--|--------------------|-----------------|
+| **Module** | `matching/stack_gate.py` | same extract; plus title regex |
+| **Question** | Is a hard/implied backend a language the candidate cannot do in production? | Is this an AI/ML *engineering* job (train/fine-tune/LLM stack), not product UI that uses AI? |
+| **Typical hit** | Python/Java/Go/Kotlin required in Requirements, even without “must-have” | “AI Engineer”, “Software Engineer” whose JD is training models |
+| **Does not hit** | Node or Python (OR); junior “willingness to learn Java”; frontend role whose company backend is Go | Frontend/fullstack at an AI company; Copilot / shipping LLM product features |
+| **Outcome** | Local reject; **no full AI scoring**. Stays on Unmatched as a title + link stub (JD cleared) so the filter can be reviewed | Local reject; **no full AI scoring** |
+| **Extract fail** | Fail-open to the full scorer | Fail-open (title regex still runs) |
+
+Candidate production backends: Node.js / TypeScript-backend / JavaScript-backend. Python is **not** production. Mixed AND-stack (Python **and** TypeScript both hard) now fails; it is no longer floored at 7.0.
+
+`evaluate_job()` in `ai_matcher.py` is the shared path (daily matcher, eval, manual job log).
+
 ### AI scoring order (criteria)
 
-1. Hard gates: mandatory German → sole unknown backend → years too high → DevOps/SRE-core
+1. Hard gates (code first, then scorer fallback): mandatory German → unknown/non-production hard backend → AI/ML-core → years too high → DevOps/SRE-core
 2. Ordinary score 4–8 (required skills + nice-to-have / domain bonuses)
 3. Special Match A/B/C → 9–10 (Leipzig can add +0.5–1)
 4. `match_score ≥ threshold` → `matched_jobs`
@@ -329,7 +354,7 @@ Details: [`matching_criteria.md`](./matching_criteria.md).
 
 | Collection | Written by | Contents |
 |------------|------------|----------|
-| `jobs` | scrapers; matcher writes analysis back | Jobs that passed the language gate (including empty-description placeholders) |
+| `jobs` | scrapers; matcher writes analysis back | Jobs that passed the language gate (including empty-description placeholders). Matcher also stores `match_gate` (`german` / `stack` / `ai_ml` / `scored`) and `requirement_extract`. Stack-gate rejects clear `description` immediately (title + link stub for Unmatched review). |
 | `matched_jobs` | matcher (≥ threshold); manual job log (`/manual-apply`, default `pending`); unmatched **Can Apply** override; **timeout review Add as Not Applied** | High-score matches / manually logged jobs / user-promoted unmatched or timeout jobs. UI can store manual `highlights` tags (separate from AI `special_match`). |
 | `timeout_jobs` | scrapers, when the title passed but the JD panel timed out | Title + link for later review (`/timeouts`). Open → **Add as Not Applied** (`pending`) or Dismiss. |
 | `scraper_stats` | scrapers | Counters: `title_passed_clicked`, `german_filtered`, `ai_title_filtered`, `detail_timeout`, … |
@@ -340,7 +365,7 @@ Web UI (`web_app.py`) reads these for today’s funnel, match list, unmatched re
 
 **Timeouts page (`/timeouts`):** cards whose **title already passed** the scrape gates but the detail panel did not load in time. These are not saved to `jobs` (no JD). You open the original link and, if it is a real match, **Add as Not Applied** — that copies the card into `matched_jobs` as `pending`. Cards with no readable title (typical Indeed ad/empty slots, ~1 per SERP page) are not listed.
 
-**Unmatched page (`/unmatched`):** any job below the match threshold can be marked **Can Apply** (`user_status=watchlist`). That copies it into `matched_jobs` as `pending` (does not overwrite an existing Tracker row) so it can be tracked or marked applied. This is a manual override when AI scoring was wrong; it is not limited to the 6–7 score band.
+**Unmatched page (`/unmatched`):** any job below the match threshold can be marked **Can Apply** (`user_status=watchlist`). That copies it into `matched_jobs` as `pending` (does not overwrite an existing Tracker row) so it can be tracked or marked applied. This is a manual override when AI scoring was wrong; it is not limited to the 6–7 score band. Stack-gate rejects are stored without the JD (title, company, link, and the short stack reason only); filter the page by **Stack reject** to review them.
 
 **Tracker Other statuses:** `unsuitable`, `closed`, `repost`, and Reset Not Applied (`pending`). These clear application progress and are not counted as applied. `repost` is a manual mark when the same role was posted again as a new listing and does not need another application.
 
@@ -368,8 +393,9 @@ job_scraper/
 │   │   └── match_digest.py      # Today's match cards → Telegram (pipeline + /matches)
 │   ├── scrapers/                # Indeed / LinkedIn / Quick / Manual
 │   ├── matching/
-│   │   ├── ai_matcher.py        # match orchestration
-│   │   └── german_gate.py       # mandatory-German rule gate on English JDs
+│   │   ├── ai_matcher.py        # match orchestration (`evaluate_job`)
+│   │   ├── german_gate.py       # mandatory-German rule gate on English JDs
+│   │   └── stack_gate.py        # extract + local backend / AI-ML-core gate
 │   ├── web/web_app.py           # Tracker UI
 │   └── bot/telegram_bot.py      # Telegram commands (+ Indeed resume)
 └── scripts/                     # pipeline_common.sh, cleanup / eval helpers
@@ -379,6 +405,6 @@ job_scraper/
 
 ## 8. One-line funnel
 
-> **Title gates (blacklist → keywords → AI title) → open detail → discard non-English JD → save English JD → matcher skips empty desc → mandatory-German rule gate → AI scores by criteria → ≥ 7 enters Tracker.**
+> **Title gates (blacklist → keywords → AI title) → open detail → discard non-English JD → save English JD → matcher skips empty desc → mandatory-German rule gate → stack extract + backend/AI-ML local gate → AI scores by criteria → ≥ 7 enters Tracker.**
 
 The two daily commands only change *how much* to scrape. Evening Full is 24h on both platforms, 3 pages per keyword (Indeed ~15 cards/page, LinkedIn 30). Morning Light runs both in parallel: Indeed the same 24h search for 2 pages per keyword, LinkedIn the 12h quick URL for 3 pages. Each source starts AI matching as soon as its scrape finishes; job cards are pushed only after both lanes complete. **Filter and match rules are the same.**

@@ -2,8 +2,8 @@
 """
 Dry-run matching eval against a frozen golden JD set.
 
-Reuses the same German gate + AI matcher as production, but NEVER writes to
-MongoDB (no mark_job_as_matched / matched_jobs).
+Reuses the same German / stack / AI-ML gates + AI matcher as production, but NEVER
+writes to MongoDB (no mark_job_as_matched / matched_jobs).
 
 Usage:
   python3 scripts/eval_matcher.py                 # run all cases
@@ -29,13 +29,9 @@ if _SRC not in sys.path:
 from dotenv import load_dotenv
 
 from matching.ai_matcher import (
-    analyze_job_with_ai,
+    evaluate_job,
     load_matching_criteria,
     load_user_profile,
-)
-from matching.german_gate import (
-    find_mandatory_german_requirement,
-    german_disqualification_analysis,
 )
 
 load_dotenv(os.path.join(_ROOT, ".env"))
@@ -129,23 +125,20 @@ def run_one(
     temperature: float,
 ) -> Dict[str, Any]:
     job = dict(case["job"])
-    gate_reason = find_mandatory_german_requirement(job)
-    used_german_gate = False
+    analysis = evaluate_job(
+        job, user_profile, criteria, temperature=temperature
+    )
+    if not analysis:
+        return {
+            "eval_id": case["eval_id"],
+            "expected_band": case["expected_band"],
+            "error": "AI analysis failed",
+            "used_german_gate": False,
+            "match_gate": "",
+        }
 
-    if gate_reason:
-        analysis = german_disqualification_analysis(gate_reason)
-        used_german_gate = True
-    else:
-        analysis = analyze_job_with_ai(
-            job, user_profile, criteria, temperature=temperature
-        )
-        if not analysis:
-            return {
-                "eval_id": case["eval_id"],
-                "expected_band": case["expected_band"],
-                "error": "AI analysis failed",
-                "used_german_gate": False,
-            }
+    match_gate = analysis.get("match_gate") or "scored"
+    used_german_gate = match_gate == "german"
 
     score = float(analysis.get("match_score") or 0)
     special = bool(analysis.get("special_match"))
@@ -160,6 +153,7 @@ def run_one(
         "location": job.get("location") or "",
         "warnings": list(case.get("warnings") or []),
         "used_german_gate": used_german_gate,
+        "match_gate": match_gate,
         "match_score": score,
         "recommendation": analysis.get("recommendation") or "",
         "special_match": special,
@@ -235,7 +229,13 @@ def print_table(rows: List[Dict[str, Any]]) -> None:
         delta_s = "  - " if delta is None else f"{delta:+4.1f}"
         ok = "PASS" if r.get("band_pass") else "MISS"
         warn = " !" if r.get("warnings") else ""
-        gate = " [DE]" if r.get("used_german_gate") else ""
+        gate = ""
+        if r.get("used_german_gate"):
+            gate = " [DE]"
+        elif r.get("match_gate") == "stack":
+            gate = " [ST]"
+        elif r.get("match_gate") == "ai_ml":
+            gate = " [ML]"
         title = (r.get("title") or "")[:40]
         print(
             f"{r['eval_id']:<34} {r['expected_band']:<8} "
@@ -306,6 +306,7 @@ def save_baseline(path: str, rows: List[Dict[str, Any]], meta: Dict[str, Any]) -
                 "summary": r.get("summary"),
                 "actual_band": r.get("actual_band"),
                 "used_german_gate": r.get("used_german_gate"),
+                "match_gate": r.get("match_gate"),
             }
             for r in rows
             if not r.get("error")
@@ -432,6 +433,11 @@ def main() -> int:
         )
         if row.get("used_german_gate"):
             print(f"German gate: {row.get('disqualification_reason', '')[:120]}")
+        elif row.get("match_gate") in ("stack", "ai_ml"):
+            print(
+                f"{row['match_gate']} gate: "
+                f"{row.get('disqualification_reason', '')[:120]}"
+            )
         if row.get("special_match"):
             reasons = row.get("special_match_reasons") or []
             print(f"★ Special Match: {', '.join(reasons[:3])}")

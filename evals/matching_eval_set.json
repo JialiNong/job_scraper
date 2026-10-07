@@ -95,7 +95,7 @@
     {
       "eval_id": "python-only-backend",
       "expected_band": "fail",
-      "note": "Senior Backend 以 Python 为主、无 Node 选项 → backend gate fail",
+      "note": "Senior Backend 以 Python 为主、无 Node 选项 → stack gate fail",
       "job": {
         "title": "Senior Backend Engineer (m/f/d) with verification",
         "company": "TYTAN Technologies",
@@ -117,8 +117,8 @@
     },
     {
       "eval_id": "mixed-python-node-junior-fs",
-      "expected_band": "good",
-      "note": "Junior Full Stack，Python 与 Node 并存 → 不应 hard fail，应 ≥7",
+      "expected_band": "special",
+      "note": "Junior Full Stack，willingness/exposure 含 Java/Python/Spring — 过 stack gate；Junior+TS/JS 可 Special B",
       "job": {
         "title": "Junior Full Stack Developer",
         "company": "Harvey Nash",
@@ -324,8 +324,8 @@
     },
     {
       "eval_id": "leipzig-spread-mixed-kotlin",
-      "expected_band": "good",
-      "note": "Leipzig 但后端 Kotlin/Java Spring 硬要求 — 不应 Special；ordinary/weak，验证 Leipzig 不单独抬分",
+      "expected_band": "fail",
+      "note": "Leipzig 但 JVM/Kotlin/Spring 是硬后端要求 — stack gate fail；Leipzig 不拯救",
       "job": {
         "title": "Fullstack Engineer (f/m/d)",
         "company": "Spread Group",
@@ -371,7 +371,7 @@
     {
       "eval_id": "java-only-backend",
       "expected_band": "fail",
-      "note": "强制 Java/Spring，无 Node 后端选项 → fail（地点 Leipzig 也不拯救）",
+      "note": "强制 Java/Spring，无 Node 后端选项 → stack gate fail（地点 Leipzig 也不拯救）",
       "job": {
         "title": "Software Engineer - Processing of Content & Conditions (gn) with verification",
         "company": "Unite",
@@ -416,8 +416,8 @@
     },
     {
       "eval_id": "fe-plus-go-backend-gap",
-      "expected_band": "good",
-      "note": "Senior Frontend React 匹配，但 Go backend 在栈里 — 混合栈托底 ≥7，不是 fail，也通常不是 Special A",
+      "expected_band": "special",
+      "note": "Senior Frontend React；Go 是 company_uses 不是本岗硬后端 → 过 stack gate，Special A",
       "job": {
         "title": "Senior Frontend Developer",
         "company": "DATATRONiQ",
@@ -434,6 +434,52 @@
         "special_match": null,
         "disqualification_reason": "",
         "summary": "Good match with strong frontend skills in React and TypeScript, but lacks experience with Go backend and Kubernetes, which are important for the role."
+      },
+      "warnings": []
+    },
+    {
+      "eval_id": "python-and-typescript-hard-and",
+      "expected_band": "fail",
+      "note": "Python AND TypeScript 都是硬后端要求 — 不再托底 ≥7，stack gate fail",
+      "job": {
+        "title": "Full-Stack Engineer",
+        "company": "Example GmbH",
+        "location": "Berlin, Germany (Hybrid)",
+        "link": "https://example.com/jobs/python-and-ts",
+        "job_id": "eval-python-and-ts-and",
+        "source": "manual",
+        "description": "We are hiring a Full-Stack Engineer to own features across our web product.\n\nWhat you will do\n- Build React user interfaces used by our customers daily\n- Design and ship backend APIs and services\n- Work with product and design on end-to-end delivery\n\nWhat we need\n- Strong production experience with Python for backend services\n- TypeScript on the backend (Node.js) as well as React on the frontend\n- SQL, Git, and comfort with Docker\n- English. German is a plus.\n\nNice to have\n- Kubernetes, GraphQL",
+        "applicants": ""
+      },
+      "baseline_from_db": {
+        "match_score": 7.0,
+        "recommendation": "Maybe",
+        "special_match": null,
+        "disqualification_reason": "",
+        "summary": "Old mixed-stack floor kept this at 7; new stack gate should fail."
+      },
+      "warnings": []
+    },
+    {
+      "eval_id": "ai-ml-core-software-engineer",
+      "expected_band": "fail",
+      "note": "Title 是 Software Engineer，但 JD 核心是训模型 / LLM stack → AI/ML-core gate fail",
+      "job": {
+        "title": "Software Engineer",
+        "company": "Example AI Lab",
+        "location": "Munich, Germany (On-site)",
+        "link": "https://example.com/jobs/llm-core",
+        "job_id": "eval-ai-ml-core",
+        "source": "manual",
+        "description": "Software Engineer — LLM Platform\n\nYou will own our model training and evaluation stack. This is not a product-frontend role.\n\nResponsibilities\n- Fine-tune and evaluate large language models\n- Build training pipelines in PyTorch and CUDA\n- Own RAG retrieval quality, eval harnesses, and experiment tracking\n- Collaborate with research on new architectures\n\nRequirements\n- Production experience training or fine-tuning LLMs\n- Strong Python, PyTorch, and distributed training\n- Comfortable with vector databases and evaluation datasets\n- English. German not required.\n\nNice to have\n- React for internal demos is a plus, not the job.",
+        "applicants": ""
+      },
+      "baseline_from_db": {
+        "match_score": 7.0,
+        "recommendation": "Maybe",
+        "special_match": null,
+        "disqualification_reason": "",
+        "summary": "Old matcher could score this as a software engineer; AI/ML-core gate should fail."
       },
       "warnings": []
     }

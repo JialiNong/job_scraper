@@ -49,7 +49,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeo
 import trafilatura
 
 from core.db_mongo import init_db, get_collection, mark_job_as_matched, save_job
-from matching.ai_matcher import analyze_job_with_ai, load_user_profile, load_matching_criteria, _analysis_fields
+from matching.ai_matcher import evaluate_job, load_user_profile, load_matching_criteria, _analysis_fields
 from core.scraper_utils import (
     connect_browser,
     strip_html,
@@ -674,9 +674,9 @@ def process_urls(
                     f"— saving anyway (manual job log)"
                 )
 
-            # AI matching
+            # AI matching (same German / stack / AI-ML gates as the daily matcher)
             print("  🤖 Running AI matching…")
-            analysis = analyze_job_with_ai(job, user_profile, criteria)
+            analysis = evaluate_job(job, user_profile, criteria)
 
             if not analysis:
                 print("  ⚠️  AI analysis failed — saving with score=0")

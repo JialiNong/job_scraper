@@ -227,7 +227,7 @@ def _normalize_link(job: dict) -> str:
 def _serialize(job: dict) -> dict:
     """Convert MongoDB document to JSON-serialisable dict."""
     job["_id"] = str(job["_id"])
-    for key in ("matched_at", "applied_at", "created_at", "updated_at"):
+    for key in ("matched_at", "applied_at", "created_at", "updated_at", "description_cleared_at"):
         if key in job and isinstance(job[key], datetime):
             job[key] = job[key].strftime("%Y-%m-%d %H:%M")
     # Normalise job link (fixes relative LinkedIn URLs)
@@ -384,6 +384,9 @@ def api_unmatched_jobs():
         score_max = None
 
     user_status_filter = request.args.get("user_status")  # "watchlist" or None
+    match_gate_filter = (request.args.get("match_gate") or "").strip()
+    if match_gate_filter in ("", "all"):
+        match_gate_filter = None
 
     jobs, total = get_unmatched_jobs(
         page=page,
@@ -396,6 +399,7 @@ def api_unmatched_jobs():
         score_min=score_min,
         score_max=score_max,
         user_status=user_status_filter,
+        match_gate=match_gate_filter,
     )
     jobs = [_serialize(j) for j in jobs]
     pages = max(1, (total + page_size - 1) // page_size) if total else 1
