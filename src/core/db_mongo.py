@@ -950,7 +950,7 @@ def get_unmatched_jobs(
     if match_gate:
         filter_dict["match_gate"] = match_gate
     if user_status == "watchlist":
-        filter_dict["user_status"] = "watchlist""
+        filter_dict["user_status"] = "watchlist"
     if search:
         filter_dict["$or"] = [
             {"title": {"$regex": search, "$options": "i"}},

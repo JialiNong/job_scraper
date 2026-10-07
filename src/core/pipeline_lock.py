@@ -1,5 +1,5 @@
 """
-Single-flight lock for run_task.sh / run_quick.sh.
+Single-flight lock for run_task.sh / run_quick.sh / run_linkedin.sh.
 
 A second pipeline must not launch another debug Chrome with the same
 --user-data-dir: that kills the first Chrome and every in-flight scraper

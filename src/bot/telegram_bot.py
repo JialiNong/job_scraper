@@ -132,21 +132,21 @@ async def _run_pipeline(
     bot,
     script: str,
     done_text: str,
+    script_args: list[str] | None = None,
 ) -> None:
     """
     Run a scrape pipeline in the background; notify when done.
 
     Match cards are pushed by the shell script itself (run_task.sh /
-    run_quick.sh) so cron / launchd / Telegram all get the same digest.
-    The bot only sends Started / Done status here.
+    run_quick.sh / run_linkedin.sh) so cron / launchd / Telegram all get
+    the same digest. The bot only sends Started / Done status here.
     """
     global _pipeline_running
     status_text = done_text
     try:
+        cmd = ["caffeinate", "-i", script, *(script_args or [])]
         process = await asyncio.create_subprocess_exec(
-            "caffeinate",
-            "-i",
-            script,
+            *cmd,
             cwd=str(PROJECT_DIR),
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
@@ -173,6 +173,7 @@ async def _start_pipeline(
     script: str,
     started_text: str,
     done_text: str,
+    script_args: list[str] | None = None,
 ) -> None:
     global _pipeline_running
 
@@ -195,6 +196,7 @@ async def _start_pipeline(
             context.bot,
             script,
             done_text,
+            script_args=script_args,
         )
     )
     await _reply(update, started_text)
@@ -244,6 +246,67 @@ async def quick_jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "scrape and match. Job cards arrive after both lanes are done."
         ),
         done_text="✅ Done — both platforms finished.",
+    )
+
+
+def _parse_linkedin_hours(args: list[str] | None) -> tuple[float | None, str | None]:
+    """
+    Parse optional hours from /linkedin [N] (number only, e.g. 4 — not 4h).
+
+    Returns (hours, error_message). hours is None → use script default (24).
+    """
+    if not args:
+        return None, None
+    raw = args[0].strip()
+    try:
+        hours = float(raw)
+    except ValueError:
+        return None, (
+            "Usage: /linkedin [hours]\n"
+            "Examples: /linkedin · /linkedin 4 · /linkedin 2"
+        )
+    if hours <= 0:
+        return None, "Hours must be a positive number (e.g. /linkedin 4)."
+    return hours, None
+
+
+async def linkedin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /linkedin [hours] — LinkedIn-only scrape + AI match.
+
+    Default window is 24h (same as run_linkedin.sh). Pass a number to override:
+      /linkedin      → last 24h
+      /linkedin 4    → last 4h
+      /linkedin 2    → last 2h
+
+    Flow:
+      /linkedin → "Started" → caffeinate -i ./run_linkedin.sh [--hours N]
+                → scrape/match pings → match cards → "Done"
+    """
+    hours, err = _parse_linkedin_hours(context.args)
+    if err:
+        await _reply(update, err)
+        return
+
+    if hours is None:
+        script_args: list[str] = []
+        window = "24h (default)"
+    else:
+        # Prefer compact float formatting (4.0 → 4, 2.5 → 2.5)
+        hours_arg = f"{hours:g}"
+        script_args = ["--hours", hours_arg]
+        window = f"{hours_arg}h"
+
+    await _start_pipeline(
+        update,
+        context,
+        script="./run_linkedin.sh",
+        script_args=script_args,
+        started_text=(
+            f"🔗 Started — LinkedIn-only scrape + match, last {window}. "
+            "You'll get scrape/match pings, then today's job cards."
+        ),
+        done_text=f"✅ Done — LinkedIn {window} finished.",
     )
 
 
@@ -317,6 +380,7 @@ async def _post_init(app: Application) -> None:
             BotCommand("test", "Check Mac is ready"),
             BotCommand("jobs", "Full scrape + AI match (~40–60 min)"),
             BotCommand("quick_jobs", "Light scrape + AI match (~20–40 min)"),
+            BotCommand("linkedin", "LinkedIn only + match (/linkedin [hours], default 24h)"),
             BotCommand("matches", "Push today's matched job cards"),
             BotCommand("indeed_ok", "Resume Indeed after human verification"),
         ]
@@ -337,13 +401,14 @@ def main():
     app.add_handler(CommandHandler("test", test))
     app.add_handler(CommandHandler("jobs", jobs))
     app.add_handler(CommandHandler("quick_jobs", quick_jobs))
+    app.add_handler(CommandHandler("linkedin", linkedin))
     app.add_handler(CommandHandler("matches", matches))
     app.add_handler(CommandHandler("indeed_ok", indeed_ok))
     app.add_handler(CallbackQueryHandler(indeed_resume_callback, pattern=r"^indeed_resume$"))
     app.add_error_handler(_on_error)
 
     print(f"Telegram bot is running... (cwd={PROJECT_DIR})")
-    print("Commands: /start /test /jobs /quick_jobs /matches /indeed_ok")
+    print("Commands: /start /test /jobs /quick_jobs /linkedin /matches /indeed_ok")
 
     # Drop queued commands from the flood so restart does not replay /jobs.
     app.run_polling(drop_pending_updates=True, timeout=20)

@@ -11,8 +11,8 @@ All project docs and code comments are written in English.
 ```mermaid
 flowchart TB
     subgraph Triggers["Entry points"]
-        T1["Telegram<br/>/jobs · /quick_jobs · /matches · /indeed_ok"]
-        T2["Shell<br/>run_task.sh · run_quick.sh"]
+        T1["Telegram<br/>/jobs · /quick_jobs · /linkedin · /matches · /indeed_ok"]
+        T2["Shell<br/>run_task.sh · run_quick.sh · run_linkedin.sh"]
         T3["LaunchD schedule<br/>~18:00 / ~11:00"]
         T4["Web UI<br/>start_ui.sh"]
         T5["Manual CLI<br/>scrapers / matcher"]
@@ -21,7 +21,7 @@ flowchart TB
     subgraph Scrape["Scrape layer"]
         Chrome["Chrome CDP :9222"]
         Indeed["indeed_scraper.py<br/>last 24h"]
-        LI["linkedin_scraper.py<br/>last 24h × keywords"]
+        LI["linkedin_scraper.py<br/>24h default · --hours N"]
         LIQ["linkedin_quick_scraper.py<br/>light run · 12h OR URL"]
         Manual["manual_apply_scraper.py<br/>manual job URLs"]
     end
@@ -76,6 +76,7 @@ flowchart TB
 |---------|------|--------------|--------------|
 | `./run_task.sh` | ~18:00 (or Telegram `/jobs`) | Full: Indeed + LinkedIn lanes in parallel (24h, 3 pages/keyword). Each source matches as soon as its scrape finishes, with Telegram pings; digest after both lanes; then cleanup old unmatched descriptions | 40–60 min |
 | `./run_quick.sh` | ~11:00 (or Telegram `/quick_jobs`) | Light: Indeed (24h, 2 pages/keyword) + LinkedIn quick URL (12h, 3 pages) lanes in parallel. Same per-source match + pings; digest after both lanes | 20–40 min |
+| `./run_linkedin.sh` | Ad hoc | LinkedIn-only keyword loop + AI match. Time window via `--hours` (default **24**). Same pages/cards as full LinkedIn (`FULL_MAX_PAGES` × `LINKEDIN_JOBS_PER_PAGE`) unless `-p` / `-j` override. Telegram per-lane pings + today’s match digest | depends on hours / volume |
 | `./start_ui.sh` | Anytime | Start Job Tracker Web UI (default `:5050`) | — |
 
 Prefer `caffeinate -i` for manual runs so sleep does not interrupt Playwright:
@@ -83,6 +84,9 @@ Prefer `caffeinate -i` for manual runs so sleep does not interrupt Playwright:
 ```bash
 caffeinate -i ./run_task.sh
 caffeinate -i ./run_quick.sh
+caffeinate -i ./run_linkedin.sh              # LinkedIn last 24h + match
+caffeinate -i ./run_linkedin.sh --hours 4    # last 4h
+caffeinate -i ./run_linkedin.sh --hours 2 -p 3
 ```
 
 ### 2.2 Telegram bot commands
@@ -93,6 +97,7 @@ caffeinate -i ./run_quick.sh
 | `/test` | Confirm the Mac is connected and ready |
 | `/jobs` | Run `run_task.sh` in the background; per-source scrape/match pings; “Done” when both lanes finish |
 | `/quick_jobs` | Run `run_quick.sh` in the background; same per-source pings; “Done” when both lanes finish |
+| `/linkedin` `[hours]` | Run `run_linkedin.sh` (LinkedIn-only + AI match). Optional hours number (default **24**). Examples: `/linkedin`, `/linkedin 4`, `/linkedin 2` |
 | `/matches` | Push today’s `matched_jobs` without scraping |
 | `/indeed_ok` | Resume Indeed after human verification (also: inline **Continue** button) |
 
@@ -100,7 +105,7 @@ caffeinate -i ./run_quick.sh
 
 **Match card push:** `run_task.sh` / `run_quick.sh` call `core.match_digest.push_todays_matched_jobs()` only after **both** lanes finish. That covers Telegram `/jobs` / `/quick_jobs`, launchd, and any manual shell run. `/matches` uses the same digest helper without scraping.
 
-**Single-flight lock:** `run_task.sh` / `run_quick.sh` write `logs/pipeline.pid`. A second `/jobs`, `/quick_jobs`, or shell run exits immediately instead of launching another debug Chrome (same `--user-data-dir` would kill the first Chrome and abort Indeed with `TargetClosedError`). Telegram also checks this pidfile. If Indeed’s tab still dies mid-run, `indeed_scraper` reconnects over CDP and retries that page instead of exiting 1.
+**Single-flight lock:** `run_task.sh` / `run_quick.sh` / `run_linkedin.sh` write `logs/pipeline.pid`. A second `/jobs`, `/quick_jobs`, or shell run exits immediately instead of launching another debug Chrome (same `--user-data-dir` would kill the first Chrome and abort Indeed with `TargetClosedError`). Telegram also checks this pidfile. If Indeed’s tab still dies mid-run, `indeed_scraper` reconnects over CDP and retries that page instead of exiting 1.
 
 **Destination:** Job cards, pipeline Done/error status, and Indeed challenge alerts go to the configured forum topic (`TELEGRAM_CHAT_ID` + `TELEGRAM_MESSAGE_THREAD_ID` — Jiali Personal Hub → Job Assistance). Command authorization stays on `TELEGRAM_ALLOWED_USER_ID` (your personal account). Slash-command replies (`/start`, Started, …) stay in the topic you typed in; send commands from Job Assistance so those stay there too.
 
@@ -126,8 +131,9 @@ Indeed pacing is slower and more human-like than LinkedIn: random think-time bef
 | Command | Purpose |
 |---------|---------|
 | `python3 src/scrapers/indeed_scraper.py [-k …] [-p N] [-j N]` | Indeed only (default 3 pages × 15) |
-| `python3 src/scrapers/linkedin_scraper.py [-k …] [-p N] [-j N]` | Full LinkedIn keyword loop (default 3 pages × 30) |
+| `python3 src/scrapers/linkedin_scraper.py [-k …] [-p N] [-j N] [--hours N]` | Full LinkedIn keyword loop (default 3 pages × 30; time window default config 24h, or `--hours`) |
 | `python3 src/scrapers/linkedin_quick_scraper.py [-p N] [-j N]` | LinkedIn 12h quick URL (default 3 pages × 30) |
+| `./run_linkedin.sh [--hours N] [-p N] [-j N]` | LinkedIn-only scrape + AI match (default `--hours 24`) |
 | `python3 src/matching/ai_matcher.py [-l N] [-s source] [-t 7.0]` | AI match only (jobs without `matched_at`) |
 | `python3 src/scrapers/manual_apply_scraper.py <urls…>` | Manual job URLs → scrape + score → `matched_jobs` (default `status=pending`; `--status applied` optional) |
 | `python3 scripts/cleanup_unmatched_descriptions.py …` | Clear old unmatched JD text (also run at end of full pipeline) |
@@ -377,7 +383,7 @@ AI `special_match` / `special_match_reasons` are still written by the matcher fo
 
 ```
 job_scraper/
-├── run_task.sh / run_quick.sh / start_ui.sh   # main entry scripts
+├── run_task.sh / run_quick.sh / run_linkedin.sh / start_ui.sh
 ├── docs/
 │   ├── architecture.md          # this file
 │   ├── matching_criteria.md     # AI scoring source of truth
@@ -388,7 +394,7 @@ job_scraper/
 │   │   ├── db_mongo.py          # Mongo helpers
 │   │   ├── scraper_utils.py     # title gates, Lingua, CDP helpers
 │   │   ├── challenge_wait.py    # Indeed captcha detect + auto-continue / Telegram resume
-│   │   ├── pipeline_lock.py     # Single-flight pidfile for run_task / run_quick
+│   │   ├── pipeline_lock.py     # Single-flight pidfile for run_task / run_quick / run_linkedin
 │   │   ├── telegram_notify.py   # Sync Bot API helper (scraper alerts)
 │   │   └── match_digest.py      # Today's match cards → Telegram (pipeline + /matches)
 │   ├── scrapers/                # Indeed / LinkedIn / Quick / Manual
@@ -407,4 +413,4 @@ job_scraper/
 
 > **Title gates (blacklist → keywords → AI title) → open detail → discard non-English JD → save English JD → matcher skips empty desc → mandatory-German rule gate → stack extract + backend/AI-ML local gate → AI scores by criteria → ≥ 7 enters Tracker.**
 
-The two daily commands only change *how much* to scrape. Evening Full is 24h on both platforms, 3 pages per keyword (Indeed ~15 cards/page, LinkedIn 30). Morning Light runs both in parallel: Indeed the same 24h search for 2 pages per keyword, LinkedIn the 12h quick URL for 3 pages. Each source starts AI matching as soon as its scrape finishes; job cards are pushed only after both lanes complete. **Filter and match rules are the same.**
+The two daily commands only change *how much* to scrape. Evening Full is 24h on both platforms, 3 pages per keyword (Indeed ~15 cards/page, LinkedIn 30). Morning Light runs both in parallel: Indeed the same 24h search for 2 pages per keyword, LinkedIn the 12h quick URL for 3 pages. Ad hoc `run_linkedin.sh` / `/linkedin` is LinkedIn-only with a flexible `--hours` window (default 24). Each source starts AI matching as soon as its scrape finishes; job cards are pushed only after both lanes complete (or after the single LinkedIn lane for `run_linkedin.sh`). **Filter and match rules are the same.**

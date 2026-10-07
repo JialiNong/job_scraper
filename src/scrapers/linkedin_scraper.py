@@ -49,6 +49,23 @@ GEO_ID = LINKEDIN_CONFIG["geo_id"]
 TIME_FILTER = LINKEDIN_CONFIG["time_filter"]
 SOURCE = LINKEDIN_CONFIG["source"]
 
+
+def hours_to_f_tpr(hours: float) -> str:
+    """Map a posted-within window (hours) to LinkedIn's f_TPR value."""
+    if hours is None or hours <= 0:
+        raise ValueError(f"hours must be a positive number, got {hours!r}")
+    seconds = int(round(float(hours) * 3600))
+    if seconds <= 0:
+        raise ValueError(f"hours too small after conversion: {hours!r}")
+    return f"r{seconds}"
+
+
+def resolve_time_filter(hours=None) -> str:
+    """CLI --hours overrides config; otherwise use LINKEDIN_CONFIG time_filter."""
+    if hours is None:
+        return TIME_FILTER
+    return hours_to_f_tpr(hours)
+
 # LinkedIn selectors
 JOB_CARD_SELECTOR = LINKEDIN_CONFIG["selectors"]["job_card"]
 JOB_LINK_SELECTOR = LINKEDIN_CONFIG["selectors"]["job_link"]
@@ -137,20 +154,22 @@ def extract_job_id_from_url(url):
 
 
 
-def jobs_search_url(keyword):
+def jobs_search_url(keyword, time_filter=None):
     """
     Build LinkedIn search URL for a given keyword.
     
     Args:
         keyword: Search keyword
+        time_filter: LinkedIn f_TPR value (e.g. r86400). Default: config 24h.
         
     Returns:
         Full search URL with geo and time filters
     """
     encoded = quote_plus(keyword)
+    tf = time_filter or TIME_FILTER
     return (
         f"{BASE_URL}"
-        f"?keywords={encoded}&f_TPR={TIME_FILTER}&geoId={GEO_ID}"
+        f"?keywords={encoded}&f_TPR={tf}&geoId={GEO_ID}"
         "&origin=JOB_SEARCH_PAGE_JOB_FILTER&refresh=true"
     )
 
@@ -576,7 +595,13 @@ def go_to_next_page(page):
     return True
 
 
-def scrape_keyword(page, keyword, max_pages, max_jobs_per_page=LINKEDIN_JOBS_PER_PAGE):
+def scrape_keyword(
+    page,
+    keyword,
+    max_pages,
+    max_jobs_per_page=LINKEDIN_JOBS_PER_PAGE,
+    time_filter=None,
+):
     """
     Scrape multiple pages of LinkedIn results for a single keyword.
     
@@ -585,12 +610,13 @@ def scrape_keyword(page, keyword, max_pages, max_jobs_per_page=LINKEDIN_JOBS_PER
         keyword: Search keyword
         max_pages: Maximum number of pages to scrape
         max_jobs_per_page: Maximum jobs to process per page
+        time_filter: LinkedIn f_TPR value (e.g. r172800 for 48h)
         
     Returns:
         List of all job data dictionaries saved for this keyword
     """
     print(f"\n========== Keyword: {keyword} ==========")
-    goto_page(page, jobs_search_url(keyword))
+    goto_page(page, jobs_search_url(keyword, time_filter=time_filter))
     pause(4, 7, f"Waiting for search results: {keyword}")
 
     all_jobs = []
@@ -610,9 +636,16 @@ def main():
     keywords = args.keywords
     max_pages = args.max_pages
     max_jobs = args.max_jobs if args.max_jobs is not None else LINKEDIN_JOBS_PER_PAGE
+    time_filter = resolve_time_filter(args.hours)
+    hours_label = (
+        f"{args.hours:g}h (--hours)"
+        if args.hours is not None
+        else f"config ({time_filter})"
+    )
     print(f"Keywords: {keywords}")
     print(f"Max pages per keyword: {max_pages}")
     print(f"Max jobs per page: {max_jobs}")
+    print(f"Time window: {hours_label} → f_TPR={time_filter}")
 
     init_db()
     all_jobs = []
@@ -625,7 +658,11 @@ def main():
 
         for i, keyword in enumerate(keywords):
             jobs = scrape_keyword(
-                page, keyword, max_pages, max_jobs_per_page=max_jobs
+                page,
+                keyword,
+                max_pages,
+                max_jobs_per_page=max_jobs,
+                time_filter=time_filter,
             )
             all_jobs.extend(jobs)
             if i < len(keywords) - 1:

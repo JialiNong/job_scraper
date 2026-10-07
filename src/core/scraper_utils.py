@@ -621,6 +621,15 @@ def parse_args():
         default=None,
         help="Max job cards to process per page. Platform default if omitted.",
     )
+    parser.add_argument(
+        "--hours",
+        type=float,
+        default=None,
+        help=(
+            "LinkedIn only: posted-within window in hours "
+            "(maps to f_TPR=r<seconds>). Default: config 24h."
+        ),
+    )
     return parser.parse_args()
 
 
