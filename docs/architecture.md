@@ -135,7 +135,7 @@ Indeed pacing is slower and more human-like than LinkedIn: random think-time bef
 | `python3 src/scrapers/linkedin_quick_scraper.py [-p N] [-j N]` | LinkedIn 12h quick URL (default 3 pages × 30) |
 | `./run_linkedin.sh [--hours N] [-p N] [-j N]` | LinkedIn-only scrape + AI match (default `--hours 24`) |
 | `python3 src/matching/ai_matcher.py [-l N] [-s source] [-t 7.0]` | AI match only (jobs without `matched_at`) |
-| `python3 src/scrapers/manual_apply_scraper.py <urls…>` | Manual job URLs → scrape + score → `matched_jobs` (default `status=pending`; `--status applied` optional) |
+| `python3 src/scrapers/manual_apply_scraper.py <urls…>` | Manual job URLs → skip if `job_id` already in `jobs`/`matched_jobs`, else scrape + score → `matched_jobs` (default `status=pending`; `--status applied` optional) |
 | `python3 scripts/cleanup_unmatched_descriptions.py …` | Clear old unmatched JD text (also run at end of full pipeline) |
 | `python3 scripts/cleanup_excluded_titles.py …` | Cleanup DB rows by title blacklist |
 | `python3 scripts/eval_matcher.py …` | Matcher evaluation |
@@ -367,7 +367,7 @@ Details: [`matching_criteria.md`](./matching_criteria.md).
 
 Web UI (`web_app.py`) reads these for today’s funnel, match list, unmatched reasons, and scrape timeouts.
 
-**Log Job page (`/manual-apply`):** paste job URLs (LinkedIn / Indeed / career pages). Scrapes + AI-scores each URL into `matched_jobs`. Default status is **Not Applied** (`pending`); choose **Applied** only when you already applied (optional applied date).
+**Log Job page (`/manual-apply`):** paste job URLs (LinkedIn / Indeed / career pages). Before scrape/AI, resolves `job_id` and skips with a warning if it already exists in `jobs` or `matched_jobs` (Indeed: all jk variants). New URLs are scraped + AI-scored into `matched_jobs`. Default status is **Not Applied** (`pending`); choose **Applied** only when you already applied (optional applied date).
 
 **Timeouts page (`/timeouts`):** cards whose **title already passed** the scrape gates but the detail panel did not load in time. These are not saved to `jobs` (no JD). You open the original link and, if it is a real match, **Add as Not Applied** — that copies the card into `matched_jobs` as `pending`. Cards with no readable title (typical Indeed ad/empty slots, ~1 per SERP page) are not listed.
 

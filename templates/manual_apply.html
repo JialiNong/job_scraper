@@ -291,6 +291,7 @@ let _submittedStatus = 'pending';
 function colorLine(line) {
   const l = line.trim();
   if (l.startsWith('✅') || l.includes('Saved to matched_jobs') || l.startsWith('Success')) return `<span class="ok">${esc(line)}</span>`;
+  if (l.includes('Already in DB') || l.startsWith('⏭️')) return `<span class="info">${esc(line)}</span>`;
   if (l.startsWith('❌') || l.startsWith('✗') || l.includes('failed') || l.includes('Failed')) return `<span class="err">${esc(line)}</span>`;
   if (l.startsWith('===') || l.startsWith('[') && l.includes('/')) return `<span class="head">${esc(line)}</span>`;
   if (l.startsWith('🤖') || l.startsWith('✨') || l.startsWith('→') || l.startsWith('  →')) return `<span class="info">${esc(line)}</span>`;
@@ -381,19 +382,29 @@ async function pollStatus() {
     }
 
     // Update counter
+    const skipCount = data.skip_count || 0;
     document.getElementById('logCounter').textContent =
-      `✅ ${data.done_count}  ❌ ${data.fail_count}`;
+      `✅ ${data.done_count}  ⏭️ ${skipCount}  ❌ ${data.fail_count}`;
 
     if (!data.running) {
       clearInterval(_pollTimer);
       document.getElementById('submitBtn').disabled = false;
       const statusLabel = _submittedStatus === 'applied' ? 'Applied' : 'Not Applied';
-      if (data.fail_count > 0 && data.done_count === 0) {
+      const parts = [];
+      if (data.done_count > 0) parts.push(`${data.done_count} saved as ${statusLabel}`);
+      if (skipCount > 0) parts.push(`${skipCount} already in DB (skipped)`);
+      if (data.fail_count > 0) parts.push(`${data.fail_count} failed`);
+      if (data.done_count === 0 && data.fail_count > 0 && skipCount === 0) {
         setBanner('error', `❌ All ${data.fail_count} URL(s) failed. Check the log above.`);
-      } else if (data.fail_count > 0) {
-        setBanner('success', `✅ Done — ${data.done_count} saved as ${statusLabel}, ${data.fail_count} failed. <a href="/" style="color:var(--accent)">View Matched →</a>`);
+      } else if (data.done_count === 0 && skipCount > 0 && data.fail_count === 0) {
+        setBanner('error', `⚠️ All ${skipCount} URL(s) already in DB — nothing saved.`);
+      } else if (parts.length) {
+        const link = data.done_count > 0
+          ? ` <a href="/" style="color:var(--accent)">View Matched →</a>`
+          : '';
+        setBanner('success', `✅ Done — ${parts.join(', ')}.${link}`);
       } else {
-        setBanner('success', `✅ Done — ${data.done_count} job(s) saved as ${statusLabel}. <a href="/" style="color:var(--accent)">View Matched →</a>`);
+        setBanner('success', `✅ Done — nothing to process.`);
       }
     }
   } catch(e) {

@@ -334,6 +334,24 @@ def _timeout_id_query(job_id, source):
     return query
 
 
+def is_job_known(job_id, source="linkedin"):
+    """
+    True if job_id is already in `jobs` or `matched_jobs` (Indeed: all jk variants).
+    Used by manual-apply to skip scrape / AI / save when the URL is already logged.
+    """
+    job_id = str(job_id or "").strip()
+    source = (source or "").strip().lower()
+    if not job_id or not source:
+        return False
+    db = get_db()
+    id_query = _timeout_id_query(job_id, source)
+    if db[COLLECTION_NAME].find_one(id_query, {"_id": 1}):
+        return True
+    if db["matched_jobs"].find_one(id_query, {"_id": 1}):
+        return True
+    return False
+
+
 def save_timeout_job(
     *,
     title,

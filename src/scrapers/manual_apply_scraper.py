@@ -19,13 +19,15 @@ Usage:
 
 What it does for EACH url
 --------------------------
-1. Opens the URL in the existing debug Chrome session (CDP).
-2. Scrapes title / company / location / description.
+1. Resolves job_id from the URL; if it already exists in jobs or matched_jobs,
+   prints a warning and skips (no scrape / AI / save).
+2. Opens the URL in the existing debug Chrome session (CDP).
+3. Scrapes title / company / location / description.
    - LinkedIn / Indeed: site-specific selectors
    - Other URLs: trafilatura main-content extract + AI metadata
-3. Runs AI matching (score stored but NOT used as a filter).
-4. Saves the job to matched_jobs with status="pending" (default) or "applied".
-5. Also upserts a record in the main jobs collection.
+4. Runs AI matching (score stored but NOT used as a filter).
+5. Saves the job to matched_jobs with status="pending" (default) or "applied".
+6. Also upserts a record in the main jobs collection.
 """
 import sys
 import os
@@ -48,7 +50,7 @@ if _SRC_ROOT not in sys.path:
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import trafilatura
 
-from core.db_mongo import init_db, get_collection, mark_job_as_matched, save_job
+from core.db_mongo import init_db, get_collection, mark_job_as_matched, save_job, is_job_known
 from matching.ai_matcher import evaluate_job, load_user_profile, load_matching_criteria, _analysis_fields
 from core.scraper_utils import (
     connect_browser,
@@ -103,6 +105,15 @@ def extract_linkedin_job_id(url: str) -> Optional[str]:
 def extract_indeed_job_id(url: str) -> Optional[str]:
     jk = extract_indeed_jk_from_url(url or "")
     return jk or None
+
+
+def resolve_job_id(url: str, source: str) -> Optional[str]:
+    """Extract the same job_id that scrapers persist for this URL/source."""
+    if source == "linkedin":
+        return extract_linkedin_job_id(url)
+    if source == "indeed":
+        return extract_indeed_job_id(url)
+    return job_id_from_url(url)
 
 
 # ── per-source scrapers ───────────────────────────────────────────────────────
@@ -600,7 +611,7 @@ def process_urls(
 
     criteria = load_matching_criteria()
 
-    results = {"ok": [], "failed": []}
+    results = {"ok": [], "failed": [], "skipped": []}
 
     with sync_playwright() as playwright:
         browser = connect_browser(playwright, "job sites")
@@ -615,6 +626,19 @@ def process_urls(
             print(f"[{i}/{len(urls)}] {url}")
 
             source = detect_source(url)
+            job_id = resolve_job_id(url, source)
+            if job_id and is_job_known(job_id, source):
+                print(
+                    f"  ⚠️  Already in DB (jobs/matched_jobs): "
+                    f"job_id={job_id} source={source} — skipping"
+                )
+                results["skipped"].append(url)
+                continue
+            if not job_id and source in ("linkedin", "indeed"):
+                print(f"  ⚠️  Cannot extract {source} job_id from URL — skipping")
+                results["failed"].append(url)
+                continue
+
             try:
                 if source == "linkedin":
                     job = scrape_linkedin_job(page, url)
@@ -705,7 +729,11 @@ def process_urls(
 
     print(f"\n{'='*60}")
     print(f"✅ Success : {len(results['ok'])}")
+    print(f"⏭️  Skipped : {len(results['skipped'])} (already in DB)")
     print(f"❌ Failed  : {len(results['failed'])}")
+    if results["skipped"]:
+        for u in results["skipped"]:
+            print(f"   • {u}")
     if results["failed"]:
         for u in results["failed"]:
             print(f"   • {u}")

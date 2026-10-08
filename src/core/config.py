@@ -7,9 +7,9 @@ Centralized configuration for all scrapers
 
 # Default search keywords
 DEFAULT_KEYWORDS = [
-    "frontend",
-    "full-stack",
-    "fullstack",
+    "frontend engineer",
+    "full-stack engineer",
+    "fullstack engineer",
     "product engineer",
     "software engineer",
 ]

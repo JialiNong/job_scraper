@@ -1096,7 +1096,13 @@ def api_dev_reload_token():
 
 # Background task state (one run at a time)
 _manual_apply_lock = threading.Lock()
-_manual_apply_state: dict = {"running": False, "log": [], "done_count": 0, "fail_count": 0}
+_manual_apply_state: dict = {
+    "running": False,
+    "log": [],
+    "done_count": 0,
+    "fail_count": 0,
+    "skip_count": 0,
+}
 
 
 @app.route("/manual-apply")
@@ -1144,6 +1150,7 @@ def api_manual_apply():
             _manual_apply_state["log"] = []
             _manual_apply_state["done_count"] = 0
             _manual_apply_state["fail_count"] = 0
+            _manual_apply_state["skip_count"] = 0
 
             # Import here to avoid circular deps at module load
             from scrapers.manual_apply_scraper import process_urls as _process_urls
@@ -1164,7 +1171,9 @@ def api_manual_apply():
                 for line in _manual_apply_state["log"]:
                     if "✅ Saved to matched_jobs" in line:
                         _manual_apply_state["done_count"] += 1
-                    elif "❌ Scraping failed" in line or "Failed  :" in line:
+                    elif "Already in DB" in line and "skipping" in line:
+                        _manual_apply_state["skip_count"] += 1
+                    elif "❌ Scraping failed" in line or "Cannot extract" in line:
                         _manual_apply_state["fail_count"] += 1
             finally:
                 builtins.print = _original_print
@@ -1188,6 +1197,7 @@ def api_manual_apply_status():
         "log":        state["log"][-100:],   # last 100 lines
         "done_count": state["done_count"],
         "fail_count": state["fail_count"],
+        "skip_count": state.get("skip_count", 0),
     })
 
 
