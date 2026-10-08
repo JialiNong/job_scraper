@@ -846,49 +846,51 @@
     .job-grid.layout-compact .card.expanded .card-body { display: flex; }
     .job-grid.layout-compact .card.expanded .row-chevron { transform: rotate(90deg); }
 
-    /* Shared action / track row wrappers (stack in cards; side-by-side in list) */
-    .card-actions-row,
-    .card-track-row,
-    .card-track-left {
+    /* Apply sits alone above the match/track split */
+    .card-actions-row {
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+    .card-actions-row .btn-apply {
+      align-self: flex-start;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+
+    /* Match (left) + Progress/Highlights/Q&A (right). Stacks in cards; two cols in list. */
+    .card-split {
       display: flex;
       flex-direction: column;
       gap: 14px;
       min-width: 0;
     }
-    .job-grid.layout-compact .card-actions-row,
-    .job-grid.layout-compact .card-track-row,
-    .job-grid.layout-compact .card-track-left {
+    .card-split-match,
+    .card-split-track {
+      display: flex;
+      flex-direction: column;
       gap: 12px;
-    }
-    .job-grid.layout-compact .card-actions-row {
-      flex-direction: row;
-      align-items: stretch;
-      justify-content: space-between;
-    }
-    .job-grid.layout-compact .card-actions-row .btn-apply {
-      align-self: flex-start;
-      flex-shrink: 0;
-      white-space: nowrap;
-    }
-    .job-grid.layout-compact .card-actions-row .highlights-wrap {
-      flex: 0 0 50%;
-      width: 50%;
-      max-width: 50%;
       min-width: 0;
+    }
+    .job-grid.layout-compact .card-split {
+      flex-direction: row;
+      align-items: flex-start;
+      gap: 16px;
+    }
+    .job-grid.layout-compact .card-split-match {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .job-grid.layout-compact .card-split-track {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .job-grid.layout-compact .card-split-track .highlights-wrap {
       margin-top: 0;
-      margin-left: auto;
     }
-    .job-grid.layout-compact .card-track-row {
-      flex-direction: row;
-      align-items: stretch;
-    }
-    .job-grid.layout-compact .card-track-left {
-      flex: 1;
-      min-width: 0;
-    }
-    .job-grid.layout-compact .card-track-row .qa-wrap {
-      flex: 1;
-      min-width: 0;
+    .job-grid.layout-compact .card-split-track .qa-wrap {
       margin-top: 0;
       padding: 12px;
       border-top: none;
@@ -897,8 +899,7 @@
       border-radius: 10px;
     }
     @media (max-width: 900px) {
-      .job-grid.layout-compact .card-actions-row,
-      .job-grid.layout-compact .card-track-row {
+      .job-grid.layout-compact .card-split {
         flex-direction: column;
       }
     }
@@ -2577,8 +2578,10 @@ function renderBreakdown(title, section) {
     ...matched.map(t => `<li class="bd-ok">✓ ${escHtml(t)}</li>`),
     ...unmatched.map(t => `<li class="bd-no">✗ ${escHtml(t)}</li>`),
   ].join('');
+  // Auto-open sections that have gaps so mismatches are visible when the list card expands
+  const openAttr = unmatched.length ? ' open' : '';
   return `
-    <details class="breakdown">
+    <details class="breakdown"${openAttr}>
       <summary><span>${title}</span><span class="bd-count">${matched.length}/${total} matched</span></summary>
       <ul class="bd-list">${items}</ul>
     </details>`;
@@ -2710,11 +2713,6 @@ function renderCard(job) {
 
       ${job.summary ? `<div class="card-summary">${escHtml(job.summary)}</div>` : ''}
 
-      ${doSection}
-      ${lookingSection}
-
-      ${matchReasons ? `<ul style="font-size:.78rem;color:var(--muted);padding-left:16px;line-height:1.6;">${matchReasons}</ul>` : ''}
-
       <details class="job-description" data-job-id="${job._id}" ontoggle="loadJobDescription(this)">
         <summary><span>Original description</span></summary>
         <div class="job-description-body" data-loaded="0">Expand to load…</div>
@@ -2725,11 +2723,15 @@ function renderCard(job) {
            href="${escHtml(job.link || '#')}" target="_blank" rel="noopener">
           ${['applied','interview','rejected','offer'].includes(status) ? '🔗 View Detail' : '🚀 Apply Now'}
         </a>
-        ${renderHighlightsBlock(job)}
       </div>
 
-      <div class="card-track-row">
-        <div class="card-track-left">
+      <div class="card-split">
+        <div class="card-split-match">
+          ${doSection}
+          ${lookingSection}
+          ${matchReasons ? `<ul style="font-size:.78rem;color:var(--muted);padding-left:16px;line-height:1.6;">${matchReasons}</ul>` : ''}
+        </div>
+        <div class="card-split-track">
           ${renderProgressBlock(job)}
           <div class="notes-wrap">
             <textarea
@@ -2740,8 +2742,9 @@ function renderCard(job) {
             >${escHtml(job.notes || '')}</textarea>
             <button class="btn-save" data-id="${job._id}" onclick="saveNotes(this)">Save Notes</button>
           </div>
+          ${renderHighlightsBlock(job)}
+          ${renderApplicationQa(job)}
         </div>
-        ${renderApplicationQa(job)}
       </div>
     </div>
   `;
