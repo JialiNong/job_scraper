@@ -28,6 +28,7 @@ from core.config import (
     LINKEDIN_JOBS_PER_PAGE,
     MAX_JOBS_PER_PAGE,
     LINKEDIN_CONFIG,
+    linkedin_default_max_pages,
 )
 from core.scraper_utils import (
     pause,
@@ -634,7 +635,11 @@ def scrape_keyword(
 def main():
     args = parse_args()
     keywords = args.keywords
-    max_pages = args.max_pages
+    max_pages = (
+        args.max_pages
+        if args.max_pages is not None
+        else linkedin_default_max_pages(args.hours)
+    )
     max_jobs = args.max_jobs if args.max_jobs is not None else LINKEDIN_JOBS_PER_PAGE
     time_filter = resolve_time_filter(args.hours)
     hours_label = (

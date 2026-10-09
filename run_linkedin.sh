@@ -1,18 +1,20 @@
 #!/bin/bash
 # run_linkedin.sh — LinkedIn-only scrape + AI match with a flexible time window.
 #
-# Same keyword loop / page budget as the full LinkedIn lane (DEFAULT_KEYWORDS,
-# FULL_MAX_PAGES, LINKEDIN_JOBS_PER_PAGE), but f_TPR is chosen per run.
+# Same keyword loop as the full LinkedIn lane (DEFAULT_KEYWORDS,
+# LINKEDIN_JOBS_PER_PAGE). f_TPR is chosen per run from --hours.
+# Default pages: FULL_MAX_PAGES when hours ≥ 24; LINKEDIN_SHORT_WINDOW_MAX_PAGES
+# (2) when hours < 24. Explicit -p always wins.
 #
 # Usage:
 #   caffeinate -i ./run_linkedin.sh                 # default: last 24 hours
-#   caffeinate -i ./run_linkedin.sh --hours 4       # last 4 hours
+#   caffeinate -i ./run_linkedin.sh --hours 4       # last 4h, 2 pages/keyword
 #   caffeinate -i ./run_linkedin.sh --hours 2 -p 3  # 2h, override pages
 #   ./run_linkedin.sh --hours 48 -p 3 -j 30         # explicit pages + cards
 #
 # Options:
 #   --hours N   Posted-within window in hours (default: 24). Examples: 2, 4, 12, 48
-#   -p / --max-pages N   Pages per keyword (default: FULL_MAX_PAGES from config)
+#   -p / --max-pages N   Pages per keyword (default: 3 if hours≥24, else 2)
 #   -j / --max-jobs N    Cards per page (default: LINKEDIN_JOBS_PER_PAGE)
 #   -h / --help
 
@@ -134,7 +136,7 @@ cd "$PROJECT_DIR" || exit 1
 source "$PROJECT_DIR/scripts/pipeline_common.sh"
 
 if [ -z "$MAX_PAGES" ]; then
-    MAX_PAGES="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.config import FULL_MAX_PAGES; print(FULL_MAX_PAGES)")"
+    MAX_PAGES="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.config import linkedin_default_max_pages; print(linkedin_default_max_pages(float('$HOURS')))")"
 fi
 if [ -z "$MAX_JOBS" ]; then
     MAX_JOBS="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.config import LINKEDIN_JOBS_PER_PAGE; print(LINKEDIN_JOBS_PER_PAGE)")"

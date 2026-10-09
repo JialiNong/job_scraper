@@ -26,6 +26,7 @@ from core.db_mongo import (
 from core.config import (
     INDEED_JOBS_PER_PAGE,
     INDEED_CONFIG,
+    DEFAULT_MAX_PAGES,
 )
 from core.scraper_utils import (
     pause,
@@ -605,7 +606,7 @@ def scrape_keyword(
 def main():
     args = parse_args()
     keywords = args.keywords
-    max_pages = args.max_pages
+    max_pages = args.max_pages if args.max_pages is not None else DEFAULT_MAX_PAGES
     max_jobs = args.max_jobs if args.max_jobs is not None else INDEED_JOBS_PER_PAGE
     print(f"Source: {SOURCE}")
     print(f"Keywords: {keywords}")

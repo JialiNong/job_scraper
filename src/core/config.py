@@ -28,6 +28,20 @@ LINKEDIN_JOBS_PER_PAGE = 30
 LIGHT_INDEED_MAX_PAGES = 2
 LIGHT_LINKEDIN_MAX_PAGES = 3
 
+# Ad-hoc LinkedIn (run_linkedin.sh / /linkedin [hours] / --hours N):
+# f_TPR still maps hours → seconds; only the default page budget changes.
+# Window strictly under 24h → fewer pages per keyword (less volume).
+# Explicit -p / --max-pages always wins.
+LINKEDIN_SHORT_WINDOW_MAX_PAGES = 2
+
+
+def linkedin_default_max_pages(hours=None) -> int:
+    """Pages per keyword for LinkedIn keyword-loop scrapes (when -p omitted)."""
+    if hours is not None and float(hours) < 24:
+        return LINKEDIN_SHORT_WINDOW_MAX_PAGES
+    return FULL_MAX_PAGES
+
+
 # Defaults for a manual full-shaped CLI run (no -p / -j).
 DEFAULT_MAX_PAGES = FULL_MAX_PAGES
 # Alias used by LinkedIn card processing. Indeed uses INDEED_JOBS_PER_PAGE.

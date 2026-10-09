@@ -16,7 +16,6 @@ from lingua import Language, LanguageDetectorBuilder
 
 from core.config import (
     DEFAULT_KEYWORDS,
-    DEFAULT_MAX_PAGES,
     CDP_HOST,
     CDP_PORT,
     CDP_URL,
@@ -611,8 +610,12 @@ def parse_args():
         "--max-pages",
         "-p",
         type=int,
-        default=DEFAULT_MAX_PAGES,
-        help="How many result pages to scrape per keyword.",
+        default=None,
+        help=(
+            "How many result pages to scrape per keyword. "
+            "Default: platform full budget; LinkedIn short windows "
+            "(--hours < 24) use fewer pages."
+        ),
     )
     parser.add_argument(
         "--max-jobs",

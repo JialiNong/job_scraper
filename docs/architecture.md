@@ -76,7 +76,7 @@ flowchart TB
 |---------|------|--------------|--------------|
 | `./run_task.sh` | ~18:00 (or Telegram `/jobs`) | Full: Indeed + LinkedIn lanes in parallel (24h, 3 pages/keyword). Each source matches as soon as its scrape finishes, with Telegram pings; digest after both lanes; then cleanup old unmatched descriptions | 40–60 min |
 | `./run_quick.sh` | ~11:00 (or Telegram `/quick_jobs`) | Light: Indeed (24h, 2 pages/keyword) + LinkedIn quick URL (12h, 3 pages) lanes in parallel. Same per-source match + pings; digest after both lanes | 20–40 min |
-| `./run_linkedin.sh` | Ad hoc | LinkedIn-only keyword loop + AI match. Time window via `--hours` (default **24**). Same pages/cards as full LinkedIn (`FULL_MAX_PAGES` × `LINKEDIN_JOBS_PER_PAGE`) unless `-p` / `-j` override. Telegram per-lane pings + today’s match digest | depends on hours / volume |
+| `./run_linkedin.sh` | Ad hoc | LinkedIn-only keyword loop + AI match. Time window via `--hours` (default **24** → `f_TPR=rN*3600`). Default pages: **3**/keyword when hours ≥ 24, **2**/keyword when hours < 24 (`LINKEDIN_SHORT_WINDOW_MAX_PAGES`); `-p` / `-j` override. Telegram per-lane pings + today’s match digest | depends on hours / volume |
 | `./start_ui.sh` | Anytime | Start Job Tracker Web UI (default `:5050`) | — |
 
 Prefer `caffeinate -i` for manual runs so sleep does not interrupt Playwright:
@@ -85,8 +85,8 @@ Prefer `caffeinate -i` for manual runs so sleep does not interrupt Playwright:
 caffeinate -i ./run_task.sh
 caffeinate -i ./run_quick.sh
 caffeinate -i ./run_linkedin.sh              # LinkedIn last 24h + match
-caffeinate -i ./run_linkedin.sh --hours 4    # last 4h
-caffeinate -i ./run_linkedin.sh --hours 2 -p 3
+caffeinate -i ./run_linkedin.sh --hours 4    # last 4h → 2 pages/keyword
+caffeinate -i ./run_linkedin.sh --hours 2 -p 3  # 2h, force 3 pages
 ```
 
 ### 2.2 Telegram bot commands
@@ -97,7 +97,7 @@ caffeinate -i ./run_linkedin.sh --hours 2 -p 3
 | `/test` | Confirm the Mac is connected and ready |
 | `/jobs` | Run `run_task.sh` in the background; per-source scrape/match pings; “Done” when both lanes finish |
 | `/quick_jobs` | Run `run_quick.sh` in the background; same per-source pings; “Done” when both lanes finish |
-| `/linkedin` `[hours]` | Run `run_linkedin.sh` (LinkedIn-only + AI match). Optional hours number (default **24**). Examples: `/linkedin`, `/linkedin 4`, `/linkedin 2` |
+| `/linkedin` `[hours]` | Run `run_linkedin.sh` (LinkedIn-only + AI match). Optional hours number (default **24**; hours < 24 → 2 pages/keyword). Examples: `/linkedin`, `/linkedin 4`, `/linkedin 2` |
 | `/matches` | Push today’s `matched_jobs` without scraping |
 | `/indeed_ok` | Resume Indeed after human verification (also: inline **Continue** button) |
 
@@ -131,9 +131,9 @@ Indeed pacing is slower and more human-like than LinkedIn: random think-time bef
 | Command | Purpose |
 |---------|---------|
 | `python3 src/scrapers/indeed_scraper.py [-k …] [-p N] [-j N]` | Indeed only (default 3 pages × 15) |
-| `python3 src/scrapers/linkedin_scraper.py [-k …] [-p N] [-j N] [--hours N]` | Full LinkedIn keyword loop (default 3 pages × 30; time window default config 24h, or `--hours`) |
+| `python3 src/scrapers/linkedin_scraper.py [-k …] [-p N] [-j N] [--hours N]` | Full LinkedIn keyword loop (default 3 pages × 30; `--hours` < 24 → 2 pages; time window default config 24h, or `--hours`) |
 | `python3 src/scrapers/linkedin_quick_scraper.py [-p N] [-j N]` | LinkedIn 12h quick URL (default 3 pages × 30) |
-| `./run_linkedin.sh [--hours N] [-p N] [-j N]` | LinkedIn-only scrape + AI match (default `--hours 24`) |
+| `./run_linkedin.sh [--hours N] [-p N] [-j N]` | LinkedIn-only scrape + AI match (default `--hours 24`; short window → 2 pages/keyword) |
 | `python3 src/matching/ai_matcher.py [-l N] [-s source] [-t 7.0]` | AI match only (jobs without `matched_at`) |
 | `python3 src/scrapers/manual_apply_scraper.py <urls…>` | Manual job URLs → skip if `job_id` already in `jobs`/`matched_jobs`, else scrape + score → `matched_jobs` (default `status=pending`; `--status applied` optional) |
 | `python3 scripts/cleanup_unmatched_descriptions.py …` | Clear old unmatched JD text (also run at end of full pipeline) |
@@ -230,7 +230,7 @@ Differences from Full:
 - **No** description cleanup step
 - LinkedIn card processing reuses `linkedin_scraper.scrape_jobs()` (same title + language filters). The quick URL is the SDUI `/jobs/search-results/` page: cards are `[componentkey^="job-card-component-ref-"]`, and the next page control is `pagination-controls-next-button-visible`
 
-Budgets are defined in `src/core/config.py` (`FULL_*`, `LIGHT_*`, `INDEED_JOBS_PER_PAGE`, `LINKEDIN_JOBS_PER_PAGE`). Both shell scripts read those values at start.
+Budgets are defined in `src/core/config.py` (`FULL_*`, `LIGHT_*`, `LINKEDIN_SHORT_WINDOW_MAX_PAGES`, `INDEED_JOBS_PER_PAGE`, `LINKEDIN_JOBS_PER_PAGE`). Shell scripts read those values at start; ad-hoc LinkedIn uses `linkedin_default_max_pages(hours)`.
 
 ---
 
@@ -413,4 +413,4 @@ job_scraper/
 
 > **Title gates (blacklist → keywords → AI title) → open detail → discard non-English JD → save English JD → matcher skips empty desc → mandatory-German rule gate → stack extract + backend/AI-ML local gate → AI scores by criteria → ≥ 7 enters Tracker.**
 
-The two daily commands only change *how much* to scrape. Evening Full is 24h on both platforms, 3 pages per keyword (Indeed ~15 cards/page, LinkedIn 30). Morning Light runs both in parallel: Indeed the same 24h search for 2 pages per keyword, LinkedIn the 12h quick URL for 3 pages. Ad hoc `run_linkedin.sh` / `/linkedin` is LinkedIn-only with a flexible `--hours` window (default 24). Each source starts AI matching as soon as its scrape finishes; job cards are pushed only after both lanes complete (or after the single LinkedIn lane for `run_linkedin.sh`). **Filter and match rules are the same.**
+The two daily commands only change *how much* to scrape. Evening Full is 24h on both platforms, 3 pages per keyword (Indeed ~15 cards/page, LinkedIn 30). Morning Light runs both in parallel: Indeed the same 24h search for 2 pages per keyword, LinkedIn the 12h quick URL for 3 pages. Ad hoc `run_linkedin.sh` / `/linkedin` is LinkedIn-only with a flexible `--hours` window (default 24); when hours < 24 the default page budget drops to 2 per keyword (`linkedin_default_max_pages`). Each source starts AI matching as soon as its scrape finishes; job cards are pushed only after both lanes complete (or after the single LinkedIn lane for `run_linkedin.sh`). **Filter and match rules are the same.**
