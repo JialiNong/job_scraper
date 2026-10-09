@@ -45,7 +45,7 @@ flowchart TB
         M1["German gate (rules)"]
         M1b["Stack extract + local gate<br/>hard backend / AI-ML-core"]
         M2["Full AI match<br/>matching_criteria.md"]
-        M3["Score ≥ threshold<br/>→ matched_jobs"]
+        M3["Score ≥ threshold<br/>+ company not Instaffo/Jobgether<br/>→ matched_jobs"]
     end
 
     T1 --> T2
@@ -308,8 +308,10 @@ flowchart TD
     ReqGate -->|pass| AI["analyze_job_with_ai()<br/>inject extract + profile + criteria"]
 
     AI --> Score{"match_score ≥ MATCH_THRESHOLD<br/>default 7.0?"}
-    Score -->|yes| MJ["Write matched_jobs<br/>status=pending"]
-    Score -->|no| OnlyJobs["Write AI analysis on jobs only"]
+    Score -->|yes| Co{"Company blocked?<br/>MATCH_BLOCKED_COMPANIES<br/>Instaffo / Jobgether"}
+    Co -->|yes| OnlyJobs["Write AI analysis on jobs only"]
+    Co -->|no| MJ["Write matched_jobs<br/>status=pending"]
+    Score -->|no| OnlyJobs
     MJ --> Mark["mark_job_as_matched"]
     OnlyJobs --> Mark
     FailDE --> Mark
@@ -350,7 +352,7 @@ Candidate production backends: Node.js / TypeScript-backend / JavaScript-backend
 1. Hard gates (code first, then scorer fallback): mandatory German → unknown/non-production hard backend → AI/ML-core → years too high → DevOps/SRE-core
 2. Ordinary score 4–8 (required skills + nice-to-have / domain bonuses)
 3. Special Match A/B/C → 9–10 (Leipzig can add +0.5–1)
-4. `match_score ≥ threshold` → `matched_jobs`
+4. `match_score ≥ threshold` → `matched_jobs` (unless scraped company is in `MATCH_BLOCKED_COMPANIES`: Instaffo / Jobgether — still scored on `jobs`, never Tracker)
 
 Details: [`matching_criteria.md`](./matching_criteria.md).
 
@@ -361,7 +363,7 @@ Details: [`matching_criteria.md`](./matching_criteria.md).
 | Collection | Written by | Contents |
 |------------|------------|----------|
 | `jobs` | scrapers; matcher writes analysis back | Jobs that passed the language gate (including empty-description placeholders). Matcher also stores `match_gate` (`german` / `stack` / `ai_ml` / `scored`) and `requirement_extract`. Stack-gate rejects clear `description` immediately (title + link stub for Unmatched review). |
-| `matched_jobs` | matcher (≥ threshold); manual job log (`/manual-apply`, default `pending`); unmatched **Can Apply** override; **timeout review Add as Not Applied** | High-score matches / manually logged jobs / user-promoted unmatched or timeout jobs. UI can store manual `highlights` tags (separate from AI `special_match`). |
+| `matched_jobs` | matcher (≥ threshold, and company not in `MATCH_BLOCKED_COMPANIES`); manual job log (`/manual-apply`, default `pending`); unmatched **Can Apply** override; **timeout review Add as Not Applied** | High-score matches / manually logged jobs / user-promoted unmatched or timeout jobs. UI can store manual `highlights` tags (separate from AI `special_match`). Aggregators Instaffo / Jobgether are blocked from automatic matcher inserts. |
 | `timeout_jobs` | scrapers, when the title passed but the JD panel timed out | Title + link for later review (`/timeouts`). Open → **Add as Not Applied** (`pending`) or Dismiss. |
 | `scraper_stats` | scrapers | Counters: `title_passed_clicked`, `german_filtered`, `ai_title_filtered`, `detail_timeout`, … |
 
@@ -411,6 +413,6 @@ job_scraper/
 
 ## 8. One-line funnel
 
-> **Title gates (blacklist → keywords → AI title) → open detail → discard non-English JD → save English JD → matcher skips empty desc → mandatory-German rule gate → stack extract + backend/AI-ML local gate → AI scores by criteria → ≥ 7 enters Tracker.**
+> **Title gates (blacklist → keywords → AI title) → open detail → discard non-English JD → save English JD → matcher skips empty desc → mandatory-German rule gate → stack extract + backend/AI-ML local gate → AI scores by criteria → ≥ 7 and company not Instaffo/Jobgether enters Tracker.**
 
 The two daily commands only change *how much* to scrape. Evening Full is 24h on both platforms, 3 pages per keyword (Indeed ~15 cards/page, LinkedIn 30). Morning Light runs both in parallel: Indeed the same 24h search for 2 pages per keyword, LinkedIn the 12h quick URL for 3 pages. Ad hoc `run_linkedin.sh` / `/linkedin` is LinkedIn-only with a flexible `--hours` window (default 24); when hours < 24 the default page budget drops to 2 per keyword (`linkedin_default_max_pages`). Each source starts AI matching as soon as its scrape finishes; job cards are pushed only after both lanes complete (or after the single LinkedIn lane for `run_linkedin.sh`). **Filter and match rules are the same.**

@@ -139,6 +139,15 @@ TITLE_EXCLUDE_KEYWORDS = [
 ]
 
 
+# ===== Match-stage company blocklist =====
+# Aggregators / job boards that often appear as the scraped "company".
+# Still scored on `jobs`, but never written to `matched_jobs`.
+MATCH_BLOCKED_COMPANIES = [
+    "instaffo",
+    "jobgether",
+]
+
+
 # ===== Indeed Platform Configuration =====
 INDEED_CONFIG = {
     "source": "indeed",

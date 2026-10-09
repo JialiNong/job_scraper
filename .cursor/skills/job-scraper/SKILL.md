@@ -58,7 +58,7 @@ If the change is docs-only typography with no flow change, skip the architecture
 
 One-line funnel (must stay true in architecture + code):
 
-> Title gates (exclude → DEFAULT_KEYWORDS → AI title) → click detail → non-English JD discarded → English JD saved → matcher empty-desc skip → mandatory-German rule gate → stack extract + backend/AI-ML local gate → AI score → ≥ threshold → `matched_jobs`.
+> Title gates (exclude → DEFAULT_KEYWORDS → AI title) → click detail → non-English JD discarded → English JD saved → matcher empty-desc skip → mandatory-German rule gate → stack extract + backend/AI-ML local gate → AI score → ≥ threshold and company not in `MATCH_BLOCKED_COMPANIES` (Instaffo / Jobgether) → `matched_jobs`.
 
 ### Two German-related gates
 
@@ -103,6 +103,7 @@ When you change `run_task.sh` / `run_quick.sh` / `run_linkedin.sh`, check Telegr
 |---------|----------|
 | Search keywords | `DEFAULT_KEYWORDS` in `src/core/config.py` |
 | Title blacklist | `TITLE_EXCLUDE_KEYWORDS` in `src/core/config.py` |
+| Tracker company blocklist | `MATCH_BLOCKED_COMPANIES` in `src/core/config.py` (Instaffo / Jobgether) |
 | Indeed / LinkedIn / Quick URLs & selectors | `*_CONFIG` in `src/core/config.py` |
 | LinkedIn ad-hoc time window | `run_linkedin.sh --hours N` / `/linkedin N` / `linkedin_scraper.py --hours N` (default 24; `f_TPR=rN*3600`; hours < 24 → 2 pages/keyword) |
 | Match threshold / model | `.env` (`MATCH_THRESHOLD`, `AI_MODEL`, `OPENAI_API_KEY`) |

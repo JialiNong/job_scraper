@@ -24,6 +24,7 @@ from core.db_mongo import (
     is_job_id_exists,
     mark_job_as_matched,
 )
+from core.config import MATCH_BLOCKED_COMPANIES
 from core.scraper_utils import (
     strip_html,
     indeed_job_id_variants,
@@ -48,6 +49,14 @@ load_dotenv()
 AI_MODEL = os.getenv("AI_MODEL", "gpt-4.1-mini")  # or "claude-3-5-sonnet-20241022"
 AI_API_KEY = os.getenv("OPENAI_API_KEY")  # or ANTHROPIC_API_KEY
 MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "7.0"))  # Minimum match score (0-10)
+
+
+def is_blocked_match_company(company: Optional[str]) -> bool:
+    """True if scraped company is an aggregator we never put on the Tracker."""
+    if not company:
+        return False
+    lower = str(company).lower()
+    return any(name in lower for name in MATCH_BLOCKED_COMPANIES)
 
 
 def load_user_profile(profile_path: str = "docs/user_profile.md") -> str:
@@ -567,6 +576,14 @@ def save_matched_job(job: Dict, analysis: Dict) -> bool:
         True if saved successfully, False otherwise
     """
     try:
+        company = job.get("company", "")
+        if is_blocked_match_company(company):
+            print(
+                f"✗ Blocked company ({company!r}) — "
+                f"scored on jobs only, not written to matched_jobs"
+            )
+            return False
+
         matched_jobs = get_collection("matched_jobs")
         
         # Check if already exists (Indeed: also match legacy job_/sj_ prefixes)
@@ -582,7 +599,7 @@ def save_matched_job(job: Dict, analysis: Dict) -> bool:
         matched_job_data = {
             # Original job fields
             "title": job.get("title", ""),
-            "company": job.get("company", ""),
+            "company": company,
             "location": scrub_bullet_location(job.get("location", "")),
             "link": job.get("link", ""),
             "job_id": job.get("job_id", ""),
