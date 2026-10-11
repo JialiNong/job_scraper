@@ -662,6 +662,9 @@
         border-right: none;
         border-bottom: 1px solid var(--border);
       }
+      .loc-bubbles { 
+        height: 200px;
+      }
       .cal-section {
         --cal-cell: 22px;
         --cal-gap: 3px;
@@ -677,7 +680,7 @@
       .cal-metrics { grid-template-columns: repeat(4, 1fr); }
     }
     @media (max-width: 640px) {
-      .loc-bubbles { height: 220px; }
+      .loc-bubbles { height: 180px; }
       .cal-metrics { grid-template-columns: repeat(2, 1fr); }
     }
 
@@ -1715,6 +1718,7 @@
         flex: 1;
         justify-content: center;
         min-width: 0;
+        white-space: nowrap;
       }
       
       .nav-btn b {
@@ -1737,16 +1741,17 @@
 
       /* Funnel - stack vertically */
       .funnel-bar {
-        padding: 12px;
+        padding: 8px 12px;
         flex-direction: column;
         align-items: stretch;
+        gap: 6px;
       }
       
       .funnel-step {
         flex-direction: row;
         justify-content: space-between;
         min-width: 0;
-        padding: 10px 14px;
+        padding: 8px 12px;
         background: rgba(255,255,255,0.02);
         border-radius: 8px;
       }
@@ -1766,15 +1771,53 @@
 
       /* Journey section adjustments */
       .journey-section {
-        padding: 12px;
+        padding: 8px 12px;
       }
       
       .journey-panel {
-        padding: 8px;
+        padding: 6px;
       }
       
       .journey-track {
-        padding: 6px 8px;
+        padding: 4px 6px;
+      }
+      
+      /* Heatmap - scale to fit mobile width */
+      .cal-section {
+        --cal-cell: 18px;
+        --cal-gap: 2px;
+        --cal-label: 14px;
+        padding: 10px;
+      }
+      
+      .cal-wrap {
+        overflow-x: visible;
+        max-width: 100%;
+      }
+      
+      .cal-dow {
+        font-size: 0.6rem;
+      }
+      
+      .cal-month-label {
+        font-size: 0.65rem;
+      }
+      
+      .cal-metrics {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 8px;
+      }
+      
+      .cal-metric {
+        padding: 8px;
+      }
+      
+      .m-num {
+        font-size: 1.2rem;
+      }
+      
+      .m-label {
+        font-size: 0.65rem;
       }
       
       .jt-header {
@@ -2002,6 +2045,22 @@
       
       .stat-chip {
         flex: 1 1 100%;
+      }
+      
+      /* Even smaller heatmap cells for narrow screens */
+      .cal-section {
+        --cal-cell: 14px;
+        --cal-gap: 1.5px;
+        --cal-label: 12px;
+        padding: 8px;
+      }
+      
+      .cal-dow {
+        font-size: 0.55rem;
+      }
+      
+      .cal-month-label {
+        font-size: 0.6rem;
       }
     }
   </style>
@@ -2584,8 +2643,11 @@ function renderLocationBubbles(locations, total) {
   const width = Math.max(root.clientWidth || 640, 320);
   const height = Math.max(root.clientHeight || 280, 200);
   const maxCount = Math.max(...locations.map(l => l.count || 0), 1);
-  const minR = 22;
-  const maxR = Math.min(58, Math.floor(Math.min(width, height) * 0.22));
+  
+  // Smaller bubbles on mobile (width <= 768px)
+  const isMobile = window.innerWidth <= 768;
+  const minR = isMobile ? 16 : 22;
+  const maxR = isMobile ? Math.min(38, Math.floor(Math.min(width, height) * 0.18)) : Math.min(58, Math.floor(Math.min(width, height) * 0.22));
 
   const items = locations.map((loc, i) => {
     const count = loc.count || 0;

@@ -15,7 +15,7 @@ load_dotenv()
 # Local test: mongodb://localhost:27017/
 # MongoDB Atlas: mongodb+srv://username:password@cluster.mongodb.net/
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
-DATABASE_NAME = "job_scraper"
+DATABASE_NAME = os.getenv("DATABASE_NAME", "job_scraper")
 COLLECTION_NAME = "jobs"
 
 # Reuse one client across the process. Creating MongoClient per call costs ~1–2s
