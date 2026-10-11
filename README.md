@@ -76,14 +76,33 @@ MONGO_URI=mongodb+srv://username:password@cluster.mongodb.net/
 OPENAI_API_KEY=sk-proj-your_key_here
 AI_MODEL=gpt-4o-mini
 MATCH_THRESHOLD=7.0
+
+# Web UI Authentication (required)
+TRACKER_USERNAME=your_username
+TRACKER_PASSWORD_HASH=<generated_hash>
+
+# Optional: Flask secret key (auto-generated if not set)
+FLASK_SECRET_KEY=<random_hex_string>
 ```
 
-### 3. Fill in your profile
+### 3. Generate password hash for web UI
+
+The web UI now requires login. Generate a password hash:
+
+```bash
+python3 scripts/generate_password_hash.py
+```
+
+This will prompt you for a password and output a hash. Copy the `TRACKER_PASSWORD_HASH=...` line to your `.env` file.
+
+**Important**: Never commit your `.env` file or share your password hash!
+
+### 4. Fill in your profile
 
 - `docs/user_profile.md` — your resume and skills
 - `docs/matching_criteria.md` — your must-haves and red flags
 
-### 4. Test run
+### 5. Test run
 
 ```bash
 # Quick smoke test — 1 page each, 3 jobs analyzed
@@ -476,3 +495,106 @@ Monitor usage at https://platform.openai.com/usage.
 - **Personal use only** — respect Indeed and LinkedIn Terms of Service
 - Built-in delays: 4–8 s between jobs, 15–30 s between pages
 - Chrome uses `/tmp/chrome_selenium` as its profile directory
+
+---
+
+## Mobile Access & Deployment
+
+### Web UI Authentication
+
+The job tracker web UI now requires login for security. Access is protected by:
+- Session-based authentication using Flask-Login
+- Username/password credentials from environment variables
+- bcrypt-hashed passwords (never store plain text)
+- "Remember me" persistent sessions
+
+The UI is fully **mobile-responsive** and works on phones (375-430px width):
+- Touch-friendly buttons and controls
+- No horizontal scrolling
+- Readable cards and status dropdowns
+- Mobile-optimized layout
+
+### Current Deployment
+
+The app currently runs **locally on macOS** via `./start_ui.sh`:
+- Flask dev server on `127.0.0.1:5050`
+- Accessed only from the local machine
+- LaunchD schedules automated scrapes
+- MongoDB Atlas for database (cloud)
+
+### Deploying for Mobile Access
+
+To access the tracker from your phone, you need to deploy the web UI to a hosting service:
+
+#### Option 1: Railway (Recommended - Easy)
+
+Railway offers free tier and simple Python deployment:
+
+1. Create `Procfile` in project root:
+   ```
+   web: python src/web/web_app.py --host 0.0.0.0 --port $PORT
+   ```
+
+2. Push to GitHub and connect Railway to your repo
+3. Add environment variables in Railway dashboard:
+   - `MONGO_URI`
+   - `OPENAI_API_KEY`
+   - `TRACKER_USERNAME`
+   - `TRACKER_PASSWORD_HASH`
+   - `FLASK_SECRET_KEY`
+   - `MATCH_THRESHOLD=7.0`
+   - `AI_MODEL=gpt-4o-mini`
+
+**Note**: Job scrapers (Playwright/Chrome) won't work on Railway. Only deploy the web UI for tracking. Keep scrapers running locally on your Mac.
+
+#### Option 2: Render
+
+Similar to Railway. Create `render.yaml`:
+```yaml
+services:
+  - type: web
+    name: job-tracker
+    env: python
+    buildCommand: "pip install -r requirements.txt"
+    startCommand: "python src/web/web_app.py --host 0.0.0.0 --port $PORT"
+```
+
+Add the same environment variables in Render dashboard.
+
+#### Option 3: Fly.io
+
+Create `fly.toml` and deploy with `fly launch`. Good for more control.
+
+#### Option 4: Ngrok (Quick Testing)
+
+For quick temporary mobile access without deployment:
+
+```bash
+# Install ngrok: https://ngrok.com/download
+./start_ui.sh  # Start the tracker locally
+
+# In another terminal:
+ngrok http 5050
+```
+
+Ngrok will give you a public URL (e.g., `https://abc123.ngrok.io`) that you can open on your phone. The free tier has session limits.
+
+### What Needs Your Accounts
+
+- **GitHub**: If deploying from a private repo
+- **Railway/Render/Fly**: Sign up for hosting account
+- **MongoDB Atlas**: Already configured (connection string in `.env`)
+- **OpenAI**: Already configured (API key in `.env`)
+
+### Recommended Setup
+
+**For Personal Use** (what you have now):
+- Scrapers run locally on Mac via LaunchD (need Chrome/Playwright)
+- Web UI deployed to Railway/Render for mobile access
+- MongoDB Atlas for cloud database
+- Both Mac and web UI connect to same MongoDB
+
+This way:
+- Mac scrapers collect jobs automatically
+- Check and update status from phone anytime via deployed web UI
+- All data syncs through MongoDB

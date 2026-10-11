@@ -17,7 +17,9 @@ if _SRC_ROOT not in sys.path:
     sys.path.insert(0, _SRC_ROOT)
 
 import threading
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, redirect, url_for, session, flash
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+import bcrypt
 from dotenv import load_dotenv
 from core.db_mongo import (
     get_collection,
@@ -45,6 +47,45 @@ app = Flask(
 # Always pick up HTML/template edits without restarting the server
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.jinja_env.auto_reload = True
+
+# Session config (required for login)
+app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", os.urandom(24).hex())
+
+# Authentication setup
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = "login"
+login_manager.login_message = "Please log in to access the job tracker."
+
+# Simple User class for single-user auth
+class User(UserMixin):
+    def __init__(self, user_id):
+        self.id = user_id
+
+@login_manager.user_loader
+def load_user(user_id):
+    username = os.getenv("TRACKER_USERNAME")
+    if username and user_id == username:
+        return User(user_id)
+    return None
+
+def verify_password(username: str, password: str) -> bool:
+    """Verify username and password against env vars."""
+    expected_username = os.getenv("TRACKER_USERNAME")
+    expected_password_hash = os.getenv("TRACKER_PASSWORD_HASH")
+    
+    if not expected_username or not expected_password_hash:
+        print("[AUTH] Warning: TRACKER_USERNAME or TRACKER_PASSWORD_HASH not set!")
+        return False
+    
+    if username != expected_username:
+        return False
+    
+    try:
+        return bcrypt.checkpw(password.encode('utf-8'), expected_password_hash.encode('utf-8'))
+    except Exception as e:
+        print(f"[AUTH] Password verification error: {e}")
+        return False
 
 # Steps that mean a job has interview progress (show as company track)
 JOURNEY_INTERVIEW_STEPS = frozenset({
@@ -275,22 +316,51 @@ def _serialize(job: dict) -> dict:
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
 
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+    
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        password = request.form.get("password", "")
+        
+        if verify_password(username, password):
+            user = User(username)
+            login_user(user, remember=True)
+            next_page = request.args.get("next")
+            return redirect(next_page if next_page else url_for("index"))
+        else:
+            flash("Invalid username or password", "error")
+    
+    return render_template("login.html")
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for("login"))
+
 @app.route("/")
+@login_required
 def index():
     return render_template("index.html")
 
 
 @app.route("/unmatched")
+@login_required
 def unmatched():
     return render_template("unmatched.html")
 
 
 @app.route("/timeouts")
+@login_required
 def timeouts():
     return render_template("timeouts.html")
 
 
 @app.route("/api/jobs")
+@login_required
 def api_jobs():
     """Return all matched jobs, newest first."""
     collection = get_collection("matched_jobs")
@@ -337,6 +407,7 @@ def api_jobs():
 
 
 @app.route("/api/jobs/<job_id>/description")
+@login_required
 def api_job_description(job_id: str):
     """Return full JD text for one matched job (lazy-loaded by the Tracker UI)."""
     try:
@@ -351,6 +422,7 @@ def api_job_description(job_id: str):
 
 
 @app.route("/api/unmatched-jobs")
+@login_required
 def api_unmatched_jobs():
     """Return AI-rejected jobs from the original jobs collection, paginated."""
     try:
@@ -416,6 +488,7 @@ def api_unmatched_jobs():
 
 
 @app.route("/api/jobs/<job_id>/status", methods=["PATCH"])
+@login_required
 def api_update_status(job_id: str):
     """Update job status. Sets applied_at the first time a job is marked applied/rejected/interview."""
     data = request.get_json(silent=True) or {}
@@ -450,6 +523,7 @@ def api_update_status(job_id: str):
 
 
 @app.route("/api/jobs/<job_id>/timeline", methods=["PATCH"])
+@login_required
 def api_update_timeline(job_id: str):
     """Replace the application progress timeline and sync status / applied_at."""
     data = request.get_json(silent=True) or {}
@@ -499,6 +573,7 @@ def api_update_timeline(job_id: str):
 
 
 @app.route("/api/jobs/<job_id>/notes", methods=["PATCH"])
+@login_required
 def api_update_notes(job_id: str):
     """Update job notes."""
     data = request.get_json(silent=True) or {}
@@ -517,6 +592,7 @@ def api_update_notes(job_id: str):
 
 
 @app.route("/api/jobs/<job_id>/highlights", methods=["PATCH"])
+@login_required
 def api_update_highlights(job_id: str):
     """Replace manual highlight tags for a matched job (UI only; not AI special_match)."""
     data = request.get_json(silent=True) or {}
@@ -558,6 +634,7 @@ def api_update_highlights(job_id: str):
 
 
 @app.route("/api/jobs/<job_id>/application-qa", methods=["PATCH"])
+@login_required
 def api_update_application_qa(job_id: str):
     """Update application Q&A pairs for a matched job."""
     data = request.get_json(silent=True) or {}
@@ -593,6 +670,7 @@ def api_update_application_qa(job_id: str):
 
 
 @app.route("/api/jobs/<job_id>/info", methods=["PATCH"])
+@login_required
 def api_update_job_info(job_id: str):
     """Update job title / company / location in matched_jobs."""
     data = request.get_json(silent=True) or {}
@@ -620,6 +698,7 @@ def api_update_job_info(job_id: str):
 
 
 @app.route("/api/jobs/<job_id>", methods=["DELETE"])
+@login_required
 def api_delete_job(job_id: str):
     """
     Permanently delete a matched job from the database.
@@ -662,6 +741,7 @@ def api_delete_job(job_id: str):
 
 
 @app.route("/api/unmatched-jobs/<job_id>/status", methods=["PATCH"])
+@login_required
 def api_update_unmatched_status(job_id: str):
     """Update user_status of an unmatched job (any score below threshold).
     When marked as 'watchlist' (Can Apply), also copy the job to matched_jobs
@@ -762,6 +842,7 @@ def _serialize_timeout(job: dict) -> dict:
 
 
 @app.route("/api/timeout-jobs")
+@login_required
 def api_timeout_jobs():
     """Title-qualified cards whose JD panel timed out during scrape."""
     try:
@@ -788,6 +869,7 @@ def api_timeout_jobs():
 
 
 @app.route("/api/timeout-jobs/<doc_id>/match", methods=["POST"])
+@login_required
 def api_timeout_match(doc_id: str):
     """Promote a timeout card to matched_jobs as pending (Not Applied)."""
     try:
@@ -866,6 +948,7 @@ def api_timeout_match(doc_id: str):
 
 
 @app.route("/api/timeout-jobs/<doc_id>/dismiss", methods=["POST"])
+@login_required
 def api_timeout_dismiss(doc_id: str):
     """Hide a timeout card from the review list."""
     try:
@@ -883,6 +966,7 @@ def api_timeout_dismiss(doc_id: str):
 
 
 @app.route("/api/stats")
+@login_required
 def api_stats():
     """Return status counts for the summary bar and pipeline funnel."""
     collection = get_collection("matched_jobs")
@@ -915,6 +999,7 @@ def api_stats():
 
 
 @app.route("/api/stats/daily")
+@login_required
 def api_stats_daily():
     """Return per-day activity counts for the calendar heatmap."""
     try:
@@ -926,6 +1011,7 @@ def api_stats_daily():
 
 
 @app.route("/api/stats/locations")
+@login_required
 def api_stats_locations():
     """
     Location mix for applied-like jobs (applied / rejected / interview / offer).
@@ -938,6 +1024,7 @@ def api_stats_locations():
 
 
 @app.route("/api/journey")
+@login_required
 def api_journey():
     """
     Application Journey:
@@ -1106,11 +1193,13 @@ _manual_apply_state: dict = {
 
 
 @app.route("/manual-apply")
+@login_required
 def manual_apply_page():
     return render_template("manual_apply.html")
 
 
 @app.route("/api/manual-apply", methods=["POST"])
+@login_required
 def api_manual_apply():
     """
     Accepts a JSON body:
@@ -1189,6 +1278,7 @@ def api_manual_apply():
 
 
 @app.route("/api/manual-apply/status")
+@login_required
 def api_manual_apply_status():
     """Poll this to get progress of the current / last manual-apply run."""
     state = _manual_apply_state
