@@ -292,8 +292,19 @@ def timeouts():
 
 @app.route("/api/jobs")
 def api_jobs():
-    """Return all matched jobs, newest first."""
+    """Return matched jobs with pagination, newest first."""
     collection = get_collection("matched_jobs")
+
+    # Pagination parameters
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(request.args.get("page_size", 20))
+    except (TypeError, ValueError):
+        page_size = 20
+    page_size = max(1, min(page_size, 100))
 
     # Optional filters from query-string
     status_filter = request.args.get("status")      # e.g. ?status=pending
@@ -326,14 +337,29 @@ def api_jobs():
             time_filter["$lte"] = end
         query["matched_at"] = time_filter
 
+    # Count total matching documents
+    total = collection.count_documents(query)
+    
+    # Calculate pagination
+    pages = max(1, (total + page_size - 1) // page_size) if total else 1
+    page = min(max(1, page), pages)
+    skip = (page - 1) * page_size
+
     jobs = list(
         collection.find(query, JOBS_LIST_PROJECTION)
         .sort("matched_at", -1)
-        .limit(500)
+        .skip(skip)
+        .limit(page_size)
     )
     jobs = [_serialize(j) for j in jobs]
 
-    return jsonify({"jobs": jobs, "total": len(jobs)})
+    return jsonify({
+        "jobs": jobs,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": pages,
+    })
 
 
 @app.route("/api/jobs/<job_id>/description")

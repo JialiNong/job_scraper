@@ -667,6 +667,23 @@
         --cal-gap: 3px;
       }
       .cal-body { flex-wrap: wrap; }
+      .cal-wrap {
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+        padding-bottom: 8px;
+      }
+      .cal-wrap::-webkit-scrollbar {
+        height: 6px;
+      }
+      .cal-wrap::-webkit-scrollbar-track {
+        background: var(--bg);
+      }
+      .cal-wrap::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 3px;
+      }
       .cal-detail {
         flex: 1 1 100%;
         width: 100%;
@@ -679,6 +696,62 @@
     @media (max-width: 640px) {
       .loc-bubbles { height: 220px; }
       .cal-metrics { grid-template-columns: repeat(2, 1fr); }
+      
+      /* Applied Locations - switch to chip layout on mobile */
+      .loc-bubbles {
+        position: relative;
+        height: auto;
+        min-height: 100px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 12px;
+      }
+      
+      .loc-bubble {
+        position: relative !important;
+        left: auto !important;
+        top: auto !important;
+        transform: none !important;
+        --size: auto !important;
+        width: auto;
+        height: auto;
+        border-radius: 20px;
+        padding: 8px 14px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      
+      .loc-bubble .lb-name {
+        font-size: 0.85rem;
+        max-width: none;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
+      }
+      
+      .loc-bubble .lb-count {
+        position: relative;
+        left: auto;
+        bottom: auto;
+        transform: none;
+        font-size: 0.85rem;
+        font-weight: 700;
+        opacity: 1;
+      }
+      
+      .loc-bubble:hover {
+        transform: none !important;
+      }
+      
+      .loc-bubble:hover .lb-name {
+        transform: none;
+      }
+      
+      .loc-bubble:hover .lb-count {
+        transform: none;
+      }
     }
 
     /* ── Toolbar ──────────────────────────────────────────────────── */
@@ -1596,6 +1669,42 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── Pagination ──────────────────────────────────────────────────── */
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 20px 24px;
+      border-top: 1px solid var(--border);
+    }
+    .pagination-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 8px 20px;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .pagination-btn:hover:not(:disabled) {
+      border-color: var(--accent);
+      background: var(--surface2);
+    }
+    .pagination-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .page-info {
+      font-size: .9rem;
+      color: var(--muted);
+      font-weight: 600;
+      min-width: 120px;
+      text-align: center;
+    }
+
     /* ── Toast ────────────────────────────────────────────────────── */
     .toast {
       position: fixed; bottom: 24px; right: 24px;
@@ -1685,6 +1794,336 @@
     .info-save-btn:disabled { opacity: .45; cursor: default; }
     .info-cancel-btn { background: transparent; color: var(--muted); }
     .info-cancel-btn:hover { border-color: var(--accent); color: var(--accent); }
+<<<<<<< Updated upstream
+=======
+
+    /* ── Mobile Responsive Styles (375px - 430px phones) ─────────────── */
+    @media (max-width: 768px) {
+      /* Header adjustments - horizontal scrollable row */
+      header {
+        padding: 0 12px;
+        height: auto;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 0;
+      }
+      
+      .logo {
+        font-size: 1rem;
+        padding: 12px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      
+      .header-actions {
+        width: 100%;
+        display: flex;
+        overflow-x: auto;
+        overflow-y: hidden;
+        gap: 8px;
+        padding: 10px 0;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      
+      .header-actions::-webkit-scrollbar {
+        display: none;
+      }
+      
+      .nav-btn {
+        padding: 8px 16px;
+        font-size: 0.8rem;
+        flex-shrink: 0;
+        white-space: nowrap;
+      }
+      
+      .nav-btn b {
+        font-size: 0.75rem;
+      }
+
+      /* Stats bar - stack on mobile */
+      .stats-bar {
+        padding: 12px;
+        gap: 8px;
+      }
+      
+      .stat-chip {
+        font-size: 0.75rem;
+        padding: 5px 12px;
+        flex: 1 1 calc(50% - 4px);
+        min-width: 0;
+        justify-content: center;
+      }
+
+      /* Funnel - stack vertically */
+      .funnel-bar {
+        padding: 12px;
+        flex-direction: column;
+        align-items: stretch;
+      }
+      
+      .funnel-step {
+        flex-direction: row;
+        justify-content: space-between;
+        min-width: 0;
+        padding: 10px 14px;
+        background: rgba(255,255,255,0.02);
+        border-radius: 8px;
+      }
+      
+      .funnel-num {
+        font-size: 1.3rem;
+      }
+      
+      .funnel-label {
+        font-size: 0.7rem;
+        text-align: right;
+      }
+      
+      .funnel-sep {
+        display: none;
+      }
+
+      /* Journey section adjustments */
+      .journey-section {
+        padding: 12px;
+      }
+      
+      .journey-panel {
+        padding: 8px;
+      }
+      
+      .journey-track {
+        padding: 6px 8px;
+      }
+      
+      .jt-header {
+        font-size: 0.8rem;
+        gap: 6px;
+      }
+      
+      .jt-label {
+        font-size: 0.7rem;
+      }
+
+      /* Layout toggle - hide on mobile, default to cards */
+      #layoutToggle {
+        display: none !important;
+      }
+      
+      #jobGrid {
+        grid-template-columns: 1fr !important;
+      }
+
+      /* Controls bar - stack filters */
+      .controls-bar {
+        padding: 12px;
+        gap: 8px;
+        flex-direction: column;
+        align-items: stretch;
+      }
+      
+      .controls-left, .controls-right {
+        width: 100%;
+        flex-direction: column;
+        gap: 8px;
+      }
+      
+      .filter-group {
+        width: 100%;
+      }
+      
+      .filter-group select,
+      .search-box input {
+        width: 100%;
+        font-size: 16px; /* Prevent iOS zoom */
+      }
+
+      /* Job list container */
+      .list-container {
+        padding: 12px;
+      }
+
+      /* Job cards - optimized for mobile */
+      .card {
+        padding: 14px;
+        border-radius: 12px;
+      }
+      
+      .card-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      
+      .card-top {
+        width: 100%;
+      }
+      
+      .card-title {
+        font-size: 1rem;
+        line-height: 1.3;
+        margin-bottom: 6px;
+      }
+      
+      .card-company {
+        font-size: 0.85rem;
+        margin-bottom: 4px;
+      }
+      
+      .card-meta {
+        font-size: 0.75rem;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+      
+      .card-tags {
+        width: 100%;
+        justify-content: flex-start;
+        margin-top: 8px;
+      }
+      
+      .tag-highlight {
+        font-size: 0.7rem;
+        padding: 3px 8px;
+      }
+
+      /* Status selector - easier tap targets */
+      .status-selector {
+        min-width: 0;
+      }
+      
+      .status-current {
+        font-size: 0.85rem;
+        padding: 8px 10px;
+        min-height: 44px; /* iOS recommended touch target */
+      }
+      
+      .status-dropdown {
+        position: fixed;
+        left: 12px;
+        right: 12px;
+        top: auto;
+        bottom: 12px;
+        max-height: 60vh;
+        overflow-y: auto;
+      }
+      
+      .status-option {
+        padding: 12px;
+        font-size: 0.9rem;
+        min-height: 44px;
+      }
+
+      /* Action buttons - better touch targets */
+      .card-actions {
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      
+      .btn-action {
+        font-size: 0.8rem;
+        padding: 8px 12px;
+        min-height: 40px;
+      }
+      
+      .btn-delete {
+        width: 100%;
+        margin-top: 6px;
+      }
+
+      /* Modals - full screen on mobile */
+      .modal-overlay {
+        padding: 0;
+        align-items: flex-end;
+      }
+      
+      .modal {
+        max-width: 100%;
+        width: 100%;
+        max-height: 90vh;
+        border-radius: 16px 16px 0 0;
+        margin: 0;
+      }
+      
+      .modal-header {
+        padding: 16px 14px;
+      }
+      
+      .modal-body {
+        padding: 14px;
+        max-height: calc(90vh - 60px);
+      }
+
+      /* Timeline editor on mobile */
+      .timeline-edit-row {
+        flex-direction: column;
+        gap: 8px;
+      }
+      
+      .timeline-edit-row select,
+      .timeline-edit-row input {
+        width: 100%;
+        font-size: 16px;
+      }
+
+      /* Notes editor */
+      .notes-area {
+        font-size: 16px;
+        min-height: 150px;
+      }
+
+      /* Toast notifications */
+      .toast {
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+        width: auto;
+        font-size: 0.85rem;
+      }
+
+      /* Journey overview - simplify on mobile */
+      .journey-overview {
+        gap: 4px;
+      }
+      
+      .jo-count {
+        font-size: 1.2rem;
+      }
+      
+      .jo-label {
+        font-size: 0.7rem;
+      }
+
+      /* Hide long text on small screens */
+      .card-meta .sep {
+        display: none;
+      }
+    }
+
+    /* Extra small phones (375px and below) */
+    @media (max-width: 400px) {
+      .logo {
+        font-size: 0.95rem;
+      }
+      
+      .nav-btn {
+        font-size: 0.7rem;
+        padding: 5px 8px;
+      }
+      
+      .card-title {
+        font-size: 0.95rem;
+      }
+      
+      .card-company {
+        font-size: 0.8rem;
+      }
+      
+      .stat-chip {
+        flex: 1 1 100%;
+      }
+    }
+>>>>>>> Stashed changes
   </style>
 </head>
 <body>
@@ -1869,6 +2308,13 @@
   <div class="spinner"></div>
 </div>
 
+<!-- ── Pagination controls ─────────────────────────────────────────── -->
+<div class="pagination" id="pagination" style="display: none;">
+  <button type="button" id="prevPage" onclick="prevPage()" class="pagination-btn">← Prev</button>
+  <span id="pageInfo" class="page-info">Page 1 of 1</span>
+  <button type="button" id="nextPage" onclick="nextPage()" class="pagination-btn">Next →</button>
+</div>
+
 <!-- ── Toast ───────────────────────────────────────────────────────── -->
 <div class="toast" id="toast"></div>
 
@@ -1884,6 +2330,12 @@ const collapsedGroups = new Set(); // tracks which date groups are collapsed
 let currentLayout = localStorage.getItem('jobLayout') || 'compact';
 const jobHighlights = {}; // job_id -> string[]
 const HIGHLIGHT_PRESETS = ['Leipzig', 'Chinese+'];
+
+// Pagination state
+let currentPage = 1;
+let totalPages = 1;
+let totalJobs = 0;
+const PAGE_SIZE = 20;
 
 const STATUS_LABEL = {
   pending:    'Not Applied',
@@ -2466,6 +2918,14 @@ async function loadDailyStats() {
       const withActivity = [...days].reverse().find(d => calActivityScore(d) > 0 || d.german_filtered > 0);
       if (withActivity) showCalDetail(withActivity.date);
     }
+    
+    // Scroll heatmap to show most recent days on mobile
+    setTimeout(() => {
+      const calWrap = document.querySelector('.cal-wrap');
+      if (calWrap && window.innerWidth <= 900) {
+        calWrap.scrollLeft = calWrap.scrollWidth;
+      }
+    }, 100);
   } catch (_) {
     container.innerHTML = '';
   }
@@ -2474,6 +2934,7 @@ async function loadDailyStats() {
 /* ── Status filter ───────────────────────────────────────────────── */
 function setStatusFilter(status) {
   currentStatusFilter = status;
+  currentPage = 1; // Reset to first page when filter changes
   document.querySelectorAll('.stat-chip').forEach(el => {
     el.classList.toggle('active', el.dataset.status === status);
   });
@@ -2489,7 +2950,44 @@ function toggleHighlightsFilter() {
 /* ── Debounce search ─────────────────────────────────────────────── */
 function debounceLoad() {
   clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(loadJobs, SEARCH_DEBOUNCE_MS);
+  debounceTimer = setTimeout(() => {
+    currentPage = 1; // Reset to first page on search
+    loadJobs();
+  }, SEARCH_DEBOUNCE_MS);
+}
+
+/* ── Pagination ──────────────────────────────────────────────────── */
+function updatePagination() {
+  const pagination = document.getElementById('pagination');
+  const prevBtn = document.getElementById('prevPage');
+  const nextBtn = document.getElementById('nextPage');
+  const pageInfo = document.getElementById('pageInfo');
+
+  if (totalPages <= 1) {
+    pagination.style.display = 'none';
+    return;
+  }
+
+  pagination.style.display = 'flex';
+  pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+  prevBtn.disabled = currentPage <= 1;
+  nextBtn.disabled = currentPage >= totalPages;
+}
+
+function prevPage() {
+  if (currentPage > 1) {
+    currentPage--;
+    loadJobs();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}
+
+function nextPage() {
+  if (currentPage < totalPages) {
+    currentPage++;
+    loadJobs();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 }
 
 /* ── Date helpers ────────────────────────────────────────────────── */
@@ -2928,15 +3426,21 @@ async function loadJobs() {
   if (search) params.set('q', search);
   if (dates.from) params.set('date_from', dates.from);
   if (dates.to)   params.set('date_to',   dates.to);
+  params.set('page', currentPage);
+  params.set('page_size', PAGE_SIZE);
 
   try {
     const res  = await fetch('/api/jobs?' + params.toString(), { signal });
     const data = await res.json();
 
+    totalPages = data.pages || 1;
+    totalJobs = data.total || 0;
+    currentPage = data.page || 1;
+
     grid.innerHTML = '';
     grid.classList.toggle('layout-compact', currentLayout === 'compact');
     grid.classList.toggle('layout-cards', currentLayout === 'cards');
-    document.getElementById('countLabel').textContent = `Total ${data.total}`;
+    document.getElementById('countLabel').textContent = `Page ${currentPage} of ${totalPages} (${totalJobs} total)`;
 
     if (!data.jobs.length) {
       grid.innerHTML = `
@@ -2944,6 +3448,7 @@ async function loadJobs() {
           <h2>No Matched Jobs</h2>
           <p>Try different filters?</p>
         </div>`;
+      updatePagination();
       return;
     }
 
@@ -2973,6 +3478,8 @@ async function loadJobs() {
       });
       grid.appendChild(container);
     });
+    
+    updatePagination();
   } catch (err) {
     if (err.name === 'AbortError') return;
     grid.innerHTML = `<div class="empty"><h2>Loading Failed</h2><p>${err.message}</p></div>`;
