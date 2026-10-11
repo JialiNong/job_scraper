@@ -48,6 +48,8 @@ _BACKEND_ALIASES = {
     "nest": "node",
     "nestjs": "node",
     "nest.js": "node",
+    "next.js": "node",
+    "nextjs": "node",
     "fastify": "node",
     "koa": "node",
     "hapi": "node",
@@ -100,15 +102,19 @@ _AI_ML_TITLE = re.compile(
 )
 
 # Tokens used to detect explicit OR language lists in the raw JD text.
+# next.js counts as a Node server option in phrases like
+# "Next.js, FastAPI, or comparable server frameworks".
 _OR_LANG_TOKEN = (
     r"(?:node\.?js|nodejs|node|typescript|javascript|python|java|golang|go|"
     r"kotlin|php|ruby|scala|rust|c#|csharp|\.net|django|flask|fastapi|"
-    r"spring(?:\s*boot)?|express(?:\.js)?|nestjs?|nest\.js)"
+    r"spring(?:\s*boot)?|express(?:\.js)?|nestjs?|nest\.js|next\.?js|nextjs)"
 )
-# "TypeScript, Python or similar" / "Node.js or Python" / "Python and/or TypeScript"
+# "TypeScript, Python or similar" / "Next.js, FastAPI, or comparable" /
+# "Node.js or Python" / "Python and/or TypeScript"
+# Optional comma before "or" covers Oxford-comma lists.
 _OR_LANG_LIST_RE = re.compile(
     rf"\b({_OR_LANG_TOKEN})(?:\s*,\s*({_OR_LANG_TOKEN}))*"
-    rf"\s+(?:and\s+)?or\s+"
+    rf"\s*,?\s+(?:and\s+)?or\s+"
     rf"(?:similar|equivalent|comparable|related(?:\s+modern)?(?:\s+languages?)?"
     rf"|{_OR_LANG_TOKEN})\b",
     re.I,
@@ -345,6 +351,7 @@ Do NOT put AND languages into `backend_or_groups`.
 Explicit OR examples (all members `or_list`, and one `backend_or_groups` entry):
 - "Experience with TypeScript, Python or similar modern languages"
 - "Backend in Node.js or Python" / "Python and/or TypeScript"
+- "Next.js, FastAPI, or comparable server frameworks" (FastAPI is an OR example, not a hard Python ask)
 
 Duties / tech dumps are NOT hard AND by themselves:
 - "Work across TypeScript, Python, React and modern full-stack technologies" alone does not make Python `required`/`implied` when Requirements use OR (or state no backend language).

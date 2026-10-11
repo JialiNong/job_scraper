@@ -50,6 +50,7 @@ In code this is a pre-AI extract + local gate (`stack_gate.py`). The extract lab
 - "Backend in Node.js or Python"
 - "Experience with Python and/or Node.js"
 - "Experience with TypeScript, Python or similar modern languages"
+- "TypeScript/Node fundamentals (Next.js, FastAPI, or comparable server frameworks)" — FastAPI is an OR example of a server framework, **not** a hard Python ask
 
 Duties / tech dumps are **not** hard AND by themselves. Prefer the Requirements wording when both appear:
 
