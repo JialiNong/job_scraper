@@ -1,170 +1,123 @@
 # Mobile UI Fixes Summary
 
-## PR: [#3](https://github.com/JialiNong/job_scraper/pull/3)
-## Branch: `cursor/mobile-fixes-636d`
+Merged result of `main` (PR #2) plus this branch's extra mobile polish
+(tighter funnel/journey spacing, Refresh `nowrap`, smaller tablet bubbles).
 
 ## Issues Fixed
 
-### 1. ✅ Header Button Row Wrapping
-**Problem:** Refresh button's icon "↻" and text "Refresh" wrapped onto two lines, making it taller than other buttons.
+### 1. Header Buttons Layout
+**Problem:** On mobile, header buttons sat next to the title and were hard to tap.
+The Refresh icon + label could also wrap onto two lines.
 
-**Solution:** Added `white-space: nowrap` to `.nav-btn` in the mobile media query (@768px).
+**Solution:**
+- Title on its own row; buttons on a second horizontally scrollable row
+- Hidden scrollbar, swipe left/right
+- `white-space: nowrap` on `.nav-btn` and header Refresh so icon+text stay on one line
+- `flex-shrink: 0` so buttons keep their size instead of being squeezed
 
-**Code Change:**
 ```css
 @media (max-width: 768px) {
-  .nav-btn {
-    white-space: nowrap;  /* Prevents icon+text from wrapping */
+  header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .header-actions {
+    width: 100%;
+    overflow-x: auto;
+    gap: 8px;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .nav-btn,
+  .header-actions .btn-save {
+    flex-shrink: 0;
+    white-space: nowrap;
   }
 }
 ```
 
-### 2. ✅ Funnel Panel & Application Journey Spacing
-**Problem:** Too much padding and vertical gaps made these sections consume excessive screen height on mobile.
+### 2. Applied Locations
+**Problem:** Absolute-positioned bubbles overlapped on narrow screens.
 
-**Solution:** Reduced padding at multiple levels:
-- Funnel bar: 12px → 8px padding, added 6px gap
-- Funnel steps: 10px 14px → 8px 12px padding
-- Journey section: 12px → 8px padding
-- Journey panel: 8px → 6px padding
-- Journey tracks: 6px 8px → 4px 6px padding
+**Solution:**
+- ≤640px: chip/tag wrap layout (counts always visible)
+- 641–768px: keep glass bubbles, slightly smaller radii
+- Desktop: unchanged collision-avoidance bubbles
 
-**Code Changes:**
 ```css
-@media (max-width: 768px) {
-  .funnel-bar {
-    padding: 8px 12px;    /* Was padding: 12px */
-    gap: 6px;             /* Explicit gap added */
+@media (max-width: 640px) {
+  .loc-bubbles {
+    position: relative;
+    height: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 12px;
   }
-  
-  .funnel-step {
-    padding: 8px 12px;    /* Was padding: 10px 14px */
-  }
-  
-  .journey-section {
-    padding: 8px 12px;    /* Was padding: 12px */
-  }
-  
-  .journey-panel {
-    padding: 6px;         /* Was padding: 8px */
-  }
-  
-  .journey-track {
-    padding: 4px 6px;     /* Was padding: 6px 8px */
+
+  .loc-bubble {
+    position: relative !important;
+    width: auto;
+    height: auto;
+    border-radius: 20px;
+    padding: 8px 14px;
   }
 }
 ```
 
-### 3. ✅ Applied Locations - Smaller Bubbles on Mobile
-**Problem:** User wanted desktop-style bubble visualization on mobile (not chips), but bubbles were too large and overlapped/clumped together.
+### 3. Daily Activity Heatmap
+**Problem:** The calendar grid was cut off on mobile, hiding recent days.
 
-**Solution:** 
-- Made bubble radii smaller on mobile via JavaScript detection
-- Reduced container height on mobile
-- Mobile min radius: 16px (vs 22px desktop)
-- Mobile max radius: 38px (vs 58px desktop)
+**Solution:**
+- Horizontal scroll from the 900px breakpoint
+- Auto-scroll to the most recent days on load
+- Cell size stays readable; do not shrink-to-fit and clip overflow
 
-**Code Changes:**
-
-CSS:
 ```css
 @media (max-width: 900px) {
-  .loc-bubbles { height: 200px; }  /* More compact */
-}
-
-@media (max-width: 640px) {
-  .loc-bubbles { height: 180px; }  /* Even more compact */
-}
-```
-
-JavaScript:
-```javascript
-function renderLocationBubbles(locations, total) {
-  // ...
-  const isMobile = window.innerWidth <= 768;
-  const minR = isMobile ? 16 : 22;  // Smaller on mobile
-  const maxR = isMobile ? Math.min(38, ...) : Math.min(58, ...);
-  // ...
-}
-```
-
-### 4. ✅ Daily Activity Heatmap - Responsive Width
-**Problem:** Heatmap didn't fill full screen width and was partially cut off on narrow screens.
-
-**Solution:** Made calendar cell size, gaps, and labels responsive using CSS custom properties:
-- @768px: cells 18px (from 26px), gap 2px (from 4px)
-- @400px: cells 14px, gap 1.5px
-- Proportionally scaled labels and metrics
-
-**Code Changes:**
-```css
-@media (max-width: 768px) {
-  .cal-section {
-    --cal-cell: 18px;    /* Was 26px */
-    --cal-gap: 2px;      /* Was 4px */
-    --cal-label: 14px;   /* Was 18px */
-    padding: 10px;
-  }
-  
   .cal-wrap {
-    overflow-x: visible;  /* No scroll needed */
-    max-width: 100%;
-  }
-}
-
-@media (max-width: 400px) {
-  .cal-section {
-    --cal-cell: 14px;    /* Even smaller */
-    --cal-gap: 1.5px;
-    --cal-label: 12px;
-    padding: 8px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
   }
 }
 ```
 
-## Additional Changes
-- `src/core/db_mongo.py`: Made `DATABASE_NAME` configurable via env var (enables testing with different databases)
-
-## Verification Status
-
-### ✅ Automated Checks Passed
-```
-✓ Mobile breakpoint @768px present
-✓ Extra small breakpoint @400px present
-✓ Header button no-wrap fix
-✓ Heatmap responsive cell size
-✓ Heatmap extra small cell size
-✓ Funnel padding reduction
-✓ Mobile detection in JS
-✓ Mobile bubble sizing
-✓ Flask app starts successfully
+```javascript
+setTimeout(() => {
+  const calWrap = document.querySelector('.cal-wrap');
+  if (calWrap && window.innerWidth <= 900) {
+    calWrap.scrollLeft = calWrap.scrollWidth;
+  }
+}, 100);
 ```
 
-### ⚠️ Manual Testing Required
-Due to environment limitations (no MongoDB instance with seeded data available), comprehensive mobile testing should be performed on the **Render deployment** where real data exists.
+### 4. Job List Pagination
+**Problem:** Loading every job at once was slow on mobile.
 
-See [TESTING_GUIDE.md](./TESTING_GUIDE.md) for detailed testing instructions.
+**Solution:**
+- Server-side pagination (20 jobs per page) on `/api/jobs`
+- Prev/Next controls and page indicator
+- Reset to page 1 when filters or search change
 
-## Testing Instructions for Reviewer
+### 5. Funnel and Journey Spacing
+**Problem:** Funnel + Application Journey used too much vertical space on phones.
 
-1. Deploy branch to Render or test locally with real MongoDB data
-2. Open on mobile device or Chrome DevTools (F12 → device toolbar)
-3. Test at 390x844 (iPhone 12 Pro) and 360x740 (Android)
-4. Verify all four issues are resolved per TESTING_GUIDE.md
-5. Confirm desktop layout (1920x1080) remains unchanged
+**Solution:** Tighter padding at 768px (funnel 8px/6px gap, journey 8px/6px/4px)
+without changing desktop spacing.
 
-## Screenshots
-Screenshots from the live Render deployment should be captured after merging to verify all fixes in the real environment with actual job data.
+## Testing
 
-## Rollback
-If issues arise, rollback is straightforward:
-```bash
-git revert <commit-hash>
-git push
-```
+1. **Desktop (≥1024px):** header in one row, location bubbles, inline heatmap, pagination at the bottom when needed.
+2. **Tablet (640–900px):** stacked header, scrollable heatmap, location bubbles (slightly smaller).
+3. **Phone (≤640px):** scrollable header buttons, location chips, heatmap scrolled to recent days, pagination. Check 390×844 and 360×740.
 
-Or redeploy previous main branch on Render.
+See `TESTING_REPORT.md` for the PR #2 visual check, and `TESTING_GUIDE.md` for manual steps.
 
----
+## Files Changed
 
-**All code changes are complete and syntactically verified. Ready for review and deployment testing.**
+- `src/web/web_app.py`: pagination on `/api/jobs`
+- `templates/index.html`: mobile CSS + pagination UI/logic
