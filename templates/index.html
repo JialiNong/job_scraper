@@ -1712,17 +1712,35 @@
         gap: 6px;
       }
       
-      .nav-btn {
+      .nav-btn, .btn-save {
         padding: 6px 10px;
         font-size: 0.75rem;
         flex: 1;
         justify-content: center;
         min-width: 0;
         white-space: nowrap;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        line-height: 1.2;
+        min-height: 27px;
+        max-height: 27px;
       }
       
       .nav-btn b {
         font-size: 0.7rem;
+        white-space: nowrap;
+        display: inline;
+        line-height: 1;
+      }
+      
+      /* Refresh button specific styling */
+      .header-actions .btn-save {
+        padding: 6px 10px !important;
+        font-size: 0.75rem !important;
+        white-space: nowrap;
+        min-height: 27px;
+        max-height: 27px;
       }
 
       /* Stats bar - stack on mobile */
@@ -1784,19 +1802,24 @@
       
       /* Heatmap - scale to fit mobile width */
       .cal-section {
-        --cal-cell: 18px;
+        --cal-cell: 15px;  /* Smaller to ensure fit with gaps */
         --cal-gap: 2px;
-        --cal-label: 14px;
+        --cal-label: 13px;
         padding: 10px;
       }
       
       .cal-wrap {
-        overflow-x: visible;
+        overflow-x: hidden;  /* Hide any minimal overflow */
         max-width: 100%;
       }
       
+      .cal-months {
+        max-width: 100%;
+        overflow: hidden;
+      }
+      
       .cal-dow {
-        font-size: 0.6rem;
+        font-size: 0.58rem;
       }
       
       .cal-month-label {
