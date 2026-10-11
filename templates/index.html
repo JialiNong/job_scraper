@@ -667,6 +667,23 @@
         --cal-gap: 3px;
       }
       .cal-body { flex-wrap: wrap; }
+      .cal-wrap {
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+        padding-bottom: 8px;
+      }
+      .cal-wrap::-webkit-scrollbar {
+        height: 6px;
+      }
+      .cal-wrap::-webkit-scrollbar-track {
+        background: var(--bg);
+      }
+      .cal-wrap::-webkit-scrollbar-thumb {
+        background: var(--border);
+        border-radius: 3px;
+      }
       .cal-detail {
         flex: 1 1 100%;
         width: 100%;
@@ -679,6 +696,62 @@
     @media (max-width: 640px) {
       .loc-bubbles { height: 220px; }
       .cal-metrics { grid-template-columns: repeat(2, 1fr); }
+      
+      /* Applied Locations - switch to chip layout on mobile */
+      .loc-bubbles {
+        position: relative;
+        height: auto;
+        min-height: 100px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        padding: 12px;
+      }
+      
+      .loc-bubble {
+        position: relative !important;
+        left: auto !important;
+        top: auto !important;
+        transform: none !important;
+        --size: auto !important;
+        width: auto;
+        height: auto;
+        border-radius: 20px;
+        padding: 8px 14px;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      
+      .loc-bubble .lb-name {
+        font-size: 0.85rem;
+        max-width: none;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+        overflow: hidden;
+      }
+      
+      .loc-bubble .lb-count {
+        position: relative;
+        left: auto;
+        bottom: auto;
+        transform: none;
+        font-size: 0.85rem;
+        font-weight: 700;
+        opacity: 1;
+      }
+      
+      .loc-bubble:hover {
+        transform: none !important;
+      }
+      
+      .loc-bubble:hover .lb-name {
+        transform: none;
+      }
+      
+      .loc-bubble:hover .lb-count {
+        transform: none;
+      }
     }
 
     /* ── Toolbar ──────────────────────────────────────────────────── */
@@ -1596,6 +1669,42 @@
     }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── Pagination ──────────────────────────────────────────────────── */
+    .pagination {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 20px 24px;
+      border-top: 1px solid var(--border);
+    }
+    .pagination-btn {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 8px 20px;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border-color .15s, background .15s;
+    }
+    .pagination-btn:hover:not(:disabled) {
+      border-color: var(--accent);
+      background: var(--surface2);
+    }
+    .pagination-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+    .page-info {
+      font-size: .9rem;
+      color: var(--muted);
+      font-weight: 600;
+      min-width: 120px;
+      text-align: center;
+    }
+
     /* ── Toast ────────────────────────────────────────────────────── */
     .toast {
       position: fixed; bottom: 24px; right: 24px;
@@ -1688,37 +1797,50 @@
 
     /* ── Mobile Responsive Styles (375px - 430px phones) ─────────────── */
     @media (max-width: 768px) {
-      /* Header adjustments */
+      /* Header adjustments - horizontal scrollable row */
       header {
-        padding: 0 12px;
-        height: auto;
+        padding: 12px !important;
+        height: auto !important;
         min-height: 56px;
-        flex-wrap: wrap;
-        gap: 8px;
-        padding-top: 8px;
-        padding-bottom: 8px;
+        flex-direction: column !important;
+        align-items: flex-start !important;
+        gap: 8px !important;
       }
       
       .logo {
         font-size: 1rem;
+        width: 100%;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 0;
       }
       
       .header-actions {
-        width: 100%;
-        justify-content: space-between;
-        gap: 6px;
+        width: 100% !important;
+        display: flex !important;
+        flex-direction: row !important;
+        overflow-x: auto;
+        overflow-y: hidden;
+        gap: 8px;
+        padding: 0 !important;
+        margin: 0 !important;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      
+      .header-actions::-webkit-scrollbar {
+        display: none;
       }
       
       .nav-btn {
-        padding: 6px 10px;
-        font-size: 0.75rem;
-        flex: 1;
-        justify-content: center;
-        min-width: 0;
+        padding: 8px 16px;
+        font-size: 0.8rem;
+        flex-shrink: 0;
+        white-space: nowrap;
       }
       
       .nav-btn b {
-        font-size: 0.7rem;
+        font-size: 0.75rem;
       }
 
       /* Stats bar - stack on mobile */
@@ -2189,6 +2311,13 @@
   <div class="spinner"></div>
 </div>
 
+<!-- ── Pagination controls ─────────────────────────────────────────── -->
+<div class="pagination" id="pagination" style="display: none;">
+  <button type="button" id="prevPage" onclick="prevPage()" class="pagination-btn">← Prev</button>
+  <span id="pageInfo" class="page-info">Page 1 of 1</span>
+  <button type="button" id="nextPage" onclick="nextPage()" class="pagination-btn">Next →</button>
+</div>
+
 <!-- ── Toast ───────────────────────────────────────────────────────── -->
 <div class="toast" id="toast"></div>
 
@@ -2204,6 +2333,12 @@ const collapsedGroups = new Set(); // tracks which date groups are collapsed
 let currentLayout = localStorage.getItem('jobLayout') || 'compact';
 const jobHighlights = {}; // job_id -> string[]
 const HIGHLIGHT_PRESETS = ['Leipzig', 'Chinese+'];
+
+// Pagination state
+let currentPage = 1;
+let totalPages = 1;
+let totalJobs = 0;
+const PAGE_SIZE = 20;
 
 const STATUS_LABEL = {
   pending:    'Not Applied',
@@ -2786,6 +2921,14 @@ async function loadDailyStats() {
       const withActivity = [...days].reverse().find(d => calActivityScore(d) > 0 || d.german_filtered > 0);
       if (withActivity) showCalDetail(withActivity.date);
     }
+    
+    // Scroll heatmap to show most recent days on mobile
+    setTimeout(() => {
+      const calWrap = document.querySelector('.cal-wrap');
+      if (calWrap && window.innerWidth <= 900) {
+        calWrap.scrollLeft = calWrap.scrollWidth;
+      }
+    }, 100);
   } catch (_) {
     container.innerHTML = '';
   }
@@ -2794,6 +2937,7 @@ async function loadDailyStats() {
 /* ── Status filter ───────────────────────────────────────────────── */
 function setStatusFilter(status) {
   currentStatusFilter = status;
+  currentPage = 1; // Reset to first page when filter changes
   document.querySelectorAll('.stat-chip').forEach(el => {
     el.classList.toggle('active', el.dataset.status === status);
   });
@@ -2809,7 +2953,44 @@ function toggleHighlightsFilter() {
 /* ── Debounce search ─────────────────────────────────────────────── */
 function debounceLoad() {
   clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(loadJobs, SEARCH_DEBOUNCE_MS);
+  debounceTimer = setTimeout(() => {
+    currentPage = 1; // Reset to first page on search
+    loadJobs();
+  }, SEARCH_DEBOUNCE_MS);
+}
+
+/* ── Pagination ──────────────────────────────────────────────────── */
+function updatePagination() {
+  const pagination = document.getElementById('pagination');
+  const prevBtn = document.getElementById('prevPage');
+  const nextBtn = document.getElementById('nextPage');
+  const pageInfo = document.getElementById('pageInfo');
+
+  if (totalPages <= 1) {
+    pagination.style.display = 'none';
+    return;
+  }
+
+  pagination.style.display = 'flex';
+  pageInfo.textContent = `Page ${currentPage} of ${totalPages}`;
+  prevBtn.disabled = currentPage <= 1;
+  nextBtn.disabled = currentPage >= totalPages;
+}
+
+function prevPage() {
+  if (currentPage > 1) {
+    currentPage--;
+    loadJobs();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}
+
+function nextPage() {
+  if (currentPage < totalPages) {
+    currentPage++;
+    loadJobs();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
 }
 
 /* ── Date helpers ────────────────────────────────────────────────── */
@@ -3248,15 +3429,21 @@ async function loadJobs() {
   if (search) params.set('q', search);
   if (dates.from) params.set('date_from', dates.from);
   if (dates.to)   params.set('date_to',   dates.to);
+  params.set('page', currentPage);
+  params.set('page_size', PAGE_SIZE);
 
   try {
     const res  = await fetch('/api/jobs?' + params.toString(), { signal });
     const data = await res.json();
 
+    totalPages = data.pages || 1;
+    totalJobs = data.total || 0;
+    currentPage = data.page || 1;
+
     grid.innerHTML = '';
     grid.classList.toggle('layout-compact', currentLayout === 'compact');
     grid.classList.toggle('layout-cards', currentLayout === 'cards');
-    document.getElementById('countLabel').textContent = `Total ${data.total}`;
+    document.getElementById('countLabel').textContent = `Page ${currentPage} of ${totalPages} (${totalJobs} total)`;
 
     if (!data.jobs.length) {
       grid.innerHTML = `
@@ -3264,6 +3451,7 @@ async function loadJobs() {
           <h2>No Matched Jobs</h2>
           <p>Try different filters?</p>
         </div>`;
+      updatePagination();
       return;
     }
 
@@ -3293,6 +3481,8 @@ async function loadJobs() {
       });
       grid.appendChild(container);
     });
+    
+    updatePagination();
   } catch (err) {
     if (err.name === 'AbortError') return;
     grid.innerHTML = `<div class="empty"><h2>Loading Failed</h2><p>${err.message}</p></div>`;
