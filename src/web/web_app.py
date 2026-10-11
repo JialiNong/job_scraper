@@ -19,6 +19,7 @@ if _SRC_ROOT not in sys.path:
 import threading
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, flash
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from werkzeug.middleware.proxy_fix import ProxyFix
 import bcrypt
 from dotenv import load_dotenv
 from core.db_mongo import (
@@ -50,6 +51,17 @@ app.jinja_env.auto_reload = True
 
 # Session config (required for login)
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", os.urandom(24).hex())
+
+# Production proxy support (Render, Railway, etc. use X-Forwarded-* headers)
+# This ensures Flask sees the correct scheme (https) and host when behind a reverse proxy
+if os.getenv("RENDER") or os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("FLY_APP_NAME"):
+    app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1)
+
+# Secure session cookies for production (HTTPS)
+if not app.debug and not os.getenv("FLASK_ENV") == "development":
+    app.config["SESSION_COOKIE_SECURE"] = True  # Only send over HTTPS
+    app.config["SESSION_COOKIE_HTTPONLY"] = True  # No JavaScript access
+    app.config["SESSION_COOKIE_SAMESITE"] = "Lax"  # CSRF protection
 
 # Authentication setup
 login_manager = LoginManager()
@@ -315,6 +327,11 @@ def _serialize(job: dict) -> dict:
 
 
 # ─── Routes ──────────────────────────────────────────────────────────────────
+
+@app.route("/health")
+def health():
+    """Health check endpoint for Render and other platforms."""
+    return jsonify({"status": "ok", "service": "job-tracker"}), 200
 
 @app.route("/login", methods=["GET", "POST"])
 def login():

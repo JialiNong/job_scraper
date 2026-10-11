@@ -1,0 +1,52 @@
+# Render Blueprint for Job Tracker Web UI
+# Deploy only the Flask tracking interface (no scrapers)
+# Scrapers continue to run locally on Mac with Chrome/Playwright
+
+services:
+  - type: web
+    name: job-tracker-web
+    env: python
+    region: oregon  # Choose region closest to you
+    plan: free
+    
+    # Build command - install only web dependencies (no Playwright/lingua)
+    buildCommand: pip install -r requirements-web.txt
+    
+    # Start command - use gunicorn for production
+    # Bind to $PORT (Render sets this automatically)
+    # 4 workers for free plan (adjust based on traffic)
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 4 --threads 2 --timeout 60 src.web.web_app:app
+    
+    # Health check endpoint
+    healthCheckPath: /health
+    
+    # Environment variables
+    envVars:
+      # Authentication (set these in Render dashboard - keep secret!)
+      - key: TRACKER_USERNAME
+        sync: false  # Secret - manually set in dashboard
+      
+      - key: TRACKER_PASSWORD_HASH
+        sync: false  # Secret - generate with scripts/generate_password_hash.py
+      
+      # Database connection (MongoDB Atlas)
+      - key: MONGO_URI
+        sync: false  # Secret - get from MongoDB Atlas dashboard
+      
+      # Flask secret key for sessions (auto-generated)
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      
+      # AI/Matching settings (optional - only needed if using manual job logging via web)
+      - key: OPENAI_API_KEY
+        sync: false  # Secret - optional, only if logging jobs via web UI
+      
+      - key: AI_MODEL
+        value: gpt-4o-mini
+      
+      - key: MATCH_THRESHOLD
+        value: "7.0"
+      
+      # Render environment indicator (used to enable ProxyFix)
+      - key: RENDER
+        value: "true"

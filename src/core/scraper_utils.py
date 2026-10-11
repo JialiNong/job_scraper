@@ -12,7 +12,15 @@ import socket
 import subprocess
 import time
 
-from lingua import Language, LanguageDetectorBuilder
+# Lazy import lingua - only needed for language detection in scrapers
+# Web UI doesn't use language detection, so it can run without lingua installed
+try:
+    from lingua import Language, LanguageDetectorBuilder
+    _LINGUA_AVAILABLE = True
+except ImportError:
+    _LINGUA_AVAILABLE = False
+    Language = None
+    LanguageDetectorBuilder = None
 
 from core.config import (
     DEFAULT_KEYWORDS,
@@ -421,6 +429,8 @@ def should_skip_title_before_click(title: str) -> tuple:
 def _get_language_detector():
     """Build a Lingua detector once; language models load lazily on first use."""
     global _LANGUAGE_DETECTOR
+    if not _LINGUA_AVAILABLE:
+        raise RuntimeError("lingua-language-detector is not installed. Required for language detection in scrapers.")
     if _LANGUAGE_DETECTOR is None:
         _LANGUAGE_DETECTOR = LanguageDetectorBuilder.from_languages(
             Language.ENGLISH,
