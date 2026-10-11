@@ -458,6 +458,16 @@ def get_scraper_stats() -> dict:
 # Statuses that mean the user has submitted an application
 APPLIED_STATUSES = ("applied", "rejected", "interview", "offer")
 
+# Jobs that count as an application: current applied-like status, or a recorded
+# apply date / timeline (status may later become closed / unsuitable / repost).
+APPLICATION_QUERY = {
+    "$or": [
+        {"applied_at": {"$ne": None}},
+        {"status": {"$in": list(APPLIED_STATUSES)}},
+        {"application_timeline.0": {"$exists": True}},
+    ]
+}
+
 # Parenthetical work-mode tags Often appended by LinkedIn / Indeed
 _LOC_MODE_RE = re.compile(
     r"\s*[\(\[]\s*(remote|hybrid|on[\s-]?site|hybrides?\s+arbeiten)\s*[\)\]]\s*$",
@@ -699,9 +709,45 @@ def normalize_applied_location(raw: str) -> str:
     return "Remote"
 
 
+def _coerce_dt(value):
+    """Parse a stored datetime / ISO / 'YYYY-MM-DD HH:MM' value, or None."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value
+    text = str(value).strip().replace("T", " ")
+    for fmt in ("%Y-%m-%d %H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+        try:
+            return datetime.strptime(text, fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def resolve_applied_at(job) -> datetime | None:
+    """Same apply-date rules as the Application Journey total."""
+    raw = job.get("application_timeline") if isinstance(job.get("application_timeline"), list) else []
+    for item in raw:
+        if not isinstance(item, dict) or item.get("step") != "applied":
+            continue
+        at = _coerce_dt(item.get("at"))
+        if at:
+            return at
+    at = _coerce_dt(job.get("applied_at"))
+    if at:
+        return at
+    if job.get("status") in APPLIED_STATUSES:
+        return _coerce_dt(job.get("updated_at") or job.get("matched_at"))
+    return None
+
+
 def get_applied_location_stats() -> dict:
     """
-    Aggregate applied-like jobs (applied/rejected/interview/offer) by normalized location.
+    Aggregate applications by normalized location.
+
+    Uses the same job set as Application Journey (`total_applied`): current
+    applied-like status, or a recorded apply date / timeline step. Jobs later
+    marked closed / unsuitable / repost still count.
 
     Returns:
         {
@@ -715,9 +761,12 @@ def get_applied_location_stats() -> dict:
     counter: Counter = Counter()
     total = 0
     for doc in collection.find(
-        {"status": {"$in": list(APPLIED_STATUSES)}},
-        {"location": 1},
+        APPLICATION_QUERY,
+        {"location": 1, "applied_at": 1, "application_timeline": 1,
+         "status": 1, "updated_at": 1, "matched_at": 1},
     ):
+        if not resolve_applied_at(doc):
+            continue
         total += 1
         counter[normalize_applied_location(doc.get("location") or "")] += 1
 

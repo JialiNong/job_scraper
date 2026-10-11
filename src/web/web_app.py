@@ -35,6 +35,8 @@ from core.db_mongo import (
     save_job,
     _parse_filter_date,
     APPLIED_STATUSES,
+    APPLICATION_QUERY,
+    resolve_applied_at,
 )
 from core.scraper_utils import indeed_job_id_variants
 
@@ -1057,7 +1059,7 @@ def api_stats_daily():
 @login_required
 def api_stats_locations():
     """
-    Location mix for applied-like jobs (applied / rejected / interview / offer).
+    Location mix for the same application set as Application Journey.
 
     Cities are normalized (street/postal lines fold into the city; "X near City"
     keeps X). Country-only / pure-remote labels count as Remote; a concrete city
@@ -1076,13 +1078,7 @@ def api_journey():
       each showing the full step timeline (Applied → Invite → Rounds …)
     """
     collection = get_collection("matched_jobs")
-    jobs = list(collection.find({
-        "$or": [
-            {"applied_at": {"$ne": None}},
-            {"status": {"$in": list(APPLIED_STATUSES)}},
-            {"application_timeline.0": {"$exists": True}},
-        ]
-    }))
+    jobs = list(collection.find(APPLICATION_QUERY))
 
     total_applied = 0
     first_applied = None
@@ -1112,12 +1108,8 @@ def api_journey():
                 "_dt": at,
             })
 
-        # Resolve applied date for overview count
-        applied_at = next((s["_dt"] for s in steps if s["step"] == "applied"), None)
-        if not applied_at:
-            applied_at = _parse_timeline_at(job.get("applied_at"))
-        if not applied_at and job.get("status") in APPLIED_STATUSES:
-            applied_at = _parse_timeline_at(job.get("updated_at") or job.get("matched_at"))
+        # Same apply-date rules as location bubbles (resolve_applied_at)
+        applied_at = resolve_applied_at(job)
 
         if applied_at:
             total_applied += 1

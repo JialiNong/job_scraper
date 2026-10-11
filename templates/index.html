@@ -571,6 +571,10 @@
       border: 1px solid var(--border);
       border-radius: 10px;
     }
+    .loc-bubbles.has-open {
+      overflow: visible;
+      z-index: 3;
+    }
     .loc-bubble {
       --size: 56px;
       --bubble: rgba(108, 140, 255, .48);
@@ -586,7 +590,7 @@
       align-items: center;
       justify-content: center;
       text-align: center;
-      cursor: default;
+      cursor: pointer;
       transform: translate(-50%, -50%);
       border: none;
       /* Flat tint plus a short top sheen — translucent glass, no rim */
@@ -601,13 +605,40 @@
       line-height: 1.1;
       z-index: 1;
     }
-    .loc-bubble:hover {
-      z-index: 5;
-      transform: translate(-50%, -50%) scale(1.07);
+    .loc-bubble.is-open {
+      z-index: 8;
+      width: max-content;
+      height: auto;
+      min-width: var(--size);
+      min-height: var(--size);
+      max-width: min(220px, 80vw);
+      border-radius: 999px;
+      padding: 6px 10px;
+      flex-direction: row;
+      gap: 6px;
+      transform: translate(-50%, -50%);
       box-shadow:
         inset 0 1px 0 rgba(255, 255, 255, .4),
         0 8px 18px rgba(0, 0, 0, .22);
       filter: brightness(1.08);
+    }
+    @media (hover: hover) {
+      .loc-bubble:hover {
+        z-index: 5;
+        transform: translate(-50%, -50%) scale(1.07);
+        box-shadow:
+          inset 0 1px 0 rgba(255, 255, 255, .4),
+          0 8px 18px rgba(0, 0, 0, .22);
+        filter: brightness(1.08);
+      }
+      .loc-bubble:hover:not(.is-open) .lb-name {
+        transform: translateY(-7px);
+        opacity: .92;
+      }
+      .loc-bubble:hover:not(.is-open) .lb-count {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
     }
     .loc-bubble .lb-name {
       font-size: clamp(9px, calc(var(--size) * 0.17), 14px);
@@ -635,13 +666,22 @@
       transition: opacity .15s ease, transform .15s ease;
       white-space: nowrap;
     }
-    .loc-bubble:hover .lb-name {
-      transform: translateY(-7px);
-      opacity: .92;
-    }
-    .loc-bubble:hover .lb-count {
+    .loc-bubble.is-open .lb-name {
+      max-width: none;
+      overflow: visible;
+      text-overflow: unset;
+      white-space: nowrap;
+      transform: none;
+      font-size: .78rem;
       opacity: 1;
-      transform: translateX(-50%) translateY(0);
+    }
+    .loc-bubble.is-open .lb-count {
+      position: static;
+      left: auto;
+      bottom: auto;
+      transform: none;
+      opacity: 1;
+      font-size: .78rem;
     }
     .loc-empty {
       position: absolute;
@@ -663,97 +703,60 @@
         border-bottom: 1px solid var(--border);
       }
       .loc-bubbles { 
-        height: 200px;
+        height: 220px;
       }
       .cal-section {
-        --cal-cell: 22px;
-        --cal-gap: 3px;
+        --cal-cell: 16px;
+        --cal-gap: 2px;
+        --cal-label: 14px;
       }
-      .cal-body { flex-wrap: wrap; }
+      .cal-body {
+        flex-wrap: nowrap;
+        justify-content: center;
+        align-items: center;
+        gap: 10px;
+      }
       .cal-wrap {
-        overflow-x: auto;
-        overflow-y: hidden;
-        -webkit-overflow-scrolling: touch;
-        scrollbar-width: thin;
-        padding-bottom: 8px;
+        flex: 0 0 auto;
+        width: max-content;
+        max-width: none;
+        overflow: visible;
+        padding-bottom: 0;
       }
-      .cal-wrap::-webkit-scrollbar {
-        height: 6px;
-      }
-      .cal-wrap::-webkit-scrollbar-track {
-        background: var(--bg);
-      }
-      .cal-wrap::-webkit-scrollbar-thumb {
-        background: var(--border);
-        border-radius: 3px;
+      .cal-months {
+        flex: 0 0 auto;
+        min-width: 0;
+        max-width: none;
       }
       .cal-detail {
-        flex: 1 1 100%;
-        width: 100%;
-        max-width: none;
-        min-width: 0;
-        padding-top: 4px;
+        flex: 0 0 auto;
+        width: auto;
+        max-width: 150px;
+        min-width: 104px;
+        padding-top: 0;
+        gap: 6px;
+        align-self: center;
       }
-      .cal-metrics { grid-template-columns: repeat(4, 1fr); }
+      .cal-detail-date {
+        font-size: .68rem;
+        min-height: 0;
+        text-align: center;
+      }
+      .cal-metrics {
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+      }
+      .cal-metric {
+        min-height: 0;
+        padding: 4px 6px;
+        align-items: center;
+        text-align: center;
+      }
+      .cal-metric .m-num { font-size: 1rem; }
+      .cal-metric .m-label { font-size: .58rem; margin-top: 2px; }
     }
     @media (max-width: 640px) {
-      .cal-metrics { grid-template-columns: repeat(2, 1fr); }
-      
-      /* Applied Locations - switch to chip layout on mobile */
-      .loc-bubbles {
-        position: relative;
-        height: auto;
-        min-height: 100px;
-        display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        padding: 12px;
-      }
-      
-      .loc-bubble {
-        position: relative !important;
-        left: auto !important;
-        top: auto !important;
-        transform: none !important;
-        --size: auto !important;
-        width: auto;
-        height: auto;
-        border-radius: 20px;
-        padding: 8px 14px;
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-      }
-      
-      .loc-bubble .lb-name {
-        font-size: 0.85rem;
-        max-width: none;
-        white-space: nowrap;
-        text-overflow: ellipsis;
-        overflow: hidden;
-      }
-      
-      .loc-bubble .lb-count {
-        position: relative;
-        left: auto;
-        bottom: auto;
-        transform: none;
-        font-size: 0.85rem;
-        font-weight: 700;
-        opacity: 1;
-      }
-      
-      .loc-bubble:hover {
-        transform: none !important;
-      }
-      
-      .loc-bubble:hover .lb-name {
-        transform: none;
-      }
-      
-      .loc-bubble:hover .lb-count {
-        transform: none;
-      }
+      .loc-bubbles { height: 210px; }
     }
 
     /* ── Toolbar ──────────────────────────────────────────────────── */
@@ -1863,29 +1866,31 @@
         justify-content: center;
       }
 
-      /* Funnel - stack vertically */
+      /* Funnel - compact stacked rows */
       .funnel-bar {
-        padding: 8px 12px;
+        padding: 4px 10px;
         flex-direction: column;
         align-items: stretch;
-        gap: 6px;
+        gap: 0;
       }
       
       .funnel-step {
         flex-direction: row;
         justify-content: space-between;
+        align-items: center;
         min-width: 0;
-        padding: 8px 12px;
-        background: rgba(255,255,255,0.02);
-        border-radius: 8px;
+        padding: 2px 6px;
+        gap: 8px;
+        background: transparent;
+        border-radius: 0;
       }
       
       .funnel-num {
-        font-size: 1.3rem;
+        font-size: 1.05rem;
       }
       
       .funnel-label {
-        font-size: 0.7rem;
+        font-size: 0.68rem;
         text-align: right;
       }
       
@@ -1893,34 +1898,46 @@
         display: none;
       }
 
-      /* Journey section adjustments */
+      /* Journey — tight vertical track spacing */
       .journey-section {
-        padding: 8px 12px;
+        padding: 6px 10px 8px;
+      }
+
+      .journey-title {
+        margin-bottom: 6px;
       }
       
       .journey-panel {
-        padding: 6px;
+        padding: 6px 8px;
+        gap: 4px;
+      }
+
+      .journey-overview {
+        padding-bottom: 4px;
+        gap: 4px;
+      }
+
+      .journey-tracks {
+        gap: 0;
       }
       
       .journey-track {
-        padding: 4px 6px;
+        padding: 0;
+        min-height: 15px;
+      }
+
+      .journey-plot {
+        height: 14px;
       }
       
-      .cal-metrics {
-        grid-template-columns: repeat(2, 1fr);
-        gap: 8px;
+      .loc-section,
+      .cal-section {
+        padding: 10px;
       }
-      
-      .cal-metric {
-        padding: 8px;
-      }
-      
-      .m-num {
-        font-size: 1.2rem;
-      }
-      
-      .m-label {
-        font-size: 0.65rem;
+
+      .cal-section {
+        --cal-gap: 2px;
+        --cal-label: 13px;
       }
       
       .jt-header {
@@ -2680,10 +2697,12 @@ const LOC_BUBBLE_COLORS = [
 
 function packLocationBubbles(items, width, height) {
   // Greedy circle pack: largest first, nest tightly around the center.
+  // inset = stay inside the rounded clip; gap = space between circles.
   const cx = width / 2;
   const cy = height / 2;
   const placed = [];
-  const pad = 2;
+  const inset = 8;
+  const gap = 1;
 
   for (const item of items) {
     if (!placed.length) {
@@ -2693,22 +2712,22 @@ function packLocationBubbles(items, width, height) {
 
     let best = null;
     for (const other of placed) {
-      const ring = other.r + item.r + pad;
+      const ring = other.r + item.r + gap;
       for (let a = 0; a < 360; a += 8) {
         const rad = (a * Math.PI) / 180;
         const x = other.x + Math.cos(rad) * ring;
         const y = other.y + Math.sin(rad) * ring;
         if (
-          x - item.r < pad ||
-          x + item.r > width - pad ||
-          y - item.r < pad ||
-          y + item.r > height - pad
+          x - item.r < inset ||
+          x + item.r > width - inset ||
+          y - item.r < inset ||
+          y + item.r > height - inset
         ) {
           continue;
         }
         let overlaps = false;
         for (const p of placed) {
-          if (Math.hypot(x - p.x, y - p.y) < p.r + item.r + pad - 0.5) {
+          if (Math.hypot(x - p.x, y - p.y) < p.r + item.r + gap - 0.5) {
             overlaps = true;
             break;
           }
@@ -2728,8 +2747,8 @@ function packLocationBubbles(items, width, height) {
       const dist = 20 + n * 6;
       placed.push({
         ...item,
-        x: Math.min(width - item.r - pad, Math.max(item.r + pad, cx + Math.cos(ang) * dist)),
-        y: Math.min(height - item.r - pad, Math.max(item.r + pad, cy + Math.sin(ang) * dist)),
+        x: Math.min(width - item.r - inset, Math.max(item.r + inset, cx + Math.cos(ang) * dist)),
+        y: Math.min(height - item.r - inset, Math.max(item.r + inset, cy + Math.sin(ang) * dist)),
       });
     }
   }
@@ -2744,10 +2763,10 @@ function renderLocationBubbles(locations, total) {
   const height = Math.max(root.clientHeight || 280, 200);
   const maxCount = Math.max(...locations.map(l => l.count || 0), 1);
   
-  // Smaller bubbles on mobile (width <= 768px)
+  // Smaller bubbles on mobile so the packed cloud stays inside the canvas
   const isMobile = window.innerWidth <= 768;
-  const minR = isMobile ? 16 : 22;
-  const maxR = isMobile ? Math.min(38, Math.floor(Math.min(width, height) * 0.18)) : Math.min(58, Math.floor(Math.min(width, height) * 0.22));
+  const minR = isMobile ? 14 : 22;
+  const maxR = isMobile ? Math.min(32, Math.floor(Math.min(width, height) * 0.15)) : Math.min(58, Math.floor(Math.min(width, height) * 0.22));
 
   const items = locations.map((loc, i) => {
     const count = loc.count || 0;
@@ -2764,12 +2783,16 @@ function renderLocationBubbles(locations, total) {
   });
 
   const packed = packLocationBubbles(items, width, height);
+  root.classList.remove('has-open');
   root.innerHTML = packed.map(b => {
     const size = b.r * 2;
     return `
       <div class="loc-bubble"
            style="--size:${size}px; --bubble:${b.color}; --bubble-ink:${b.ink}; left:${b.x}px; top:${b.y}px"
-           aria-label="${escHtml(b.name)}: ${b.count}">
+           role="button"
+           tabindex="0"
+           aria-label="${escHtml(b.name)}: ${b.count}"
+           onclick="toggleLocBubble(this)">
         <span class="lb-name">${escHtml(b.name)}</span>
         <span class="lb-count">${b.count}</span>
       </div>`;
@@ -2778,6 +2801,24 @@ function renderLocationBubbles(locations, total) {
 
 let _locStatsCache = null;
 let _locResizeTimer = null;
+
+function toggleLocBubble(el) {
+  const root = document.getElementById('locBubbles');
+  const wasOpen = el.classList.contains('is-open');
+  document.querySelectorAll('.loc-bubble.is-open').forEach(b => b.classList.remove('is-open'));
+  if (!wasOpen) {
+    el.classList.add('is-open');
+    if (root) root.classList.add('has-open');
+  } else if (root) {
+    root.classList.remove('has-open');
+  }
+}
+
+document.addEventListener('click', (e) => {
+  if (e.target.closest('.loc-bubble')) return;
+  document.querySelectorAll('.loc-bubble.is-open').forEach(b => b.classList.remove('is-open'));
+  document.getElementById('locBubbles')?.classList.remove('has-open');
+});
 
 async function loadLocationStats() {
   const root = document.getElementById('locBubbles');
@@ -2812,6 +2853,7 @@ window.addEventListener('resize', () => {
     if (_locStatsCache?.locations?.length) {
       renderLocationBubbles(_locStatsCache.locations, _locStatsCache.total);
     }
+    sizeHeatmapToWidth();
   }, 120);
 });
 
@@ -2948,16 +2990,40 @@ async function loadDailyStats() {
       const withActivity = [...days].reverse().find(d => calActivityScore(d) > 0 || d.german_filtered > 0);
       if (withActivity) showCalDetail(withActivity.date);
     }
-    
-    // Scroll heatmap to show most recent days on mobile
-    setTimeout(() => {
-      const calWrap = document.querySelector('.cal-wrap');
-      if (calWrap && window.innerWidth <= 900) {
-        calWrap.scrollLeft = calWrap.scrollWidth;
-      }
-    }, 100);
+
+    requestAnimationFrame(sizeHeatmapToWidth);
   } catch (_) {
     container.innerHTML = '';
+  }
+}
+
+function sizeHeatmapToWidth() {
+  const section = document.getElementById('calSection');
+  const body = section && section.querySelector('.cal-body');
+  const wrap = section && section.querySelector('.cal-wrap');
+  const detail = section && section.querySelector('.cal-detail');
+  const months = document.getElementById('calMonths');
+  if (!section || !body || !wrap || !months) return;
+
+  if (window.innerWidth > 900) {
+    section.style.removeProperty('--cal-cell');
+    return;
+  }
+
+  const weekCount = months.querySelectorAll('.cal-month-col').length;
+  if (!weekCount) return;
+
+  const dow = wrap.querySelector('.cal-dow');
+  const gap = parseFloat(getComputedStyle(section).getPropertyValue('--cal-gap')) || 2;
+  const wrapGap = parseFloat(getComputedStyle(wrap).gap) || 8;
+  const bodyGap = parseFloat(getComputedStyle(body).gap) || 10;
+  const dowWidth = dow ? dow.getBoundingClientRect().width : 16;
+  const detailW = detail ? detail.getBoundingClientRect().width : 0;
+  const available = body.clientWidth - detailW - bodyGap - dowWidth - wrapGap;
+  const cell = Math.floor((available - (weekCount - 1) * gap) / weekCount);
+  const maxCell = window.innerWidth <= 768 ? 16 : 18;
+  if (cell >= 8) {
+    section.style.setProperty('--cal-cell', `${Math.min(cell, maxCell)}px`);
   }
 }
 
