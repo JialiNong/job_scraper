@@ -206,6 +206,102 @@
       font-size: .82rem;
       color: var(--accent);
     }
+
+    /* ── Mobile Responsive Styles ───────────────────────────────────── */
+    @media (max-width: 768px) {
+      header {
+        padding: 8px 12px;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      
+      .logo {
+        font-size: 1rem;
+      }
+      
+      .header-actions {
+        width: 100%;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      
+      .nav-btn {
+        padding: 6px 10px;
+        font-size: 0.75rem;
+        flex: 1;
+      }
+
+      .page {
+        padding: 20px 12px 60px;
+      }
+      
+      h1 {
+        font-size: 1.3rem;
+      }
+      
+      .subtitle {
+        font-size: 0.85rem;
+      }
+
+      .options-row {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+      }
+      
+      .option-group {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+      }
+      
+      .option-input {
+        width: 100%;
+        font-size: 16px;
+      }
+      
+      #appliedDateGroup {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 6px;
+      }
+
+      .url-box {
+        min-height: 150px;
+        font-size: 14px;
+      }
+
+      .btn-row {
+        flex-direction: column;
+      }
+      
+      .btn {
+        width: 100%;
+        justify-content: center;
+        min-height: 44px;
+      }
+
+      .tip {
+        font-size: 0.8rem;
+        padding: 12px 14px;
+      }
+      
+      .tip code {
+        font-size: 0.75rem;
+      }
+    }
+
+    @media (max-width: 400px) {
+      h1 {
+        font-size: 1.2rem;
+      }
+      
+      .nav-btn {
+        font-size: 0.7rem;
+        padding: 5px 8px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -216,6 +312,7 @@
     <a class="nav-btn" href="/">✅ Matched</a>
     <a class="nav-btn" href="/unmatched">🔍 Unmatched</a>
     <a class="nav-btn" href="/timeouts">⏱ Timeouts</a>
+    <a class="nav-btn" href="/logout" style="border-color: var(--muted);">Logout</a>
   </div>
 </header>
 

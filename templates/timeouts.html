@@ -93,6 +93,91 @@
       transition: opacity .2s;
     }
     .toast.show { opacity: 1; }
+
+    /* ── Mobile Responsive Styles ───────────────────────────────────── */
+    @media (max-width: 768px) {
+      header {
+        padding: 8px 12px;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      
+      .logo {
+        font-size: 1rem;
+      }
+      
+      .header-actions {
+        width: 100%;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      
+      .nav-btn, .btn {
+        padding: 6px 10px;
+        font-size: 0.75rem;
+      }
+
+      .toolbar {
+        padding: 12px;
+        gap: 8px;
+        flex-direction: column;
+        align-items: stretch;
+      }
+      
+      .toolbar select {
+        width: 100%;
+        font-size: 16px;
+      }
+      
+      .hint {
+        font-size: 0.75rem;
+        order: -1;
+      }
+      
+      .count-label {
+        margin-left: 0;
+        text-align: center;
+      }
+
+      .list {
+        padding: 12px;
+      }
+
+      .card {
+        flex-direction: column;
+        padding: 14px;
+      }
+      
+      .card h3 {
+        font-size: 0.95rem;
+      }
+      
+      .meta {
+        font-size: 0.75rem;
+      }
+      
+      .actions {
+        width: 100%;
+        justify-content: stretch;
+      }
+      
+      .actions .btn {
+        flex: 1;
+        justify-content: center;
+        min-height: 44px;
+      }
+    }
+
+    @media (max-width: 400px) {
+      .logo {
+        font-size: 0.95rem;
+      }
+      
+      .nav-btn, .btn {
+        font-size: 0.7rem;
+        padding: 5px 8px;
+      }
+    }
   </style>
 </head>
 <body>
@@ -102,6 +187,7 @@
       <a class="nav-btn" href="/">✅ Matched</a>
       <a class="nav-btn" href="/unmatched">Unmatched</a>
       <a class="nav-btn" href="/manual-apply">📝 Log Job</a>
+      <a class="nav-btn" href="/logout" style="border-color: var(--muted);">Logout</a>
     </div>
   </header>
 
