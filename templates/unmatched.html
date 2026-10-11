@@ -418,6 +418,106 @@
     .toast.show { transform: translateY(0); opacity: 1; }
     .toast.ok   { border-color: #22c55e; color: #22c55e; }
     .toast.err  { border-color: #ef4444; color: #ef4444; }
+
+    /* ── Mobile Responsive Styles ───────────────────────────────────── */
+    @media (max-width: 768px) {
+      header {
+        padding: 8px 12px;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+      
+      .logo {
+        font-size: 1rem;
+      }
+      
+      .header-actions {
+        width: 100%;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      
+      .nav-btn {
+        padding: 6px 10px;
+        font-size: 0.75rem;
+        flex: 1;
+        min-width: 0;
+      }
+
+      .toolbar {
+        padding: 12px;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      
+      #searchInput,
+      select {
+        width: 100%;
+        font-size: 16px;
+      }
+      
+      .filter-group {
+        width: 100%;
+      }
+      
+      .layout-toggle {
+        display: none !important;
+      }
+      
+      .count-label {
+        width: 100%;
+        text-align: center;
+      }
+
+      .job-grid {
+        grid-template-columns: 1fr !important;
+        padding: 12px;
+      }
+
+      .job-card {
+        padding: 14px;
+      }
+      
+      .jc-title {
+        font-size: 1rem;
+      }
+      
+      .jc-meta {
+        font-size: 0.75rem;
+        flex-wrap: wrap;
+      }
+      
+      .jc-score {
+        font-size: 1rem;
+      }
+      
+      .status-select {
+        font-size: 0.85rem;
+        padding: 8px 10px;
+        min-height: 44px;
+      }
+
+      .toast {
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+      }
+    }
+
+    @media (max-width: 400px) {
+      .logo {
+        font-size: 0.95rem;
+      }
+      
+      .nav-btn {
+        font-size: 0.7rem;
+        padding: 5px 8px;
+      }
+      
+      .jc-title {
+        font-size: 0.95rem;
+      }
+    }
   </style>
 </head>
 <body>
@@ -429,6 +529,7 @@
     <a class="nav-btn" href="/timeouts">⏱ Timeouts</a>
     <a class="nav-btn" href="/">← Back to Matched Jobs</a>
     <button class="btn-save" onclick="loadJobs()">↻ Refresh</button>
+    <a class="nav-btn" href="/logout" style="border-color: var(--muted);">Logout</a>
   </div>
 </header>
 
