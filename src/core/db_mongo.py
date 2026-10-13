@@ -339,17 +339,77 @@ def is_job_known(job_id, source="linkedin"):
     True if job_id is already in `jobs` or `matched_jobs` (Indeed: all jk variants).
     Used by manual-apply to skip scrape / AI / save when the URL is already logged.
     """
+    return lookup_known_job(job_id, source) is not None
+
+
+def lookup_known_job(job_id, source="linkedin"):
+    """
+    Find a job by job_id + source (Indeed: all jk variants).
+
+    Prefers `matched_jobs` (Tracker), then `jobs` (Unmatched scrape store),
+    then `timeout_jobs` still pending review.
+
+    Returns:
+        dict with keys collection, _id, title, company, status, source, job_id
+        or None if not found.
+    """
     job_id = str(job_id or "").strip()
     source = (source or "").strip().lower()
     if not job_id or not source:
-        return False
+        return None
     db = get_db()
     id_query = _timeout_id_query(job_id, source)
-    if db[COLLECTION_NAME].find_one(id_query, {"_id": 1}):
-        return True
-    if db["matched_jobs"].find_one(id_query, {"_id": 1}):
-        return True
-    return False
+    projection = {
+        "_id": 1,
+        "title": 1,
+        "company": 1,
+        "status": 1,
+        "source": 1,
+        "job_id": 1,
+        "user_status": 1,
+        "review_status": 1,
+    }
+
+    matched = db["matched_jobs"].find_one(id_query, projection)
+    if matched:
+        return {
+            "collection": "matched_jobs",
+            "_id": str(matched["_id"]),
+            "title": matched.get("title") or "",
+            "company": matched.get("company") or "",
+            "status": matched.get("status") or "pending",
+            "source": matched.get("source") or source,
+            "job_id": matched.get("job_id") or job_id,
+        }
+
+    scraped = db[COLLECTION_NAME].find_one(id_query, projection)
+    if scraped:
+        return {
+            "collection": "jobs",
+            "_id": str(scraped["_id"]),
+            "title": scraped.get("title") or "",
+            "company": scraped.get("company") or "",
+            "status": scraped.get("user_status") or scraped.get("status") or "",
+            "source": scraped.get("source") or source,
+            "job_id": scraped.get("job_id") or job_id,
+        }
+
+    timeout = db[TIMEOUT_JOBS_COLLECTION].find_one(
+        {**id_query, "review_status": {"$ne": "added"}},
+        projection,
+    )
+    if timeout:
+        return {
+            "collection": "timeout_jobs",
+            "_id": str(timeout["_id"]),
+            "title": timeout.get("title") or "",
+            "company": timeout.get("company") or "",
+            "status": timeout.get("review_status") or "pending",
+            "source": timeout.get("source") or source,
+            "job_id": timeout.get("job_id") or job_id,
+        }
+
+    return None
 
 
 def save_timeout_job(

@@ -135,6 +135,7 @@ TITLE_EXCLUDE_KEYWORDS = [
     r"\bNDE\s+Engineer\b",
     r"\bMechanical\s+Engineer\b",
     r"\bWorking\s+Student\b",
+    r"\bIntern\b",
     r"\bFounding(?:\s+\w+){0,4}\s+Engineer\b",  # Founding Engineer / Founding AI Engineer / …
 ]
 

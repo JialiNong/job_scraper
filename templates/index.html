@@ -890,6 +890,34 @@
       box-shadow: 0 0 0 1px var(--accent)22, 0 8px 32px #0008;
       transform: translateY(-2px);
     }
+    .card.open-flash {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent), 0 0 24px rgba(108, 140, 255, .35);
+      animation: openFlashPulse 1.4s ease;
+    }
+    @keyframes openFlashPulse {
+      0%   { box-shadow: 0 0 0 0 rgba(108, 140, 255, .55); }
+      70%  { box-shadow: 0 0 0 8px rgba(108, 140, 255, 0); }
+      100% { box-shadow: 0 0 0 2px var(--accent), 0 0 24px rgba(108, 140, 255, .35); }
+    }
+    .open-job-banner {
+      grid-column: 1 / -1;
+      background: rgba(108, 140, 255, .12);
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: .85rem;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .open-job-banner a {
+      color: var(--accent);
+      font-weight: 600;
+      text-decoration: none;
+    }
     .card-body { display: flex; flex-direction: column; gap: 14px; }
 
     /* Compact row (hidden in cards layout) */
@@ -3576,9 +3604,91 @@ async function loadJobs() {
     });
     
     updatePagination();
+    await focusOpenJobFromQuery();
   } catch (err) {
     if (err.name === 'AbortError') return;
     grid.innerHTML = `<div class="empty"><h2>Loading Failed</h2><p>${err.message}</p></div>`;
+  }
+}
+
+/* ── Deep-link: /?open=<matched_jobs _id> ─────────────────────────── */
+function consumeOpenJobId() {
+  const params = new URLSearchParams(location.search);
+  const id = (params.get('open') || '').trim();
+  if (!id) return '';
+  params.delete('open');
+  const qs = params.toString();
+  history.replaceState({}, '', qs ? `/?${qs}` : '/');
+  return id;
+}
+
+function expandDateGroupForCard(card) {
+  const container = card.closest('.date-group-cards');
+  if (!container || !container.classList.contains('hidden')) return;
+  const group = container.dataset.group;
+  const hdr = container.previousElementSibling;
+  if (hdr && hdr.classList.contains('date-group-header')) {
+    toggleGroup(group, hdr);
+  } else {
+    container.classList.remove('hidden');
+    if (group) collapsedGroups.delete(group);
+  }
+}
+
+function openMatchedCard(card) {
+  if (!card) return;
+  expandDateGroupForCard(card);
+  if (currentLayout === 'compact') {
+    card.classList.add('expanded');
+  }
+  card.classList.add('open-flash');
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => card.classList.remove('open-flash'), 2800);
+}
+
+async function focusOpenJobFromQuery() {
+  if (!window.__pendingOpenJobId) return;
+  const openId = window.__pendingOpenJobId;
+  window.__pendingOpenJobId = '';
+
+  const grid = document.getElementById('jobGrid');
+  let card = document.getElementById(`card-${openId}`);
+  if (card) {
+    openMatchedCard(card);
+    showToast('Opened matched job');
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/jobs/${openId}`);
+    const job = await res.json();
+    if (!res.ok) {
+      showToast(job.error || 'Job not found', 'err');
+      return;
+    }
+
+    const banner = document.createElement('div');
+    banner.className = 'open-job-banner';
+    banner.innerHTML = `
+      <span>Opened job from URL (not on this page/filter) — <strong>${escHtml(job.title || '')}</strong></span>
+      <a href="/">Show all matches</a>
+    `;
+    const injected = renderCard(job);
+    injected.classList.add('open-flash');
+    if (currentLayout === 'compact') injected.classList.add('expanded');
+
+    const empty = grid.querySelector('.empty');
+    if (empty) empty.remove();
+    const spinner = grid.querySelector('.spinner');
+    if (spinner) spinner.remove();
+
+    grid.insertBefore(banner, grid.firstChild);
+    grid.insertBefore(injected, banner.nextSibling);
+    injected.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => injected.classList.remove('open-flash'), 2800);
+    showToast('Opened matched job');
+  } catch (err) {
+    showToast(`Open failed: ${err.message}`, 'err');
   }
 }
 
@@ -4154,6 +4264,8 @@ function refreshAll() {
     }
   });
 });
+
+window.__pendingOpenJobId = consumeOpenJobId();
 
 setLayout(currentLayout);
 loadStats();

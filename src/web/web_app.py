@@ -33,6 +33,7 @@ from core.db_mongo import (
     get_timeout_jobs,
     count_open_timeout_jobs,
     save_job,
+    lookup_known_job,
     _parse_filter_date,
     APPLIED_STATUSES,
     APPLICATION_QUERY,
@@ -742,6 +743,21 @@ def api_update_job_info(job_id: str):
     return jsonify({"ok": True})
 
 
+@app.route("/api/jobs/<job_id>", methods=["GET"])
+@login_required
+def api_get_job(job_id: str):
+    """Return one matched job (list projection) for deep-link open on Tracker."""
+    try:
+        oid = ObjectId(job_id)
+    except Exception:
+        return jsonify({"error": "Invalid job ID"}), 400
+
+    job = get_collection("matched_jobs").find_one({"_id": oid}, JOBS_LIST_PROJECTION)
+    if not job:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify(_serialize(job))
+
+
 @app.route("/api/jobs/<job_id>", methods=["DELETE"])
 @login_required
 def api_delete_job(job_id: str):
@@ -1231,6 +1247,64 @@ _manual_apply_state: dict = {
 @login_required
 def manual_apply_page():
     return render_template("manual_apply.html")
+
+
+@app.route("/api/manual-apply/lookup", methods=["POST"])
+@login_required
+def api_manual_apply_lookup():
+    """
+    Resolve pasted job URL(s) against jobs / matched_jobs / timeout_jobs.
+
+    Body: {"url": "..."} or {"urls": ["...", ...]}
+    Returns one result per URL so Log Job can open an existing Tracker card.
+    """
+    data = request.get_json(silent=True) or {}
+    urls = data.get("urls")
+    if urls is None and data.get("url"):
+        urls = [data.get("url")]
+    if not isinstance(urls, list):
+        return jsonify({"error": "urls must be a list (or pass url)"}), 400
+
+    cleaned = [u.strip() for u in urls if isinstance(u, str) and u.strip()]
+    if not cleaned:
+        return jsonify({"error": "No valid URLs provided"}), 400
+
+    from scrapers.manual_apply_scraper import detect_source, resolve_job_id
+
+    results = []
+    for url in cleaned:
+        source = detect_source(url)
+        job_id = resolve_job_id(url, source)
+        hit = lookup_known_job(job_id, source) if job_id else None
+        if hit:
+            open_path = None
+            if hit["collection"] == "matched_jobs":
+                open_path = f"/?open={hit['_id']}"
+            elif hit["collection"] == "jobs":
+                open_path = "/unmatched"
+            elif hit["collection"] == "timeout_jobs":
+                open_path = "/timeouts"
+            results.append({
+                "url": url,
+                "found": True,
+                "collection": hit["collection"],
+                "id": hit["_id"],
+                "title": hit["title"],
+                "company": hit["company"],
+                "status": hit["status"],
+                "source": hit["source"],
+                "job_id": hit["job_id"],
+                "open_path": open_path,
+            })
+        else:
+            results.append({
+                "url": url,
+                "found": False,
+                "source": source,
+                "job_id": job_id or "",
+            })
+
+    return jsonify({"results": results})
 
 
 @app.route("/api/manual-apply", methods=["POST"])

@@ -369,7 +369,7 @@ Details: [`matching_criteria.md`](./matching_criteria.md).
 
 Web UI (`web_app.py`) reads these for today’s funnel, match list, unmatched reasons, and scrape timeouts.
 
-**Log Job page (`/manual-apply`):** paste job URLs (LinkedIn / Indeed / career pages). Before scrape/AI, resolves `job_id` and skips with a warning if it already exists in `jobs` or `matched_jobs` (Indeed: all jk variants). New URLs are scraped + AI-scored into `matched_jobs`. Default status is **Not Applied** (`pending`); choose **Applied** only when you already applied (optional applied date).
+**Log Job page (`/manual-apply`):** paste job URLs (LinkedIn / Indeed / career pages). On paste (and before scrape), `POST /api/manual-apply/lookup` resolves `job_id` and checks `matched_jobs` → `jobs` → `timeout_jobs` (Indeed: all jk variants). If the URL is already in **Matched**, the UI opens Tracker at `/?open=<matched_jobs _id>` and expands that card. Otherwise new URLs are scraped + AI-scored into `matched_jobs`. Default status is **Not Applied** (`pending`); choose **Applied** only when you already applied (optional applied date).
 
 **Timeouts page (`/timeouts`):** cards whose **title already passed** the scrape gates but the detail panel did not load in time. These are not saved to `jobs` (no JD). You open the original link and, if it is a real match, **Add as Not Applied** — that copies the card into `matched_jobs` as `pending`. Cards with no readable title (typical Indeed ad/empty slots, ~1 per SERP page) are not listed.
 

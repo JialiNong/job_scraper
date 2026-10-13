@@ -140,6 +140,27 @@
     .status-banner.running  { background: #1e2a45; border-color: var(--accent); color: var(--accent); display: flex; align-items: center; gap: 8px; }
     .status-banner.success  { background: #0e2e1a; border-color: var(--green);  color: var(--green);  display: block; }
     .status-banner.error    { background: #2e0e0e; border-color: var(--red);    color: var(--red);    display: block; }
+    .status-banner.info     { background: #1e2a45; border-color: var(--accent); color: var(--text); display: block; font-weight: 500; }
+    .status-banner a { color: var(--accent); font-weight: 700; text-decoration: none; }
+    .status-banner a:hover { text-decoration: underline; }
+    .exist-list { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+    .exist-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      flex-wrap: wrap;
+      padding: 8px 10px;
+      background: var(--surface2);
+      border-radius: 8px;
+      font-size: .84rem;
+    }
+    .exist-meta { color: var(--muted); font-size: .78rem; }
+    .btn-open {
+      display: inline-flex; align-items: center;
+      background: var(--accent); color: #fff;
+      border: none; border-radius: 6px;
+      padding: 6px 12px; font-size: .78rem; font-weight: 700;
+      cursor: pointer; text-decoration: none;
+    }
+    .btn-open:hover { opacity: .9; }
 
     /* ── spinner ── */
     .spinner {
@@ -320,8 +341,8 @@
   <h1>📝 Log Manually Job</h1>
   <p class="subtitle">
     Paste one job URL per line (LinkedIn, Indeed, or any company careers page).<br>
-    The scraper opens each URL, runs AI matching, and saves to your tracker.
-    Default status is <strong>Not Applied</strong> — switch to Applied only when you already applied.
+    If the URL is already in the Tracker, this page opens that matched card instead of scraping again.
+    New URLs are scraped + AI-scored. Default status is <strong>Not Applied</strong> — switch to Applied only when you already applied.
   </p>
 
   <!-- Status + optional applied date -->
@@ -369,6 +390,7 @@ https://careers.example.com/jobs/frontend-engineer"
 
   <div class="tip">
     <strong>💡 Tips</strong><br>
+    • Paste a URL that is already in Matched — the Tracker opens that card automatically.<br>
     • Make sure Chrome is open (debug session). Log in to LinkedIn / Indeed if those URLs need it.<br>
     • LinkedIn: <code>https://www.linkedin.com/jobs/view/JOB_ID/</code><br>
     • Indeed: <code>https://de.indeed.com/viewjob?jk=JOB_KEY</code><br>
@@ -384,6 +406,9 @@ https://careers.example.com/jobs/frontend-engineer"
 let _pollTimer = null;
 let _knownLogLen = 0;
 let _submittedStatus = 'pending';
+let _lookupTimer = null;
+let _lookupSeq = 0;
+let _lastLookupKey = '';
 
 function colorLine(line) {
   const l = line.trim();
@@ -395,6 +420,103 @@ function colorLine(line) {
   return esc(line);
 }
 function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function parseUrlLines(raw) {
+  return String(raw || '')
+    .split('\n')
+    .map(u => u.trim())
+    .filter(u => u && !u.startsWith('#') && /^https?:\/\//i.test(u));
+}
+
+function collectionLabel(collection) {
+  if (collection === 'matched_jobs') return 'Matched (Tracker)';
+  if (collection === 'jobs') return 'Unmatched scrape store';
+  if (collection === 'timeout_jobs') return 'Timeout review';
+  return collection || 'DB';
+}
+
+function renderExistRows(hits) {
+  return `<div class="exist-list">${hits.map(h => {
+    const title = esc(h.title || h.job_id || 'Job');
+    const company = h.company ? ` · ${esc(h.company)}` : '';
+    const where = esc(collectionLabel(h.collection));
+    const open = h.open_path
+      ? `<a class="btn-open" href="${esc(h.open_path)}">Open →</a>`
+      : '';
+    return `<div class="exist-row"><div><div>${title}${company}</div><div class="exist-meta">${where}</div></div>${open}</div>`;
+  }).join('')}</div>`;
+}
+
+async function lookupUrls(urls, { autoOpen = true } = {}) {
+  if (!urls.length) return null;
+  const key = urls.join('\n');
+  if (key === _lastLookupKey && !autoOpen) return null;
+  const seq = ++_lookupSeq;
+  setBanner('running', `<div class="spinner"></div> Checking if URL already exists…`);
+
+  try {
+    const res = await fetch('/api/manual-apply/lookup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ urls }),
+    });
+    const data = await res.json();
+    if (seq !== _lookupSeq) return null;
+    if (!res.ok) {
+      setBanner('error', '❌ ' + (data.error || 'Lookup failed'));
+      return null;
+    }
+
+    const results = data.results || [];
+    const hits = results.filter(r => r.found);
+    const misses = results.filter(r => !r.found);
+    _lastLookupKey = key;
+
+    if (!hits.length) {
+      setBanner('info', `✨ New URL(s) — not in DB yet. Click <strong>Scrape &amp; Log Job</strong> to add.`);
+      return { hits, misses, results };
+    }
+
+    const matchedHits = hits.filter(h => h.collection === 'matched_jobs' && h.open_path);
+    // Single matched URL → open Tracker card immediately
+    if (autoOpen && urls.length === 1 && matchedHits.length === 1 && misses.length === 0) {
+      const hit = matchedHits[0];
+      setBanner('success',
+        `✅ Already in Tracker: <strong>${esc(hit.title || 'job')}</strong>` +
+        (hit.company ? ` · ${esc(hit.company)}` : '') +
+        ` — opening…`);
+      setTimeout(() => { window.location.href = hit.open_path; }, 350);
+      return { hits, misses, results };
+    }
+
+    setBanner('info',
+      `⚠️ ${hits.length} URL(s) already in DB.` +
+      (misses.length ? ` ${misses.length} new — use Scrape for those.` : ' Nothing new to scrape.') +
+      renderExistRows(hits)
+    );
+    return { hits, misses, results };
+  } catch (e) {
+    if (seq !== _lookupSeq) return null;
+    setBanner('error', '❌ Lookup error: ' + e.message);
+    return null;
+  }
+}
+
+function scheduleLookup(autoOpen = false) {
+  clearTimeout(_lookupTimer);
+  _lookupTimer = setTimeout(() => {
+    const urls = parseUrlLines(document.getElementById('urlBox').value);
+    if (!urls.length) {
+      const banner = document.getElementById('statusBanner');
+      if (banner.classList.contains('info') || banner.classList.contains('running')) {
+        banner.className = 'status-banner';
+        banner.innerHTML = '';
+      }
+      return;
+    }
+    lookupUrls(urls, { autoOpen });
+  }, autoOpen ? 80 : 450);
+}
 
 function onStatusChange() {
   const status = document.getElementById('jobStatus').value;
@@ -414,6 +536,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const dd   = String(d.getDate()).padStart(2, '0');
   document.getElementById('appliedDate').value = `${yyyy}-${mm}-${dd}`;
   onStatusChange();
+
+  const box = document.getElementById('urlBox');
+  box.addEventListener('paste', () => scheduleLookup(true));
+  box.addEventListener('input', () => scheduleLookup(false));
 });
 
 async function submitUrls() {
@@ -425,6 +551,21 @@ async function submitUrls() {
     .filter(u => u && !u.startsWith('#'));
 
   if (urls.length === 0) { alert('No valid URLs found.'); return; }
+
+  // Prefer opening existing matched jobs instead of a useless skip-only scrape
+  const httpUrls = parseUrlLines(raw);
+  if (httpUrls.length) {
+    const looked = await lookupUrls(httpUrls, { autoOpen: true });
+    if (looked && looked.hits.length && !looked.misses.length) {
+      // All already known — do not start scrape
+      return;
+    }
+    if (looked && looked.misses.length && looked.hits.length) {
+      // Only scrape URLs that are not already in DB
+      urls.length = 0;
+      looked.misses.forEach(m => urls.push(m.url));
+    }
+  }
 
   const status = document.getElementById('jobStatus').value || 'pending';
   const appliedDate = status === 'applied'
