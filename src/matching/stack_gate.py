@@ -136,6 +136,14 @@ _INDEPENDENT_HARD_PATTERNS = (
     r"experience\s+with\s+{lang}\s+for\s+backend\b",
 )
 
+# Duty / tech-dump AND lists: "Node.js and Go", "Go, Node.js, and Python".
+# These are not hard AND by themselves when Requirements never hard-ask the gap lang.
+_DUTY_AND_LIST_RE = re.compile(
+    rf"\b({_OR_LANG_TOKEN})(?:\s*,\s*({_OR_LANG_TOKEN}))*"
+    rf"\s+,?\s*and\s+({_OR_LANG_TOKEN})\b",
+    re.I,
+)
+
 
 def _canonical_backend(name: str) -> Optional[str]:
     raw = re.sub(r"\s+", " ", str(name or "").strip().lower())
@@ -162,6 +170,8 @@ def _or_match_languages(match: re.Match) -> List[str]:
         flags=re.I,
     )
     chunk = re.sub(r"\s+and/or\s+", ",", chunk, flags=re.I)
+    # Duty dumps use "Node.js and Go"; split after and/or so that stays one token.
+    chunk = re.sub(r"\s+and\s+", ",", chunk, flags=re.I)
     chunk = re.sub(r"\s+or\s+", ",", chunk, flags=re.I)
     names: List[str] = []
     for part in re.split(r"\s*,\s*", chunk):
@@ -293,6 +303,70 @@ def apply_or_list_heuristics(description: str, extract: Dict) -> Dict:
     return extract
 
 
+def _duty_and_list_groups(text: str) -> List[List[str]]:
+    """Language groups from duty-style 'X and Y' / 'X, Y, and Z' lists."""
+    if not text:
+        return []
+    groups: List[List[str]] = []
+    seen = set()
+    for match in _DUTY_AND_LIST_RE.finditer(text):
+        names = _or_match_languages(match)
+        if len(names) < 2:
+            continue
+        key = tuple(names)
+        if key in seen:
+            continue
+        seen.add(key)
+        groups.append(names)
+    return groups
+
+
+def apply_duty_dump_heuristics(description: str, extract: Dict) -> Dict:
+    """
+    Demote hard non-production backends that only show up in duty/tech-dump
+    AND-lists next to a production backend (e.g. "services in Node.js and Go",
+    "The stack you'll touch: … Node.js and Go …").
+
+    Does not demote a language that is independently hard-required elsewhere
+    (e.g. "Strong Go skills" / "production experience with Go").
+    """
+    groups = _duty_and_list_groups(description)
+    if not groups:
+        return extract
+
+    # Treat OR spans as already handled; also skip matches that sit inside OR phrases.
+    or_spans = _or_phrase_spans(description)
+    languages = list(extract.get("backend_languages") or [])
+    by_name = {item.get("name"): item for item in languages if item.get("name")}
+    changed = False
+
+    for group in groups:
+        if not any(name in PRODUCTION_BACKENDS for name in group):
+            continue
+        for name in group:
+            if name in PRODUCTION_BACKENDS:
+                continue
+            existing = by_name.get(name)
+            if not existing or existing.get("requiredness") not in HARD_REQUIREDNESS:
+                continue
+            if _independently_hard_required(name, description, or_spans):
+                continue
+            existing["requiredness"] = "company_uses"
+            if not existing.get("evidence"):
+                # Keep a short dump quote when the model left evidence empty.
+                for match in _DUTY_AND_LIST_RE.finditer(description or ""):
+                    if name in _or_match_languages(match):
+                        existing["evidence"] = match.group(0).strip()[:240]
+                        break
+            changed = True
+
+    if not changed:
+        return extract
+    extract = dict(extract)
+    extract["backend_languages"] = languages
+    return extract
+
+
 def find_ai_ml_title_requirement(job: Dict) -> Optional[str]:
     """Reject obvious AI/ML engineering titles without an extract call."""
     title = str(job.get("title") or "").strip()
@@ -355,6 +429,8 @@ Explicit OR examples (all members `or_list`, and one `backend_or_groups` entry):
 
 Duties / tech dumps are NOT hard AND by themselves:
 - "Work across TypeScript, Python, React and modern full-stack technologies" alone does not make Python `required`/`implied` when Requirements use OR (or state no backend language).
+- "The stack you'll touch" / "What you'll actually work on" / "a growing set of services in Node.js and Go" is a systems tour — label gap languages (`go`, `python`, …) as `company_uses` unless Requirements / What you'll bring hard-asks them.
+- "Comfortable in a language you may not know" / learn-on-the-job → `willingness`, not hard.
 
 TypeScript/JavaScript: include them when they are a backend ask (Node/Express/Nest) **or** when they appear in an OR language list with other backends ("TypeScript, Python or similar"). Omit only frontend-only TS/JS with no backend/OR language meaning.
 
@@ -404,7 +480,8 @@ TypeScript/JavaScript: include them when they are a backend ask (Node/Express/Ne
         raw = response.choices[0].message.content
         parsed = json.loads(raw)
         normalized = _normalize_extract(parsed)
-        return apply_or_list_heuristics(description, normalized)
+        with_or = apply_or_list_heuristics(description, normalized)
+        return apply_duty_dump_heuristics(description, with_or)
     except Exception as e:
         print(f"Warning: stack extract failed ({e}) — fail-open to full scorer")
         return None

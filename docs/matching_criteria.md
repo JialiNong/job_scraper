@@ -56,6 +56,8 @@ Duties / tech dumps are **not** hard AND by themselves. Prefer the Requirements 
 
 - "Work across TypeScript, Python, React and modern full-stack technologies" (What you'll do) **plus** "TypeScript, Python or similar" (What we're looking for) → **OR, pass**
 - Do not fail just because a duties line lists Python next to TypeScript with "and"
+- "The stack you'll touch" / "What you'll actually work on" / "a growing set of services in Node.js and Go" is a systems tour → treat gap languages (Go, Python, …) as `company_uses` unless Requirements / What you'll bring hard-asks them. Node/TypeScript as the role's application server can still be hard; Go riding along in the dump must not fail the gate alone.
+- "Comfortable in a language you may not know" / learn-on-the-job → `willingness`, not a hard backend
 
 **Also pass** when:
 

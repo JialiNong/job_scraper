@@ -339,7 +339,7 @@ The AI prompt / `matching_criteria.md` also describes a German gate as a fallbac
 | **Module** | `matching/stack_gate.py` | same extract; plus title regex |
 | **Question** | Is a hard/implied backend a language the candidate cannot do in production? | Is this an AI/ML *engineering* job (train/fine-tune/LLM stack), not product UI that uses AI? |
 | **Typical hit** | Python/Java/Go/Kotlin required in Requirements, even without “must-have” | “AI Engineer”, “Software Engineer” whose JD is training models |
-| **Does not hit** | Node/TypeScript or Python (OR), including “TypeScript, Python or similar” and “Next.js, FastAPI, or comparable server frameworks”; junior “willingness to learn Java”; frontend role whose company backend is Go | Frontend/fullstack at an AI company; Copilot / shipping LLM product features |
+| **Does not hit** | Node/TypeScript or Python (OR), including “TypeScript, Python or similar” and “Next.js, FastAPI, or comparable server frameworks”; duty/tech-dump “Node.js and Go” / “stack you'll touch” (gap lang → `company_uses`); junior “willingness to learn Java”; frontend role whose company backend is Go | Frontend/fullstack / “AI Product Engineer” product roles; Copilot / shipping LLM product features |
 | **Outcome** | Local reject; **no full AI scoring**. Stays on Unmatched as a title + link stub (JD cleared) so the filter can be reviewed | Local reject; **no full AI scoring** |
 | **Extract fail** | Fail-open to the full scorer | Fail-open (title regex still runs) |
 

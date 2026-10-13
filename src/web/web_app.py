@@ -1330,7 +1330,9 @@ def api_manual_apply():
     if job_status not in ("pending", "applied"):
         return jsonify({"error": "status must be 'pending' or 'applied'"}), 400
 
-    # Parse optional applied_date (only meaningful when status=applied)
+    # Parse optional applied_date (only meaningful when status=applied).
+    # HTML <input type="date"> is day-only; strptime would yield midnight.
+    # If the chosen day is today, stamp the real submit time (e.g. 14:40).
     applied_date = None
     raw_date = (data.get("applied_date") or "").strip()
     if raw_date:
@@ -1338,6 +1340,9 @@ def api_manual_apply():
             applied_date = datetime.strptime(raw_date, "%Y-%m-%d")
         except ValueError:
             return jsonify({"error": "Invalid applied_date format, expected YYYY-MM-DD"}), 400
+        now = datetime.now()
+        if applied_date.date() == now.date():
+            applied_date = now
 
     if not _manual_apply_lock.acquire(blocking=False):
         return jsonify({"error": "A manual job log run is already in progress. Please wait."}), 429
