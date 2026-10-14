@@ -135,10 +135,11 @@ STATUS_MAP = {
     "unsuitable": "Unsuitable",
     "closed":     "Closed",
     "repost":     "Repost",
+    "duplicate":  "Duplicate",
 }
 
 # Other-dropdown statuses: no application progress, not counted as applied
-SIDE_STATUSES = ("unsuitable", "closed", "repost")
+SIDE_STATUSES = ("unsuitable", "closed", "repost", "duplicate")
 
 # Application progress timeline steps (ordered interview track)
 TIMELINE_STEPS = {
@@ -583,7 +584,7 @@ def api_update_status(job_id: str):
     if new_status in APPLIED_STATUSES and not job.get("applied_at"):
         update_fields["applied_at"] = now
 
-    # Side statuses (unsuitable/closed/repost/pending) clear progress; others keep timeline
+    # Side statuses (unsuitable/closed/repost/duplicate/pending) clear progress; others keep timeline
     if new_status in (*SIDE_STATUSES, "pending"):
         update_fields["application_timeline"] = []
         if new_status == "pending":

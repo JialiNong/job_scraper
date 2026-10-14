@@ -25,6 +25,7 @@ STATUS_LABELS = {
     "unsuitable": "Unsuitable",
     "closed": "Closed",
     "repost": "Repost",
+    "duplicate": "Duplicate",
 }
 
 

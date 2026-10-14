@@ -549,7 +549,7 @@ def get_scraper_stats() -> dict:
 APPLIED_STATUSES = ("applied", "rejected", "interview", "offer")
 
 # Jobs that count as an application: current applied-like status, or a recorded
-# apply date / timeline (status may later become closed / unsuitable / repost).
+# apply date / timeline (status may later become closed / unsuitable / repost / duplicate).
 APPLICATION_QUERY = {
     "$or": [
         {"applied_at": {"$ne": None}},
@@ -837,7 +837,7 @@ def count_applied_applications() -> int:
 
     Counts current status in APPLIED_STATUSES only:
     applied + rejected + interview + offer.
-    Side statuses (closed / unsuitable / repost) and pending are excluded.
+    Side statuses (closed / unsuitable / repost / duplicate) and pending are excluded.
     """
     return get_collection("matched_jobs").count_documents(
         {"status": {"$in": list(APPLIED_STATUSES)}}

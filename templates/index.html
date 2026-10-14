@@ -24,6 +24,7 @@
       --unsuitable: #8b5cf6;
       --closed:     #71717a;
       --repost:     #06b6d4;
+      --duplicate:  #f97316;
     }
 
     body {
@@ -90,6 +91,7 @@
     .dot-unsuitable { background: var(--unsuitable); }
     .dot-closed     { background: var(--closed); }
     .dot-repost     { background: var(--repost); }
+    .dot-duplicate  { background: var(--duplicate); }
 
     /* ── Pipeline funnel ──────────────────────────────────────────── */
     .funnel-bar {
@@ -1052,6 +1054,7 @@
     .status-pill.s-unsuitable { color: var(--unsuitable); border-color: var(--unsuitable)55; background: #8b5cf618; }
     .status-pill.s-closed     { color: var(--closed);     border-color: var(--closed)55;     background: #71717a18; }
     .status-pill.s-repost     { color: var(--repost);     border-color: var(--repost)55;     background: #06b6d418; }
+    .status-pill.s-duplicate  { color: var(--duplicate);  border-color: var(--duplicate)55;  background: #f9731618; }
 
     .job-grid.layout-compact .score-badge {
       width: 34px; height: 34px; font-size: .78rem; border-radius: 8px;
@@ -2373,6 +2376,10 @@
     <span class="dot dot-repost"></span>
     <span>Repost <b id="cnt-repost">–</b></span>
   </div>
+  <div class="stat-chip" data-status="duplicate" onclick="setStatusFilter('duplicate')">
+    <span class="dot dot-duplicate"></span>
+    <span>Duplicate <b id="cnt-duplicate">–</b></span>
+  </div>
 </div>
 
 <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
@@ -2447,8 +2454,9 @@ const STATUS_LABEL = {
   unsuitable: 'Unsuitable',
   closed:     'Closed',
   repost:     'Repost',
+  duplicate:  'Duplicate',
 };
-const SIDE_STATUSES = ['unsuitable', 'closed', 'repost'];
+const SIDE_STATUSES = ['unsuitable', 'closed', 'repost', 'duplicate'];
 
 const TIMELINE_LABEL = {
   applied:          'Applied',
@@ -2517,7 +2525,7 @@ async function loadStats() {
       const el = document.getElementById(`cnt-${status}`);
       if (el) el.textContent = cnt;
     }
-    ['pending','applied','rejected','interview','offer','unsuitable','closed','repost'].forEach(s => {
+    ['pending','applied','rejected','interview','offer','unsuitable','closed','repost','duplicate'].forEach(s => {
       if (!data.by_status[s]) {
         const el = document.getElementById(`cnt-${s}`);
         if (el) el.textContent = 0;
@@ -3555,6 +3563,7 @@ function renderProgressBlock(job) {
           <option value="unsuitable" ${sideVal==='unsuitable' ? 'selected':''}>🚫 Unsuitable</option>
           <option value="closed" ${sideVal==='closed' ? 'selected':''}>🔒 Closed</option>
           <option value="repost" ${sideVal==='repost' ? 'selected':''}>🔁 Repost</option>
+          <option value="duplicate" ${sideVal==='duplicate' ? 'selected':''}>📎 Duplicate</option>
           <option value="pending">📋 Reset Not Applied</option>
         </select>
       </div>
