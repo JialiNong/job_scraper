@@ -28,6 +28,7 @@ from core.db_mongo import (
     get_scraper_stats,
     get_daily_activity_stats,
     get_applied_location_stats,
+    count_applied_applications,
     get_unmatched_jobs,
     count_unmatched_jobs,
     get_timeout_jobs,
@@ -1037,8 +1038,8 @@ def api_stats():
     raw = list(collection.aggregate(pipeline))
     by_status = {item["_id"]: item["count"] for item in raw}
     ai_matched = sum(by_status.values())
-    # Applied funnel step includes rejected + interview (all post-application)
-    applied_total = sum(by_status.get(s, 0) for s in APPLIED_STATUSES)
+    # Same as Journey + Locations: applied + rejected + interview + offer
+    applied_total = count_applied_applications()
 
     scraper = get_scraper_stats()
     unmatched = count_unmatched_jobs(threshold=MATCH_THRESHOLD)
@@ -1126,22 +1127,23 @@ def api_journey():
                 "_dt": at,
             })
 
-        # Same apply-date rules as location bubbles (resolve_applied_at)
+        # Apply date for tracks (may exist even if status later changed)
         applied_at = resolve_applied_at(job)
 
-        if applied_at:
+        # Funnel rule: only current applied / rejected / interview / offer
+        if job.get("status") in APPLIED_STATUSES:
             total_applied += 1
-            if first_applied is None or applied_at < first_applied:
+            if applied_at and (first_applied is None or applied_at < first_applied):
                 first_applied = applied_at
-            # Ensure Applied is on the track when we have a date
-            if not any(s["step"] == "applied" for s in steps):
-                steps.insert(0, {
-                    "step": "applied",
-                    "label": TIMELINE_STEPS["applied"],
-                    "at": _format_timeline_at(applied_at),
-                    "date": applied_at.strftime("%Y-%m-%d"),
-                    "_dt": applied_at,
-                })
+
+        if applied_at and not any(s["step"] == "applied" for s in steps):
+            steps.insert(0, {
+                "step": "applied",
+                "label": TIMELINE_STEPS["applied"],
+                "at": _format_timeline_at(applied_at),
+                "date": applied_at.strftime("%Y-%m-%d"),
+                "_dt": applied_at,
+            })
 
         # Backfill old flat interview/offer status without detailed timeline
         if not any(s["step"] in JOURNEY_INTERVIEW_STEPS for s in steps):

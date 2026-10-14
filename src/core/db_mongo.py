@@ -801,13 +801,25 @@ def resolve_applied_at(job) -> datetime | None:
     return None
 
 
+def count_applied_applications() -> int:
+    """
+    Applications in an active post-apply status (funnel / Journey / Locations).
+
+    Counts current status in APPLIED_STATUSES only:
+    applied + rejected + interview + offer.
+    Side statuses (closed / unsuitable / repost) and pending are excluded.
+    """
+    return get_collection("matched_jobs").count_documents(
+        {"status": {"$in": list(APPLIED_STATUSES)}}
+    )
+
+
 def get_applied_location_stats() -> dict:
     """
     Aggregate applications by normalized location.
 
-    Uses the same job set as Application Journey (`total_applied`): current
-    applied-like status, or a recorded apply date / timeline step. Jobs later
-    marked closed / unsuitable / repost still count.
+    Same job set as funnel Applied and Journey total_applied: current status
+    in APPLIED_STATUSES (applied / rejected / interview / offer).
 
     Returns:
         {
@@ -821,12 +833,9 @@ def get_applied_location_stats() -> dict:
     counter: Counter = Counter()
     total = 0
     for doc in collection.find(
-        APPLICATION_QUERY,
-        {"location": 1, "applied_at": 1, "application_timeline": 1,
-         "status": 1, "updated_at": 1, "matched_at": 1},
+        {"status": {"$in": list(APPLIED_STATUSES)}},
+        {"location": 1},
     ):
-        if not resolve_applied_at(doc):
-            continue
         total += 1
         counter[normalize_applied_location(doc.get("location") or "")] += 1
 
