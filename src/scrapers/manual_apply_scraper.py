@@ -28,6 +28,11 @@ What it does for EACH url
 4. Runs AI matching (score stored but NOT used as a filter).
 5. Saves the job to matched_jobs with status="pending" (default) or "applied".
 6. Also upserts a record in the main jobs collection.
+
+Link-only mode (--link-only / UI "Save Link Only")
+--------------------------------------------------
+Saves URL + job_id to matched_jobs with ai_pending=True and no description.
+No Chrome / AI required. Later use Tracker "Run AI" to scrape + score.
 """
 import sys
 import os
@@ -480,11 +485,53 @@ def infer_job_metadata_with_ai(description_text: str) -> dict:
 
 # ── DB helpers ────────────────────────────────────────────────────────────────
 
+def _stub_ai_pending_analysis() -> dict:
+    """Placeholder analysis for link-only saves (no scrape / no score yet)."""
+    return {
+        "match_score": None,
+        "recommendation": "",
+        "special_match": False,
+        "special_match_reasons": [],
+        "disqualification_reason": "",
+        "match_reasons": ["Link-only save — AI pending"],
+        "missing_requirements": [],
+        "red_flags": [],
+        "nice_to_have_matches": [],
+        "summary": "Link saved without scrape/AI. Use Run AI on Tracker when Chrome is available.",
+        "what_youll_do": {"matched": [], "unmatched": []},
+        "what_theyre_looking_for": {"matched": [], "unmatched": []},
+        "match_gate": "",
+        "requirement_extract": {},
+    }
+
+
+def _canonical_link(url: str, source: str, job_id: str) -> str:
+    """Stable URL stored on the Tracker card."""
+    if source == "linkedin" and job_id:
+        return f"https://www.linkedin.com/jobs/view/{job_id}/"
+    if source == "indeed" and job_id:
+        return f"https://de.indeed.com/viewjob?jk={job_id}"
+    return canonicalize_url(url)
+
+
+def _link_only_title(url: str, source: str, job_id: str) -> str:
+    if source == "linkedin" and job_id:
+        return f"(Link only) LinkedIn {job_id}"
+    if source == "indeed" and job_id:
+        return f"(Link only) Indeed {job_id}"
+    short = (url or "").strip()
+    if len(short) > 72:
+        short = short[:69] + "…"
+    return f"(Link only) {short or 'job'}"
+
+
 def force_save_manual_job(
     job: dict,
     analysis: dict,
     status: str = "pending",
     applied_date: datetime = None,
+    *,
+    ai_pending: bool = False,
 ) -> bool:
     """
     Save to matched_jobs regardless of AI score.
@@ -496,6 +543,7 @@ def force_save_manual_job(
         analysis: AI analysis result dict
         status: Tracker status — "pending" (Not Applied, default) or "applied"
         applied_date: Date the user applied (only used when status=applied; defaults to now)
+        ai_pending: True when saved as link-only (Run AI later on Tracker)
     """
     if status not in ("pending", "applied"):
         status = "pending"
@@ -508,6 +556,8 @@ def force_save_manual_job(
     t = (applied_date or now) if status == "applied" else now
     job_id = job["job_id"]
     source = job["source"]
+    # Preserve explicit None (link-only) — do not coerce to 0
+    match_score = analysis["match_score"] if "match_score" in analysis else 0
 
     jobs_set = {
         "title":       job.get("title", ""),
@@ -519,7 +569,8 @@ def force_save_manual_job(
         "source":      source,
         "matched_at":  t,
         "updated_at":  t,
-        "match_score": analysis.get("match_score", 0),
+        "match_score": match_score,
+        "ai_pending":  bool(ai_pending),
         **_analysis_fields(analysis),
     }
     if status == "applied":
@@ -549,7 +600,7 @@ def force_save_manual_job(
         "source":      source,
         "description": job.get("description", ""),
         "applicants":  job.get("applicants", ""),
-        "match_score": analysis.get("match_score", 0),
+        "match_score": match_score,
         **_analysis_fields(analysis),
         "status":      status,
         "matched_at":  t,
@@ -558,6 +609,7 @@ def force_save_manual_job(
         "notes":       "",
         "application_qa": [],
         "manually_logged": True,
+        "ai_pending":  bool(ai_pending),
     }
     if status == "applied":
         matched_data["applied_at"] = t
@@ -579,7 +631,233 @@ def force_save_manual_job(
 force_save_applied_job = force_save_manual_job
 
 
-# ── main processor ────────────────────────────────────────────────────────────
+def apply_analysis_to_existing(
+    job: dict,
+    analysis: dict,
+) -> bool:
+    """
+    Patch scraped fields + AI analysis onto existing jobs / matched_jobs rows.
+
+    Preserves Tracker status, notes, timeline, highlights, application_qa,
+    applied_at, and matched_at. Clears ai_pending.
+    """
+    jobs_col = get_collection("jobs")
+    matched_col = get_collection("matched_jobs")
+    now = datetime.utcnow()
+    job_id = job["job_id"]
+    source = job["source"]
+    match_score = analysis.get("match_score", 0)
+
+    patch = {
+        "title":       job.get("title", ""),
+        "company":     job.get("company", ""),
+        "location":    job.get("location", ""),
+        "description": job.get("description", ""),
+        "applicants":  job.get("applicants", ""),
+        "link":        job.get("link", ""),
+        "match_score": match_score,
+        **_analysis_fields(analysis),
+        "updated_at":  now,
+        "ai_pending":  False,
+    }
+
+    try:
+        jobs_col.update_one(
+            {"job_id": job_id, "source": source},
+            {
+                "$set": {**patch, "matched_at": now},
+                "$setOnInsert": {
+                    "created_at": now,
+                    "status": "new",
+                    "source": source,
+                },
+            },
+            upsert=True,
+        )
+        matched_col.update_one(
+            {"job_id": job_id, "source": source},
+            {"$set": patch},
+        )
+    except Exception as e:
+        print(f"  ❌ Failed to update analysis: {type(e).__name__}: {e}")
+        return False
+    return True
+
+
+# ── scrape + evaluate helpers ─────────────────────────────────────────────────
+
+def scrape_job_page(page, url: str) -> Optional[dict]:
+    """Scrape one URL with the already-open CDP page. Returns job dict or None."""
+    source = detect_source(url)
+    try:
+        if source == "linkedin":
+            return scrape_linkedin_job(page, url)
+        if source == "indeed":
+            return scrape_indeed_job(page, url)
+        print("  🌐 Generic career page — using trafilatura extract")
+        return scrape_generic_job(page, url)
+    except Exception as e:
+        print(f"  ❌ Unexpected error while scraping: {type(e).__name__}: {e}")
+        return None
+
+
+def enrich_job_and_evaluate(
+    job: dict,
+    user_profile: str,
+    criteria: str,
+    *,
+    allow_non_english: bool = True,
+) -> Optional[dict]:
+    """
+    Infer missing title/company/location, then run evaluate_job.
+    Returns analysis dict (never None — failed AI becomes score=0 stub).
+    Returns None only when description is empty (caller should abort).
+    """
+    print(f"  📋 Title   : {job.get('title') or '(not found)'}")
+    print(f"  🏢 Company : {job.get('company') or '(not found)'}")
+    print(f"  📍 Location: {job.get('location') or '(not found)'}")
+    print(f"  📝 Desc    : {len(job.get('description', ''))} chars")
+
+    if not job.get("description"):
+        print("  ⚠️  Description is empty — page may not have loaded or login required.")
+        return None
+
+    if not (job.get("title") and job.get("company") and job.get("location")):
+        missing = [f for f in ("title", "company", "location") if not job.get(f)]
+        print(f"  🤖 Inferring missing field(s) {missing} from description via AI…")
+        metadata = infer_job_metadata_with_ai(job.get("description", ""))
+        if metadata:
+            for field in ("title", "company", "location"):
+                if not job.get(field):
+                    job[field] = metadata.get(field, "")
+            print(
+                f"  🤖 Inferred → title='{job.get('title')}'"
+                f"  company='{job.get('company')}'"
+                f"  location='{job.get('location')}'"
+            )
+
+    if not job.get("title"):
+        job["title"] = f"(Unknown title — job_id {job.get('job_id', '')})"
+        print(f"  ⚠️  Title not found, using fallback: {job['title']}")
+
+    should_skip, lang, de_share = is_non_english_job_detail(job.get("description", ""))
+    if should_skip:
+        if allow_non_english:
+            print(
+                f"  ⚠️  Description is non-English ({lang}, de_share={de_share:.0%}) "
+                f"— continuing anyway (manual job log)"
+            )
+        else:
+            print(
+                f"  ⚠️  Description is non-English ({lang}, de_share={de_share:.0%})"
+            )
+
+    print("  🤖 Running AI matching…")
+    analysis = evaluate_job(job, user_profile, criteria)
+    if not analysis:
+        print("  ⚠️  AI analysis failed — using score=0 stub")
+        analysis = {
+            "match_score": 0,
+            "recommendation": "Unknown",
+            "summary": "AI analysis failed for this manually logged job.",
+        }
+
+    score = analysis.get("match_score", 0)
+    print(f"  ✨ AI score: {score}/10  ({analysis.get('recommendation', '?')})")
+    print(f"  💬 {analysis.get('summary', '')}")
+    return analysis
+
+
+# ── main processors ───────────────────────────────────────────────────────────
+
+def save_link_only_urls(
+    urls: list[str],
+    applied_date: datetime = None,
+    status: str = "pending",
+):
+    """
+    Save job URLs to the Tracker without opening a browser or running AI.
+
+    Useful while traveling: paste links now, Run AI later from Tracker cards
+    when Chrome/CDP is available again.
+    """
+    if status not in ("pending", "applied"):
+        status = "pending"
+
+    if not urls:
+        print("No URLs provided.")
+        return
+
+    status_label = "applied" if status == "applied" else "pending (Not Applied)"
+    print(f"\n🔗 Link-only save — {len(urls)} URL(s) as {status_label} (no scrape / no AI)…")
+
+    results = {"ok": [], "failed": [], "skipped": []}
+    analysis = _stub_ai_pending_analysis()
+
+    for i, url in enumerate(urls, 1):
+        url = (url or "").strip()
+        if not url:
+            continue
+        print(f"\n{'='*60}")
+        print(f"[{i}/{len(urls)}] {url}")
+
+        source = detect_source(url)
+        job_id = resolve_job_id(url, source)
+        if not job_id and source in ("linkedin", "indeed"):
+            print(f"  ⚠️  Cannot extract {source} job_id from URL — skipping")
+            results["failed"].append(url)
+            continue
+        if not job_id:
+            print("  ⚠️  Cannot resolve job_id — skipping")
+            results["failed"].append(url)
+            continue
+        if is_job_known(job_id, source):
+            print(
+                f"  ⚠️  Already in DB (jobs/matched_jobs): "
+                f"job_id={job_id} source={source} — skipping"
+            )
+            results["skipped"].append(url)
+            continue
+
+        link = _canonical_link(url, source, job_id)
+        job = {
+            "title": _link_only_title(url, source, job_id),
+            "company": "",
+            "location": "",
+            "applicants": "",
+            "description": "",
+            "link": link,
+            "job_id": job_id,
+            "source": source,
+        }
+        ok = force_save_manual_job(
+            job,
+            analysis,
+            status=status,
+            applied_date=applied_date,
+            ai_pending=True,
+        )
+        if not ok:
+            results["failed"].append(url)
+            continue
+        if status == "applied":
+            date_str = applied_date.strftime("%Y-%m-%d") if applied_date else "today"
+            print(f"  ✅ Saved to matched_jobs (link-only, AI pending, status=applied, applied_at={date_str})")
+        else:
+            print("  ✅ Saved to matched_jobs (link-only, AI pending, status=pending / Not Applied)")
+        results["ok"].append(url)
+
+    print(f"\n{'='*60}")
+    print(f"✅ Success : {len(results['ok'])}")
+    print(f"⏭️  Skipped : {len(results['skipped'])} (already in DB)")
+    print(f"❌ Failed  : {len(results['failed'])}")
+    if results["skipped"]:
+        for u in results["skipped"]:
+            print(f"   • {u}")
+    if results["failed"]:
+        for u in results["failed"]:
+            print(f"   • {u}")
+
 
 def process_urls(
     urls: list[str],
@@ -639,84 +917,20 @@ def process_urls(
                 results["failed"].append(url)
                 continue
 
-            try:
-                if source == "linkedin":
-                    job = scrape_linkedin_job(page, url)
-                elif source == "indeed":
-                    job = scrape_indeed_job(page, url)
-                else:
-                    print("  🌐 Generic career page — using trafilatura extract")
-                    job = scrape_generic_job(page, url)
-            except Exception as e:
-                print(f"  ❌ Unexpected error while scraping: {type(e).__name__}: {e}")
-                results["failed"].append(url)
-                continue
-
+            job = scrape_job_page(page, url)
             if not job:
-                print(f"  ❌ Scraping failed")
+                print("  ❌ Scraping failed")
                 results["failed"].append(url)
                 continue
 
-            print(f"  📋 Title   : {job.get('title') or '(not found)'}")
-            print(f"  🏢 Company : {job.get('company') or '(not found)'}")
-            print(f"  📍 Location: {job.get('location') or '(not found)'}")
-            print(f"  📝 Desc    : {len(job.get('description', ''))} chars")
-
-            # Only description is mandatory — company/location/applicants can be empty
-            if not job.get("description"):
-                print("  ⚠️  Description is empty — page may not have loaded or login required. Skipping.")
-                results["failed"].append(url)
-                continue
-
-            # For LinkedIn/Indeed the detail panel may not expose title/company/location
-            # as separate DOM elements. Ask AI to infer any missing fields from the
-            # plain-text description (already stripped of HTML/CSS).
-            if not (job.get("title") and job.get("company") and job.get("location")):
-                missing = [f for f in ("title", "company", "location") if not job.get(f)]
-                print(f"  🤖 Inferring missing field(s) {missing} from description via AI…")
-                metadata = infer_job_metadata_with_ai(job.get("description", ""))
-                if metadata:
-                    for field in ("title", "company", "location"):
-                        if not job.get(field):
-                            job[field] = metadata.get(field, "")
-                    print(
-                        f"  🤖 Inferred → title='{job.get('title')}'"
-                        f"  company='{job.get('company')}'"
-                        f"  location='{job.get('location')}'"
-                    )
-
-            # Fill in a fallback title so the AI prompt always has something
-            if not job.get("title"):
-                job["title"] = f"(Unknown title — job_id {job.get('job_id', '')})"
-                print(f"  ⚠️  Title not found, using fallback: {job['title']}")
-
-            # Language check (English-only gate; non-EN still saved for manual log)
-            should_skip, lang, de_share = is_non_english_job_detail(job.get("description", ""))
-            if should_skip:
-                print(
-                    f"  ⚠️  Description is non-English ({lang}, de_share={de_share:.0%}) "
-                    f"— saving anyway (manual job log)"
-                )
-
-            # AI matching (same German / stack / AI-ML gates as the daily matcher)
-            print("  🤖 Running AI matching…")
-            analysis = evaluate_job(job, user_profile, criteria)
-
+            analysis = enrich_job_and_evaluate(job, user_profile, criteria)
             if not analysis:
-                print("  ⚠️  AI analysis failed — saving with score=0")
-                analysis = {
-                    "match_score": 0,
-                    "recommendation": "Unknown",
-                    "summary": "AI analysis failed for this manually logged job.",
-                }
+                print("  ❌ Scraping failed")
+                results["failed"].append(url)
+                continue
 
-            score = analysis.get("match_score", 0)
-            print(f"  ✨ AI score: {score}/10  ({analysis.get('recommendation', '?')})")
-            print(f"  💬 {analysis.get('summary', '')}")
-
-            # Save regardless of score — status chosen by user (default: pending)
             force_save_manual_job(
-                job, analysis, status=status, applied_date=applied_date
+                job, analysis, status=status, applied_date=applied_date, ai_pending=False
             )
             if status == "applied":
                 date_str = applied_date.strftime("%Y-%m-%d") if applied_date else "today"
@@ -737,6 +951,71 @@ def process_urls(
     if results["failed"]:
         for u in results["failed"]:
             print(f"   • {u}")
+
+
+def run_ai_on_matched_job(matched_doc: dict) -> dict:
+    """
+    Open the job link in debug Chrome, scrape JD, run AI matching, and patch
+    the existing matched_jobs (+ jobs) row without wiping notes/timeline.
+
+    Returns {"ok": bool, "error": str|None, "match_score": ...}.
+    """
+    url = (matched_doc.get("link") or "").strip()
+    if not url:
+        job_id = matched_doc.get("job_id") or ""
+        source = matched_doc.get("source") or ""
+        if source == "linkedin" and job_id:
+            url = f"https://www.linkedin.com/jobs/view/{job_id}/"
+        elif source == "indeed" and job_id:
+            url = f"https://de.indeed.com/viewjob?jk={job_id}"
+    if not url:
+        print("  ❌ No link on this Tracker card")
+        return {"ok": False, "error": "No job link", "match_score": None}
+
+    print(f"\n🤖 Run AI for Tracker job: {matched_doc.get('title') or matched_doc.get('job_id')}")
+    print(f"  → {url}")
+
+    user_profile = load_user_profile()
+    if not user_profile:
+        print("❌ No user profile found. Create docs/user_profile.md first.")
+        return {"ok": False, "error": "Missing user profile", "match_score": None}
+
+    criteria = load_matching_criteria()
+
+    with sync_playwright() as playwright:
+        browser = connect_browser(playwright, "job sites")
+        context = browser.contexts[0]
+        page = context.pages[0] if context.pages else context.new_page()
+
+        job = scrape_job_page(page, url)
+        if not job:
+            print("  ❌ Scraping failed")
+            return {"ok": False, "error": "Scraping failed", "match_score": None}
+
+        # Prefer existing user-edited title/company/location if scrape left them empty
+        for field in ("title", "company", "location"):
+            if not job.get(field) and matched_doc.get(field):
+                existing = str(matched_doc.get(field) or "")
+                if existing and not existing.startswith("(Link only)"):
+                    job[field] = existing
+
+        analysis = enrich_job_and_evaluate(job, user_profile, criteria)
+        if not analysis:
+            print("  ❌ No description — cannot run AI")
+            return {"ok": False, "error": "Empty description after scrape", "match_score": None}
+
+        ok = apply_analysis_to_existing(job, analysis)
+        if not ok:
+            return {"ok": False, "error": "DB update failed", "match_score": None}
+
+        print("  ✅ AI analysis saved to Tracker")
+        return {
+            "ok": True,
+            "error": None,
+            "match_score": analysis.get("match_score"),
+            "title": job.get("title", ""),
+            "company": job.get("company", ""),
+        }
 
 
 def main():
@@ -762,6 +1041,11 @@ def main():
         default="pending",
         help="Tracker status after save (default: pending / Not Applied)",
     )
+    parser.add_argument(
+        "--link-only",
+        action="store_true",
+        help="Save URLs to Tracker without scraping or AI (Run AI later from UI)",
+    )
     args = parser.parse_args()
 
     urls: list[str] = list(args.urls)
@@ -780,7 +1064,10 @@ def main():
         sys.exit(0)
 
     init_db()
-    process_urls(urls, status=args.status)
+    if args.link_only:
+        save_link_only_urls(urls, status=args.status)
+    else:
+        process_urls(urls, status=args.status)
 
 
 if __name__ == "__main__":

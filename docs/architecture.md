@@ -135,7 +135,7 @@ Indeed pacing is slower and more human-like than LinkedIn: random think-time bef
 | `python3 src/scrapers/linkedin_quick_scraper.py [-p N] [-j N]` | LinkedIn 12h quick URL (default 3 pages × 30) |
 | `./run_linkedin.sh [--hours N] [-p N] [-j N]` | LinkedIn-only scrape + AI match (default `--hours 24`; short window → 2 pages/keyword) |
 | `python3 src/matching/ai_matcher.py [-l N] [-s source] [-t 7.0]` | AI match only (jobs without `matched_at`) |
-| `python3 src/scrapers/manual_apply_scraper.py <urls…>` | Manual job URLs → skip if `job_id` already in `jobs`/`matched_jobs`, else scrape + score → `matched_jobs` (default `status=pending`; `--status applied` optional) |
+| `python3 src/scrapers/manual_apply_scraper.py <urls…>` | Manual job URLs → skip if `job_id` already in `jobs`/`matched_jobs`, else scrape + score → `matched_jobs` (default `status=pending`; `--status applied` optional; `--link-only` skips scrape/AI) |
 | `python3 scripts/cleanup_unmatched_descriptions.py …` | Clear old unmatched JD text (also run at end of full pipeline) |
 | `python3 scripts/cleanup_excluded_titles.py …` | Cleanup DB rows by title blacklist |
 | `python3 scripts/eval_matcher.py …` | Matcher evaluation |
@@ -363,13 +363,19 @@ Details: [`matching_criteria.md`](./matching_criteria.md).
 | Collection | Written by | Contents |
 |------------|------------|----------|
 | `jobs` | scrapers; matcher writes analysis back | Jobs that passed the language gate (including empty-description placeholders). Matcher also stores `match_gate` (`german` / `stack` / `ai_ml` / `scored`) and `requirement_extract`. Stack-gate rejects clear `description` immediately (title + link stub for Unmatched review). |
-| `matched_jobs` | matcher (≥ threshold, and company not in `MATCH_BLOCKED_COMPANIES`); manual job log (`/manual-apply`, default `pending`); unmatched **Can Apply** override; **timeout review Add as Not Applied** | High-score matches / manually logged jobs / user-promoted unmatched or timeout jobs. UI can store manual `highlights` tags (separate from AI `special_match`). Aggregators Instaffo / Jobgether are blocked from automatic matcher inserts. |
+| `matched_jobs` | matcher (≥ threshold, and company not in `MATCH_BLOCKED_COMPANIES`); manual job log (`/manual-apply`, default `pending`); unmatched **Can Apply** override; **timeout review Add as Not Applied**; Tracker **Run AI** updates analysis in place | High-score matches / manually logged jobs / user-promoted unmatched or timeout jobs. Link-only manual saves set `ai_pending=True` and `match_score=null` until Run AI. UI can store manual `highlights` tags (separate from AI `special_match`). Aggregators Instaffo / Jobgether are blocked from automatic matcher inserts. |
 | `timeout_jobs` | scrapers, when the title passed but the JD panel timed out | Title + link for later review (`/timeouts`). Open → **Add as Not Applied** (`pending`) or Dismiss. |
 | `scraper_stats` | scrapers | Counters: `title_passed_clicked`, `german_filtered`, `ai_title_filtered`, `detail_timeout`, … |
 
 Web UI (`web_app.py`) reads these for today’s funnel, match list, unmatched reasons, and scrape timeouts.
 
-**Log Job page (`/manual-apply`):** paste job URLs (LinkedIn / Indeed / career pages). On paste (and before scrape), `POST /api/manual-apply/lookup` resolves `job_id` and checks `matched_jobs` → `jobs` → `timeout_jobs` (Indeed: all jk variants). If the URL is already in **Matched**, the UI opens Tracker at `/?open=<matched_jobs _id>` and expands that card. Otherwise new URLs are scraped + AI-scored into `matched_jobs`. Default status is **Not Applied** (`pending`); choose **Applied** only when you already applied (optional applied date).
+**Log Job page (`/manual-apply`):** paste job URLs (LinkedIn / Indeed / career pages). On paste (and before scrape), `POST /api/manual-apply/lookup` resolves `job_id` and checks `matched_jobs` → `jobs` → `timeout_jobs` (Indeed: all jk variants). If the URL is already in **Matched**, the UI opens Tracker at `/?open=<matched_jobs _id>` and expands that card. Otherwise:
+- **Scrape & Log** (`mode=scrape`, default): CDP Chrome scrape + AI score → `matched_jobs`
+- **Save Link Only** (`mode=link_only`): no browser / no AI — stores URL stub with `ai_pending=True` and empty description
+
+Default status is **Not Applied** (`pending`); choose **Applied** only when you already applied (optional applied date).
+
+**Tracker Run AI:** every matched card has **Run AI** / **Re-run AI**. `POST /api/jobs/<id>/run-ai` opens the card’s link in debug Chrome, scrapes the JD, runs `evaluate_job`, and patches analysis fields on `matched_jobs` + `jobs` without wiping notes / timeline / status. Clears `ai_pending`. Requires the same CDP Chrome session as scrapers.
 
 **Timeouts page (`/timeouts`):** cards whose **title already passed** the scrape gates but the detail panel did not load in time. These are not saved to `jobs` (no JD). You open the original link and, if it is a real match, **Add as Not Applied** — that copies the card into `matched_jobs` as `pending`. Cards with no readable title (typical Indeed ad/empty slots, ~1 per SERP page) are not listed.
 

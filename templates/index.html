@@ -960,7 +960,8 @@
       gap: 12px;
       min-width: 0;
     }
-    .card-actions-row .btn-apply {
+    .card-actions-row .btn-apply,
+    .card-actions-row .btn-run-ai {
       align-self: flex-start;
       flex-shrink: 0;
       white-space: nowrap;
@@ -1344,6 +1345,34 @@
     }
     .btn-apply:hover { opacity: .88; transform: scale(1.02); }
     .btn-apply.btn-applied { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
+    .btn-run-ai {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: .82rem; font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s, border-color .15s, color .15s;
+      width: fit-content;
+    }
+    .btn-run-ai:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-run-ai:disabled { opacity: .45; pointer-events: none; }
+    .btn-run-ai.ai-pending-btn {
+      border-color: #f59e0b66;
+      color: #fbbf24;
+    }
+    .score-badge.score-pending {
+      background: #422006;
+      color: #fbbf24;
+      border: 1px solid #f59e0b55;
+    }
+    .meta-pill.ai-pending-pill {
+      background: #422006;
+      color: #fbbf24;
+      border: 1px solid #f59e0b44;
+    }
 
     /* Application progress timeline */
     .progress-wrap {
@@ -3184,9 +3213,23 @@ function toggleGroup(dateStr, headerEl) {
 
 /* ── Score badge class ───────────────────────────────────────────── */
 function scoreCls(score) {
+  if (score == null || score === '') return 'score-pending';
   if (score >= 8)  return 'score-hi';
   if (score >= 6)  return 'score-mid';
   return 'score-lo';
+}
+
+function hasAiScore(job) {
+  return job.match_score != null && job.match_score !== '';
+}
+
+function needsAiHint(job) {
+  return Boolean(job.ai_pending) || !hasAiScore(job) || !job.summary;
+}
+
+function formatScoreBadge(job) {
+  if (!hasAiScore(job)) return '—';
+  return Number(job.match_score).toFixed(1);
 }
 
 /* ── Job Wizard breakdown ────────────────────────────────────────── */
@@ -3267,8 +3310,9 @@ function renderHighlightsBlock(job) {
 
 /* ── Render card ─────────────────────────────────────────────────── */
 function renderCard(job) {
-  const score  = (job.match_score || 0).toFixed(1);
+  const score  = formatScoreBadge(job);
   const status = job.status || 'pending';
+  const aiHint = needsAiHint(job);
   const doSection = renderBreakdown("What you'll do", job.what_youll_do);
   const lookingSection = renderBreakdown("What they're looking for", job.what_theyre_looking_for);
   const hasBreakdown = Boolean(doSection || lookingSection);
@@ -3277,6 +3321,8 @@ function renderCard(job) {
     : (job.match_reasons || []).slice(0, 3).map(r => `<li>${escHtml(r)}</li>`).join('');
   const highlights = normalizeHighlights(job.highlights);
   const highlightBadges = highlightBadgesHtml(highlights);
+  const runAiCls = aiHint ? 'btn-run-ai ai-pending-btn' : 'btn-run-ai';
+  const runAiLabel = aiHint ? '🤖 Run AI' : '🤖 Re-run AI';
 
   const card = document.createElement('div');
   card.className = 'card' + (highlights.length ? ' has-highlights' : '');
@@ -3292,9 +3338,10 @@ function renderCard(job) {
       <div class="row-meta">
         ${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">📍 ${escHtml(job.location)}</span>` : ''}
         <span class="meta-pill source-pill">${escHtml(job.source || '')}</span>
+        ${aiHint ? '<span class="meta-pill ai-pending-pill">AI pending</span>' : ''}
         <span class="row-highlights" data-row-highlights>${highlightBadges}</span>
         <span class="status-pill s-${status}" data-status-pill>${STATUS_LABEL[status] || status}</span>
-        <div class="score-badge ${scoreCls(job.match_score || 0)}">${score}</div>
+        <div class="score-badge ${scoreCls(hasAiScore(job) ? job.match_score : null)}">${score}</div>
       </div>
     </div>
 
@@ -3323,12 +3370,13 @@ function renderCard(job) {
             </div>
           </div>
         </div>
-        <div class="score-badge ${scoreCls(job.match_score || 0)}">${score}</div>
+        <div class="score-badge ${scoreCls(hasAiScore(job) ? job.match_score : null)}">${score}</div>
       </div>
 
       <div class="card-meta">
         <span class="body-highlights" data-body-highlights>${highlightBadges}</span>
         <span class="meta-pill source-pill">${escHtml(job.source || '')}</span>
+        ${aiHint ? '<span class="meta-pill ai-pending-pill">AI pending</span>' : ''}
         ${job.matched_at ? `<span class="meta-pill">📅 ${job.matched_at}</span>` : ''}
         ${job.applicants ? `<span class="meta-pill">👥 ${escHtml(job.applicants)}</span>` : ''}
       </div>
@@ -3345,6 +3393,11 @@ function renderCard(job) {
            href="${escHtml(job.link || '#')}" target="_blank" rel="noopener">
           ${['applied','interview','rejected','offer'].includes(status) ? '🔗 View Detail' : '🚀 Apply Now'}
         </a>
+        <button type="button" class="${runAiCls}" data-id="${job._id}"
+                onclick="event.stopPropagation(); runAiForJob('${job._id}', this)"
+                title="Open the job page in Chrome, scrape JD, run AI matching">
+          ${runAiLabel}
+        </button>
       </div>
 
       <div class="card-split">
@@ -3884,6 +3937,70 @@ async function updateSideStatus(select) {
     loadDailyStats();
   } catch (err) {
     showToast('❌ Status update failed', 'err');
+  }
+}
+
+/* ── Run AI (scrape link + match on existing Tracker card) ───────── */
+async function runAiForJob(jobId, btn) {
+  if (!jobId || !btn) return;
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Running…';
+  showToast('🤖 Run AI started — needs debug Chrome');
+
+  try {
+    const startRes = await fetch(`/api/jobs/${jobId}/run-ai`, { method: 'POST' });
+    const startData = await startRes.json().catch(() => ({}));
+    if (!startRes.ok) {
+      showToast('❌ ' + (startData.error || 'Failed to start Run AI'), 'err');
+      btn.disabled = false;
+      btn.textContent = originalLabel;
+      return;
+    }
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/jobs/${jobId}/run-ai/status`);
+        const data = await res.json();
+        if (data.running) {
+          setTimeout(poll, 1500);
+          return;
+        }
+        if (data.ok) {
+          const score = data.match_score != null ? ` score ${data.match_score}/10` : '';
+          showToast(`✅ AI done${score}`);
+          // Refresh this card from API so score / summary update in place
+          try {
+            const jobRes = await fetch(`/api/jobs/${jobId}`);
+            if (jobRes.ok) {
+              const job = await jobRes.json();
+              const old = document.getElementById(`card-${jobId}`);
+              const wasExpanded = old && old.classList.contains('expanded');
+              const fresh = renderCard(job);
+              if (wasExpanded) fresh.classList.add('expanded');
+              if (old) old.replaceWith(fresh);
+            } else {
+              loadJobs();
+            }
+          } catch (_) {
+            loadJobs();
+          }
+        } else {
+          showToast('❌ Run AI failed: ' + (data.error || 'unknown'), 'err');
+          btn.disabled = false;
+          btn.textContent = originalLabel;
+        }
+      } catch (e) {
+        showToast('❌ Run AI status error', 'err');
+        btn.disabled = false;
+        btn.textContent = originalLabel;
+      }
+    };
+    setTimeout(poll, 1200);
+  } catch (e) {
+    showToast('❌ Network error starting Run AI', 'err');
+    btn.disabled = false;
+    btn.textContent = originalLabel;
   }
 }
 

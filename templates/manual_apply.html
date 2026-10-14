@@ -124,6 +124,11 @@
     .btn:hover { opacity: .85; }
     .btn:active { transform: scale(.97); }
     .btn-primary { background: var(--accent); color: #fff; }
+    .btn-secondary {
+      background: var(--surface2); color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
     .btn-clear   { background: var(--surface2); color: var(--muted); border: 1px solid var(--border); }
     .btn:disabled { opacity: .45; pointer-events: none; }
 
@@ -341,8 +346,10 @@
   <h1>📝 Log Manually Job</h1>
   <p class="subtitle">
     Paste one job URL per line (LinkedIn, Indeed, or any company careers page).<br>
-    If the URL is already in the Tracker, this page opens that matched card instead of scraping again.
-    New URLs are scraped + AI-scored. Default status is <strong>Not Applied</strong> — switch to Applied only when you already applied.
+    If the URL is already in the Tracker, this page opens that matched card instead of scraping again.<br>
+    <strong>Scrape &amp; Log</strong> needs debug Chrome + AI.
+    <strong>Save Link Only</strong> stores the URL with no scrape (for travel) — run AI later from Tracker.<br>
+    Default status is <strong>Not Applied</strong> — switch to Applied only when you already applied.
   </p>
 
   <!-- Status + optional applied date -->
@@ -370,8 +377,11 @@ https://careers.example.com/jobs/frontend-engineer"
   ></textarea>
 
   <div class="btn-row">
-    <button id="submitBtn" class="btn btn-primary" onclick="submitUrls()">
+    <button id="submitBtn" class="btn btn-primary" onclick="submitUrls({ linkOnly: false })">
       🚀 Scrape &amp; Log Job
+    </button>
+    <button id="linkOnlyBtn" class="btn btn-secondary" onclick="submitUrls({ linkOnly: true })">
+      📎 Save Link Only
     </button>
     <button class="btn btn-clear" onclick="document.getElementById('urlBox').value=''">
       🗑 Clear
@@ -391,12 +401,14 @@ https://careers.example.com/jobs/frontend-engineer"
   <div class="tip">
     <strong>💡 Tips</strong><br>
     • Paste a URL that is already in Matched — the Tracker opens that card automatically.<br>
-    • Make sure Chrome is open (debug session). Log in to LinkedIn / Indeed if those URLs need it.<br>
+    • <strong>Save Link Only</strong>: no Chrome needed; card shows AI pending until you click <strong>Run AI</strong> on Tracker.<br>
+    • <strong>Scrape &amp; Log</strong>: Chrome debug session must be open; log in to LinkedIn / Indeed if needed.<br>
     • LinkedIn: <code>https://www.linkedin.com/jobs/view/JOB_ID/</code><br>
     • Indeed: <code>https://de.indeed.com/viewjob?jk=JOB_KEY</code><br>
     • Other sites: paste the job detail URL — main content is extracted automatically.<br>
     • You can also run from the terminal:<br>
     &nbsp;&nbsp;<code>python src/scrapers/manual_apply_scraper.py "URL1" "URL2"</code><br>
+    &nbsp;&nbsp;<code>python src/scrapers/manual_apply_scraper.py --link-only "URL1"</code><br>
     &nbsp;&nbsp;<code>python src/scrapers/manual_apply_scraper.py --status applied "URL1"</code><br>
     &nbsp;&nbsp;<code>python src/scrapers/manual_apply_scraper.py --file my_urls.txt</code>
   </div>
@@ -406,6 +418,7 @@ https://careers.example.com/jobs/frontend-engineer"
 let _pollTimer = null;
 let _knownLogLen = 0;
 let _submittedStatus = 'pending';
+let _submittedLinkOnly = false;
 let _lookupTimer = null;
 let _lookupSeq = 0;
 let _lastLookupKey = '';
@@ -473,7 +486,7 @@ async function lookupUrls(urls, { autoOpen = true } = {}) {
     _lastLookupKey = key;
 
     if (!hits.length) {
-      setBanner('info', `✨ New URL(s) — not in DB yet. Click <strong>Scrape &amp; Log Job</strong> to add.`);
+      setBanner('info', `✨ New URL(s) — not in DB yet. Use <strong>Scrape &amp; Log</strong> or <strong>Save Link Only</strong>.`);
       return { hits, misses, results };
     }
 
@@ -491,7 +504,7 @@ async function lookupUrls(urls, { autoOpen = true } = {}) {
 
     setBanner('info',
       `⚠️ ${hits.length} URL(s) already in DB.` +
-      (misses.length ? ` ${misses.length} new — use Scrape for those.` : ' Nothing new to scrape.') +
+      (misses.length ? ` ${misses.length} new — use Scrape or Save Link Only for those.` : ' Nothing new to add.') +
       renderExistRows(hits)
     );
     return { hits, misses, results };
@@ -542,7 +555,7 @@ document.addEventListener('DOMContentLoaded', () => {
   box.addEventListener('input', () => scheduleLookup(false));
 });
 
-async function submitUrls() {
+async function submitUrls({ linkOnly = false } = {}) {
   const raw = document.getElementById('urlBox').value.trim();
   if (!raw) { alert('Please enter at least one URL.'); return; }
 
@@ -561,7 +574,7 @@ async function submitUrls() {
       return;
     }
     if (looked && looked.misses.length && looked.hits.length) {
-      // Only scrape URLs that are not already in DB
+      // Only process URLs that are not already in DB
       urls.length = 0;
       looked.misses.forEach(m => urls.push(m.url));
     }
@@ -572,10 +585,13 @@ async function submitUrls() {
     ? (document.getElementById('appliedDate').value || '')
     : '';
   _submittedStatus = status;
+  _submittedLinkOnly = linkOnly;
 
   const statusLabel = status === 'applied' ? 'Applied' : 'Not Applied';
-  setBanner('running', `<div class="spinner"></div> Scraping ${urls.length} URL(s) as ${statusLabel}…`);
+  const actionLabel = linkOnly ? 'Saving link(s)' : 'Scraping';
+  setBanner('running', `<div class="spinner"></div> ${actionLabel} ${urls.length} URL(s) as ${statusLabel}…`);
   document.getElementById('submitBtn').disabled = true;
+  document.getElementById('linkOnlyBtn').disabled = true;
   document.getElementById('logWrap').classList.add('visible');
   document.getElementById('logBody').innerHTML = '';
   _knownLogLen = 0;
@@ -584,12 +600,18 @@ async function submitUrls() {
     const res = await fetch('/api/manual-apply', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ urls, status, applied_date: appliedDate }),
+      body: JSON.stringify({
+        urls,
+        status,
+        applied_date: appliedDate,
+        mode: linkOnly ? 'link_only' : 'scrape',
+      }),
     });
     const data = await res.json();
     if (!res.ok) {
       setBanner('error', '❌ ' + (data.error || 'Failed to start'));
       document.getElementById('submitBtn').disabled = false;
+      document.getElementById('linkOnlyBtn').disabled = false;
       return;
     }
     // Start polling
@@ -597,6 +619,7 @@ async function submitUrls() {
   } catch(e) {
     setBanner('error', '❌ Network error: ' + e.message);
     document.getElementById('submitBtn').disabled = false;
+    document.getElementById('linkOnlyBtn').disabled = false;
   }
 }
 
@@ -627,9 +650,11 @@ async function pollStatus() {
     if (!data.running) {
       clearInterval(_pollTimer);
       document.getElementById('submitBtn').disabled = false;
+      document.getElementById('linkOnlyBtn').disabled = false;
       const statusLabel = _submittedStatus === 'applied' ? 'Applied' : 'Not Applied';
+      const modeHint = _submittedLinkOnly ? ' (link-only, AI pending)' : '';
       const parts = [];
-      if (data.done_count > 0) parts.push(`${data.done_count} saved as ${statusLabel}`);
+      if (data.done_count > 0) parts.push(`${data.done_count} saved as ${statusLabel}${modeHint}`);
       if (skipCount > 0) parts.push(`${skipCount} already in DB (skipped)`);
       if (data.fail_count > 0) parts.push(`${data.fail_count} failed`);
       if (data.done_count === 0 && data.fail_count > 0 && skipCount === 0) {

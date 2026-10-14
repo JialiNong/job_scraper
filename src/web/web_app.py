@@ -290,6 +290,8 @@ def _serialize(job: dict) -> dict:
     job["link"] = _normalize_link(job)
     # Ensure notes field always exists
     job.setdefault("notes", "")
+    # Link-only / timeout stubs wait for Tracker Run AI
+    job.setdefault("ai_pending", False)
     # Manual UI highlights (user tags); separate from AI special_match
     raw_highlights = job.get("highlights")
     if not isinstance(raw_highlights, list):
@@ -1312,10 +1314,17 @@ def api_manual_apply_lookup():
 def api_manual_apply():
     """
     Accepts a JSON body:
-      {"urls": [...], "status": "pending"|"applied", "applied_date": "YYYY-MM-DD"}
+      {
+        "urls": [...],
+        "status": "pending"|"applied",
+        "applied_date": "YYYY-MM-DD",
+        "mode": "scrape"|"link_only"   # default scrape
+      }
     Runs the manual job logger in a background thread.
     Returns immediately with {"status": "started"} or an error.
     Default tracker status is pending (Not Applied).
+
+    mode=link_only: save URL stubs with ai_pending (no Chrome / no AI).
     """
     data = request.get_json(silent=True) or {}
     urls = data.get("urls", [])
@@ -1324,6 +1333,10 @@ def api_manual_apply():
     urls = [u.strip() for u in urls if isinstance(u, str) and u.strip()]
     if not urls:
         return jsonify({"error": "No valid URLs provided"}), 400
+
+    mode = (data.get("mode") or "scrape").strip().lower()
+    if mode not in ("scrape", "link_only"):
+        return jsonify({"error": "mode must be 'scrape' or 'link_only'"}), 400
 
     # Tracker status: pending (Not Applied, default) or applied
     job_status = (data.get("status") or "pending").strip().lower()
@@ -1356,7 +1369,10 @@ def api_manual_apply():
             _manual_apply_state["skip_count"] = 0
 
             # Import here to avoid circular deps at module load
-            from scrapers.manual_apply_scraper import process_urls as _process_urls
+            from scrapers.manual_apply_scraper import (
+                process_urls as _process_urls,
+                save_link_only_urls as _save_link_only,
+            )
 
             # Monkey-patch print so progress goes to the state log
             import builtins
@@ -1369,14 +1385,21 @@ def api_manual_apply():
 
             builtins.print = _capture_print
             try:
-                _process_urls(urls, applied_date=applied_date, status=job_status)
+                if mode == "link_only":
+                    _save_link_only(urls, applied_date=applied_date, status=job_status)
+                else:
+                    _process_urls(urls, applied_date=applied_date, status=job_status)
                 # Count results from log
                 for line in _manual_apply_state["log"]:
                     if "✅ Saved to matched_jobs" in line:
                         _manual_apply_state["done_count"] += 1
                     elif "Already in DB" in line and "skipping" in line:
                         _manual_apply_state["skip_count"] += 1
-                    elif "❌ Scraping failed" in line or "Cannot extract" in line:
+                    elif (
+                        "❌ Scraping failed" in line
+                        or "Cannot extract" in line
+                        or "Cannot resolve job_id" in line
+                    ):
                         _manual_apply_state["fail_count"] += 1
             finally:
                 builtins.print = _original_print
@@ -1388,7 +1411,12 @@ def api_manual_apply():
 
     t = threading.Thread(target=run, daemon=True)
     t.start()
-    return jsonify({"status": "started", "total": len(urls), "job_status": job_status})
+    return jsonify({
+        "status": "started",
+        "total": len(urls),
+        "job_status": job_status,
+        "mode": mode,
+    })
 
 
 @app.route("/api/manual-apply/status")
@@ -1402,6 +1430,102 @@ def api_manual_apply_status():
         "done_count": state["done_count"],
         "fail_count": state["fail_count"],
         "skip_count": state.get("skip_count", 0),
+    })
+
+
+# ─── Per-card Run AI (scrape + match existing Tracker row) ────────────────────
+
+_run_ai_lock = threading.Lock()
+_run_ai_state: dict = {
+    "running": False,
+    "job_id": None,
+    "log": [],
+    "ok": False,
+    "error": None,
+    "match_score": None,
+}
+
+
+@app.route("/api/jobs/<job_id>/run-ai", methods=["POST"])
+@login_required
+def api_job_run_ai(job_id: str):
+    """
+    Scrape the Tracker card's link via CDP, run AI matching, and update analysis
+    fields (preserves notes / timeline / status). Requires debug Chrome.
+    """
+    try:
+        oid = ObjectId(job_id)
+    except Exception:
+        return jsonify({"error": "Invalid id"}), 400
+
+    matched_col = get_collection("matched_jobs")
+    doc = matched_col.find_one({"_id": oid})
+    if not doc:
+        return jsonify({"error": "Job not found"}), 404
+
+    if not _run_ai_lock.acquire(blocking=False):
+        return jsonify({
+            "error": "Another Run AI is already in progress. Please wait.",
+            "busy_job_id": _run_ai_state.get("job_id"),
+        }), 429
+
+    # Also block if a full manual-apply scrape is using Chrome
+    if _manual_apply_state.get("running"):
+        _run_ai_lock.release()
+        return jsonify({"error": "Manual Log Job is running — wait for it to finish."}), 429
+
+    def run():
+        try:
+            _run_ai_state["running"] = True
+            _run_ai_state["job_id"] = job_id
+            _run_ai_state["log"] = []
+            _run_ai_state["ok"] = False
+            _run_ai_state["error"] = None
+            _run_ai_state["match_score"] = None
+
+            from scrapers.manual_apply_scraper import run_ai_on_matched_job
+
+            import builtins
+            _original_print = builtins.print
+
+            def _capture_print(*args, **kwargs):
+                line = " ".join(str(a) for a in args)
+                _run_ai_state["log"].append(line)
+                _original_print(*args, **kwargs)
+
+            builtins.print = _capture_print
+            try:
+                result = run_ai_on_matched_job(doc)
+                _run_ai_state["ok"] = bool(result.get("ok"))
+                _run_ai_state["error"] = result.get("error")
+                _run_ai_state["match_score"] = result.get("match_score")
+            finally:
+                builtins.print = _original_print
+        except Exception as e:
+            _run_ai_state["ok"] = False
+            _run_ai_state["error"] = str(e)
+            _run_ai_state["log"].append(f"❌ Fatal error: {e}")
+        finally:
+            _run_ai_state["running"] = False
+            _run_ai_lock.release()
+
+    t = threading.Thread(target=run, daemon=True)
+    t.start()
+    return jsonify({"status": "started", "job_id": job_id})
+
+
+@app.route("/api/jobs/<job_id>/run-ai/status")
+@login_required
+def api_job_run_ai_status(job_id: str):
+    """Poll progress for the current / last Run AI job."""
+    state = _run_ai_state
+    return jsonify({
+        "running": state["running"] and state.get("job_id") == job_id,
+        "job_id": state.get("job_id"),
+        "log": state["log"][-80:],
+        "ok": state["ok"] if state.get("job_id") == job_id and not state["running"] else None,
+        "error": state.get("error") if state.get("job_id") == job_id else None,
+        "match_score": state.get("match_score") if state.get("job_id") == job_id else None,
     })
 
 
