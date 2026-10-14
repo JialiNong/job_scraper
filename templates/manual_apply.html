@@ -426,7 +426,7 @@ let _lastLookupKey = '';
 function colorLine(line) {
   const l = line.trim();
   if (l.startsWith('✅') || l.includes('Saved to matched_jobs') || l.startsWith('Success')) return `<span class="ok">${esc(line)}</span>`;
-  if (l.includes('Already in DB') || l.startsWith('⏭️')) return `<span class="info">${esc(line)}</span>`;
+  if (l.includes('Already on Tracker') || l.includes('Already in DB') || l.startsWith('⏭️')) return `<span class="info">${esc(line)}</span>`;
   if (l.startsWith('❌') || l.startsWith('✗') || l.includes('failed') || l.includes('Failed')) return `<span class="err">${esc(line)}</span>`;
   if (l.startsWith('===') || l.startsWith('[') && l.includes('/')) return `<span class="head">${esc(line)}</span>`;
   if (l.startsWith('🤖') || l.startsWith('✨') || l.startsWith('→') || l.startsWith('  →')) return `<span class="info">${esc(line)}</span>`;
@@ -441,18 +441,31 @@ function parseUrlLines(raw) {
     .filter(u => u && !u.startsWith('#') && /^https?:\/\//i.test(u));
 }
 
-function collectionLabel(collection) {
-  if (collection === 'matched_jobs') return 'Matched (Tracker)';
-  if (collection === 'jobs') return 'Unmatched scrape store';
-  if (collection === 'timeout_jobs') return 'Timeout review';
-  return collection || 'DB';
+function stageLabel(h) {
+  const stage = h.stage || '';
+  if (stage === 'tracker' || h.on_tracker || h.collection === 'matched_jobs') {
+    return 'Already on Tracker';
+  }
+  if (stage === 'awaiting_match') {
+    return 'Scraped, awaiting AI — not on Tracker (use Scrape & Log to add)';
+  }
+  if (stage === 'unmatched' || h.collection === 'jobs') {
+    const score = h.match_score != null && h.match_score !== ''
+      ? ` · score ${Number(h.match_score).toFixed(1)}`
+      : '';
+    return `Scored Unmatched${score} — not on Tracker (use Scrape & Log to add)`;
+  }
+  if (stage === 'timeout' || h.collection === 'timeout_jobs') {
+    return 'Timeout review — not on Tracker yet';
+  }
+  return h.collection || 'DB';
 }
 
 function renderExistRows(hits) {
   return `<div class="exist-list">${hits.map(h => {
     const title = esc(h.title || h.job_id || 'Job');
     const company = h.company ? ` · ${esc(h.company)}` : '';
-    const where = esc(collectionLabel(h.collection));
+    const where = esc(stageLabel(h));
     const open = h.open_path
       ? `<a class="btn-open" href="${esc(h.open_path)}">Open →</a>`
       : '';
@@ -483,31 +496,42 @@ async function lookupUrls(urls, { autoOpen = true } = {}) {
     const results = data.results || [];
     const hits = results.filter(r => r.found);
     const misses = results.filter(r => !r.found);
+    const trackerHits = hits.filter(h => h.on_tracker);
+    const promotableHits = hits.filter(h => !h.on_tracker);
     _lastLookupKey = key;
 
     if (!hits.length) {
       setBanner('info', `✨ New URL(s) — not in DB yet. Use <strong>Scrape &amp; Log</strong> or <strong>Save Link Only</strong>.`);
-      return { hits, misses, results };
+      return { hits, misses, results, trackerHits, promotableHits };
     }
 
-    const matchedHits = hits.filter(h => h.collection === 'matched_jobs' && h.open_path);
-    // Single matched URL → open Tracker card immediately
-    if (autoOpen && urls.length === 1 && matchedHits.length === 1 && misses.length === 0) {
-      const hit = matchedHits[0];
+    // Single Tracker URL → open that card immediately
+    if (autoOpen && urls.length === 1 && trackerHits.length === 1 && misses.length === 0 && promotableHits.length === 0) {
+      const hit = trackerHits[0];
       setBanner('success',
         `✅ Already in Tracker: <strong>${esc(hit.title || 'job')}</strong>` +
         (hit.company ? ` · ${esc(hit.company)}` : '') +
         ` — opening…`);
-      setTimeout(() => { window.location.href = hit.open_path; }, 350);
-      return { hits, misses, results };
+      if (hit.open_path) {
+        setTimeout(() => { window.location.href = hit.open_path; }, 350);
+      }
+      return { hits, misses, results, trackerHits, promotableHits };
     }
 
-    setBanner('info',
-      `⚠️ ${hits.length} URL(s) already in DB.` +
-      (misses.length ? ` ${misses.length} new — use Scrape or Save Link Only for those.` : ' Nothing new to add.') +
-      renderExistRows(hits)
-    );
-    return { hits, misses, results };
+    const parts = [];
+    if (trackerHits.length) {
+      parts.push(`${trackerHits.length} already on Tracker`);
+    }
+    if (promotableHits.length) {
+      parts.push(
+        `${promotableHits.length} already scraped but <strong>not on Tracker</strong> — use Scrape &amp; Log or Save Link Only to add`
+      );
+    }
+    if (misses.length) {
+      parts.push(`${misses.length} new`);
+    }
+    setBanner('info', `⚠️ ${parts.join('. ')}.` + renderExistRows(hits));
+    return { hits, misses, results, trackerHits, promotableHits };
   } catch (e) {
     if (seq !== _lookupSeq) return null;
     setBanner('error', '❌ Lookup error: ' + e.message);
@@ -565,18 +589,21 @@ async function submitUrls({ linkOnly = false } = {}) {
 
   if (urls.length === 0) { alert('No valid URLs found.'); return; }
 
-  // Prefer opening existing matched jobs instead of a useless skip-only scrape
+  // Prefer opening Tracker cards; still allow promoting scraped/timeout rows
   const httpUrls = parseUrlLines(raw);
   if (httpUrls.length) {
     const looked = await lookupUrls(httpUrls, { autoOpen: true });
-    if (looked && looked.hits.length && !looked.misses.length) {
-      // All already known — do not start scrape
-      return;
-    }
-    if (looked && looked.misses.length && looked.hits.length) {
-      // Only process URLs that are not already in DB
+    if (looked) {
+      const actionable = [
+        ...looked.misses.map(m => m.url),
+        ...(looked.promotableHits || []).map(h => h.url),
+      ];
+      if (!actionable.length) {
+        // All already on Tracker — do not start scrape
+        return;
+      }
       urls.length = 0;
-      looked.misses.forEach(m => urls.push(m.url));
+      actionable.forEach(u => urls.push(u));
     }
   }
 
@@ -655,12 +682,12 @@ async function pollStatus() {
       const modeHint = _submittedLinkOnly ? ' (link-only, AI pending)' : '';
       const parts = [];
       if (data.done_count > 0) parts.push(`${data.done_count} saved as ${statusLabel}${modeHint}`);
-      if (skipCount > 0) parts.push(`${skipCount} already in DB (skipped)`);
+      if (skipCount > 0) parts.push(`${skipCount} already on Tracker (skipped)`);
       if (data.fail_count > 0) parts.push(`${data.fail_count} failed`);
       if (data.done_count === 0 && data.fail_count > 0 && skipCount === 0) {
         setBanner('error', `❌ All ${data.fail_count} URL(s) failed. Check the log above.`);
       } else if (data.done_count === 0 && skipCount > 0 && data.fail_count === 0) {
-        setBanner('error', `⚠️ All ${skipCount} URL(s) already in DB — nothing saved.`);
+        setBanner('error', `⚠️ All ${skipCount} URL(s) already on Tracker — nothing saved.`);
       } else if (parts.length) {
         const link = data.done_count > 0
           ? ` <a href="/" style="color:var(--accent)">View Matched →</a>`

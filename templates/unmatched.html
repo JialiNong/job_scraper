@@ -285,6 +285,26 @@
     .card-summary {
       font-size: .82rem; color: var(--muted); line-height: 1.55;
     }
+    .card.open-flash {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px var(--accent), 0 0 24px rgba(108, 140, 255, .35);
+      animation: openFlashPulse 1.4s ease;
+    }
+    @keyframes openFlashPulse {
+      0%   { box-shadow: 0 0 0 0 rgba(108, 140, 255, .55); }
+      70%  { box-shadow: 0 0 0 8px rgba(108, 140, 255, 0); }
+      100% { box-shadow: 0 0 0 2px var(--accent), 0 0 24px rgba(108, 140, 255, .35); }
+    }
+    .open-job-banner {
+      grid-column: 1 / -1;
+      background: rgba(108, 140, 255, .12);
+      border: 1px solid var(--accent);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: .85rem;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
 
     .tag-list { display: flex; flex-direction: column; gap: 4px; }
     .tag-list li { font-size: .75rem; line-height: 1.45; }
@@ -851,6 +871,7 @@ function renderCard(job) {
 
   const card = document.createElement('div');
   card.className = 'card';
+  card.id = `card-${job._id}`;
   card.innerHTML = `
     <div class="card-row" onclick="toggleCardExpand(this)">
       <span class="row-chevron">▸</span>
@@ -1012,8 +1033,73 @@ async function loadJobs() {
   });
 });
 
+/* ── Deep-link: /unmatched?open=<jobs _id> ─────────────────────────── */
+function consumeOpenJobId() {
+  const params = new URLSearchParams(location.search);
+  const id = (params.get('open') || '').trim();
+  if (!id) return '';
+  params.delete('open');
+  const qs = params.toString();
+  history.replaceState({}, '', qs ? `/unmatched?${qs}` : '/unmatched');
+  return id;
+}
+
+function openUnmatchedCard(card) {
+  if (!card) return;
+  if (currentLayout === 'compact' && !card.classList.contains('expanded')) {
+    const row = card.querySelector('.card-row');
+    if (row) toggleCardExpand(row);
+  }
+  card.classList.add('open-flash');
+  card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  setTimeout(() => card.classList.remove('open-flash'), 2800);
+}
+
+async function focusOpenJobFromQuery() {
+  if (!window.__pendingOpenJobId) return;
+  const openId = window.__pendingOpenJobId;
+  window.__pendingOpenJobId = '';
+
+  const grid = document.getElementById('jobGrid');
+  let card = document.getElementById(`card-${openId}`);
+  if (card) {
+    openUnmatchedCard(card);
+    showToast('Opened unmatched job');
+    return;
+  }
+
+  try {
+    const res = await fetch(`/api/unmatched-jobs/${openId}`);
+    const job = await res.json();
+    if (!res.ok) {
+      showToast(job.error || 'Job not found on Unmatched', 'err');
+      return;
+    }
+    const banner = document.createElement('div');
+    banner.className = 'open-job-banner';
+    banner.innerHTML =
+      `Opened from URL (not on this page/filter) — <strong>${escHtml(job.title || '')}</strong>`;
+    const injected = renderCard(job);
+    injected.classList.add('open-flash');
+    if (currentLayout === 'compact') injected.classList.add('expanded');
+    const empty = grid.querySelector('.empty');
+    if (empty) empty.remove();
+    const spinner = grid.querySelector('.spinner');
+    if (spinner) spinner.remove();
+    grid.insertBefore(banner, grid.firstChild);
+    grid.insertBefore(injected, banner.nextSibling);
+    injected.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setTimeout(() => injected.classList.remove('open-flash'), 2800);
+    showToast('Opened unmatched job');
+  } catch (err) {
+    showToast(`Open failed: ${err.message}`, 'err');
+  }
+}
+
+window.__pendingOpenJobId = consumeOpenJobId();
+
 setLayout(currentLayout);
-loadJobs();
+loadJobs().then(() => focusOpenJobFromQuery());
 loadWatchlistCount();
 </script>
 </body>

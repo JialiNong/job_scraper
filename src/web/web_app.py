@@ -536,6 +536,28 @@ def api_unmatched_jobs():
     })
 
 
+@app.route("/api/unmatched-jobs/<job_id>", methods=["GET"])
+@login_required
+def api_get_unmatched_job(job_id: str):
+    """Return one AI-scored below-threshold job for deep-link open on /unmatched."""
+    try:
+        oid = ObjectId(job_id)
+    except Exception:
+        return jsonify({"error": "Invalid job ID"}), 400
+
+    job = get_collection("jobs").find_one(
+        {
+            "_id": oid,
+            "matched_at": {"$exists": True},
+            "match_score": {"$lt": float(MATCH_THRESHOLD)},
+        },
+        {"description": 0},
+    )
+    if not job:
+        return jsonify({"error": "Unmatched job not found"}), 404
+    return jsonify(_serialize(job))
+
+
 @app.route("/api/jobs/<job_id>/status", methods=["PATCH"])
 @login_required
 def api_update_status(job_id: str):
@@ -1281,23 +1303,31 @@ def api_manual_apply_lookup():
         job_id = resolve_job_id(url, source)
         hit = lookup_known_job(job_id, source) if job_id else None
         if hit:
+            stage = hit.get("stage") or ""
+            on_tracker = bool(hit.get("on_tracker"))
             open_path = None
-            if hit["collection"] == "matched_jobs":
+            if stage == "tracker" or hit["collection"] == "matched_jobs":
                 open_path = f"/?open={hit['_id']}"
-            elif hit["collection"] == "jobs":
-                open_path = "/unmatched"
-            elif hit["collection"] == "timeout_jobs":
+            elif stage == "unmatched":
+                # Only AI-scored below-threshold rows appear on /unmatched
+                open_path = f"/unmatched?open={hit['_id']}"
+            elif stage == "timeout" or hit["collection"] == "timeout_jobs":
                 open_path = "/timeouts"
+            # awaiting_match: scraped but not AI-scored — nowhere useful to open
             results.append({
                 "url": url,
                 "found": True,
                 "collection": hit["collection"],
+                "stage": stage,
+                "on_tracker": on_tracker,
+                "promotable": not on_tracker,
                 "id": hit["_id"],
                 "title": hit["title"],
                 "company": hit["company"],
                 "status": hit["status"],
                 "source": hit["source"],
                 "job_id": hit["job_id"],
+                "match_score": hit.get("match_score"),
                 "open_path": open_path,
             })
         else:
@@ -1306,6 +1336,8 @@ def api_manual_apply_lookup():
                 "found": False,
                 "source": source,
                 "job_id": job_id or "",
+                "on_tracker": False,
+                "promotable": True,
             })
 
     return jsonify({"results": results})
@@ -1395,7 +1427,7 @@ def api_manual_apply():
                 for line in _manual_apply_state["log"]:
                     if "✅ Saved to matched_jobs" in line:
                         _manual_apply_state["done_count"] += 1
-                    elif "Already in DB" in line and "skipping" in line:
+                    elif "Already on Tracker" in line and "skipping" in line:
                         _manual_apply_state["skip_count"] += 1
                     elif (
                         "❌ Scraping failed" in line

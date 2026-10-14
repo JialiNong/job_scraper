@@ -135,7 +135,7 @@ Indeed pacing is slower and more human-like than LinkedIn: random think-time bef
 | `python3 src/scrapers/linkedin_quick_scraper.py [-p N] [-j N]` | LinkedIn 12h quick URL (default 3 pages × 30) |
 | `./run_linkedin.sh [--hours N] [-p N] [-j N]` | LinkedIn-only scrape + AI match (default `--hours 24`; short window → 2 pages/keyword) |
 | `python3 src/matching/ai_matcher.py [-l N] [-s source] [-t 7.0]` | AI match only (jobs without `matched_at`) |
-| `python3 src/scrapers/manual_apply_scraper.py <urls…>` | Manual job URLs → skip if `job_id` already in `jobs`/`matched_jobs`, else scrape + score → `matched_jobs` (default `status=pending`; `--status applied` optional; `--link-only` skips scrape/AI) |
+| `python3 src/scrapers/manual_apply_scraper.py <urls…>` | Manual job URLs → skip only if already on Tracker (`matched_jobs`); rows only in `jobs` / `timeout_jobs` are still logged → `matched_jobs` (default `status=pending`; `--status applied` optional; `--link-only` skips scrape/AI) |
 | `python3 scripts/cleanup_unmatched_descriptions.py …` | Clear old unmatched JD text (also run at end of full pipeline) |
 | `python3 scripts/cleanup_excluded_titles.py …` | Cleanup DB rows by title blacklist |
 | `python3 scripts/eval_matcher.py …` | Matcher evaluation |
@@ -369,8 +369,16 @@ Details: [`matching_criteria.md`](./matching_criteria.md).
 
 Web UI (`web_app.py`) reads these for today’s funnel, match list, unmatched reasons, and scrape timeouts.
 
-**Log Job page (`/manual-apply`):** paste job URLs (LinkedIn / Indeed / career pages). On paste (and before scrape), `POST /api/manual-apply/lookup` resolves `job_id` and checks `matched_jobs` → `jobs` → `timeout_jobs` (Indeed: all jk variants). If the URL is already in **Matched**, the UI opens Tracker at `/?open=<matched_jobs _id>` and expands that card. Otherwise:
-- **Scrape & Log** (`mode=scrape`, default): CDP Chrome scrape + AI score → `matched_jobs`
+**Log Job page (`/manual-apply`):** paste job URLs (LinkedIn / Indeed / career pages). On paste (and before scrape), `POST /api/manual-apply/lookup` resolves `job_id` and checks `matched_jobs` → `jobs` → `timeout_jobs` (Indeed: all jk variants). Stages:
+
+| Stage | Meaning | UI |
+|-------|---------|-----|
+| `tracker` | Already in `matched_jobs` | Opens Tracker at `/?open=<matched_jobs _id>`; scrape is skipped |
+| `unmatched` | In `jobs` with AI score below threshold | Opens `/unmatched?open=<jobs _id>`; still promotable via Scrape & Log / Save Link Only |
+| `awaiting_match` | In `jobs` but not yet AI-matched (invisible on Unmatched) | Explains “scraped, awaiting AI”; Scrape & Log / Save Link Only adds it to Tracker |
+| `timeout` | Pending on `/timeouts` | Link to Timeouts; still promotable |
+
+- **Scrape & Log** (`mode=scrape`, default): CDP Chrome scrape + AI score → `matched_jobs` (skips only when already on Tracker)
 - **Save Link Only** (`mode=link_only`): no browser / no AI — stores URL stub with `ai_pending=True` and empty description
 
 Default status is **Not Applied** (`pending`); choose **Applied** only when you already applied (optional applied date).

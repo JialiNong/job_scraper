@@ -337,21 +337,38 @@ def _timeout_id_query(job_id, source):
 def is_job_known(job_id, source="linkedin"):
     """
     True if job_id is already in `jobs` or `matched_jobs` (Indeed: all jk variants).
-    Used by manual-apply to skip scrape / AI / save when the URL is already logged.
+    Used by scrapers to skip re-clicking a listing already stored.
     """
     return lookup_known_job(job_id, source) is not None
+
+
+def is_job_on_tracker(job_id, source="linkedin"):
+    """
+    True if job_id is already in `matched_jobs` (Indeed: all jk variants).
+
+    Manual Log Job only skips when the URL is already on Tracker. A row that
+    exists only in `jobs` (awaiting AI or scored unmatched) is still promotable.
+    """
+    hit = lookup_known_job(job_id, source)
+    return bool(hit and hit.get("on_tracker"))
 
 
 def lookup_known_job(job_id, source="linkedin"):
     """
     Find a job by job_id + source (Indeed: all jk variants).
 
-    Prefers `matched_jobs` (Tracker), then `jobs` (Unmatched scrape store),
+    Prefers `matched_jobs` (Tracker), then `jobs` (scrape store),
     then `timeout_jobs` still pending review.
 
     Returns:
-        dict with keys collection, _id, title, company, status, source, job_id
-        or None if not found.
+        dict with keys collection, stage, on_tracker, _id, title, company,
+        status, source, job_id, match_score — or None if not found.
+
+        stage:
+          - tracker: already on matched_jobs
+          - unmatched: in jobs with matched_at (AI scored below threshold)
+          - awaiting_match: in jobs, not yet AI-matched (invisible on Unmatched)
+          - timeout: pending timeout review
     """
     job_id = str(job_id or "").strip()
     source = (source or "").strip().lower()
@@ -368,30 +385,40 @@ def lookup_known_job(job_id, source="linkedin"):
         "job_id": 1,
         "user_status": 1,
         "review_status": 1,
+        "matched_at": 1,
+        "match_score": 1,
     }
 
     matched = db["matched_jobs"].find_one(id_query, projection)
     if matched:
         return {
             "collection": "matched_jobs",
+            "stage": "tracker",
+            "on_tracker": True,
             "_id": str(matched["_id"]),
             "title": matched.get("title") or "",
             "company": matched.get("company") or "",
             "status": matched.get("status") or "pending",
             "source": matched.get("source") or source,
             "job_id": matched.get("job_id") or job_id,
+            "match_score": matched.get("match_score"),
         }
 
     scraped = db[COLLECTION_NAME].find_one(id_query, projection)
     if scraped:
+        has_matched_at = scraped.get("matched_at") is not None
+        stage = "unmatched" if has_matched_at else "awaiting_match"
         return {
             "collection": "jobs",
+            "stage": stage,
+            "on_tracker": False,
             "_id": str(scraped["_id"]),
             "title": scraped.get("title") or "",
             "company": scraped.get("company") or "",
             "status": scraped.get("user_status") or scraped.get("status") or "",
             "source": scraped.get("source") or source,
             "job_id": scraped.get("job_id") or job_id,
+            "match_score": scraped.get("match_score"),
         }
 
     timeout = db[TIMEOUT_JOBS_COLLECTION].find_one(
@@ -401,12 +428,15 @@ def lookup_known_job(job_id, source="linkedin"):
     if timeout:
         return {
             "collection": "timeout_jobs",
+            "stage": "timeout",
+            "on_tracker": False,
             "_id": str(timeout["_id"]),
             "title": timeout.get("title") or "",
             "company": timeout.get("company") or "",
             "status": timeout.get("review_status") or "pending",
             "source": timeout.get("source") or source,
             "job_id": timeout.get("job_id") or job_id,
+            "match_score": None,
         }
 
     return None

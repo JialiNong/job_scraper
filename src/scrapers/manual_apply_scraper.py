@@ -19,8 +19,9 @@ Usage:
 
 What it does for EACH url
 --------------------------
-1. Resolves job_id from the URL; if it already exists in jobs or matched_jobs,
-   prints a warning and skips (no scrape / AI / save).
+1. Resolves job_id from the URL; if it is already on Tracker (matched_jobs),
+   prints a warning and skips. Rows only in jobs (awaiting AI / unmatched) or
+   timeout_jobs are still logged to Tracker.
 2. Opens the URL in the existing debug Chrome session (CDP).
 3. Scrapes title / company / location / description.
    - LinkedIn / Indeed: site-specific selectors
@@ -55,7 +56,13 @@ if _SRC_ROOT not in sys.path:
 from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
 import trafilatura
 
-from core.db_mongo import init_db, get_collection, mark_job_as_matched, save_job, is_job_known
+from core.db_mongo import (
+    init_db,
+    get_collection,
+    mark_job_as_matched,
+    save_job,
+    is_job_on_tracker,
+)
 from matching.ai_matcher import evaluate_job, load_user_profile, load_matching_criteria, _analysis_fields
 from core.scraper_utils import (
     connect_browser,
@@ -811,9 +818,9 @@ def save_link_only_urls(
             print("  ⚠️  Cannot resolve job_id — skipping")
             results["failed"].append(url)
             continue
-        if is_job_known(job_id, source):
+        if is_job_on_tracker(job_id, source):
             print(
-                f"  ⚠️  Already in DB (jobs/matched_jobs): "
+                f"  ⚠️  Already on Tracker (matched_jobs): "
                 f"job_id={job_id} source={source} — skipping"
             )
             results["skipped"].append(url)
@@ -849,7 +856,7 @@ def save_link_only_urls(
 
     print(f"\n{'='*60}")
     print(f"✅ Success : {len(results['ok'])}")
-    print(f"⏭️  Skipped : {len(results['skipped'])} (already in DB)")
+    print(f"⏭️  Skipped : {len(results['skipped'])} (already on Tracker)")
     print(f"❌ Failed  : {len(results['failed'])}")
     if results["skipped"]:
         for u in results["skipped"]:
@@ -905,9 +912,9 @@ def process_urls(
 
             source = detect_source(url)
             job_id = resolve_job_id(url, source)
-            if job_id and is_job_known(job_id, source):
+            if job_id and is_job_on_tracker(job_id, source):
                 print(
-                    f"  ⚠️  Already in DB (jobs/matched_jobs): "
+                    f"  ⚠️  Already on Tracker (matched_jobs): "
                     f"job_id={job_id} source={source} — skipping"
                 )
                 results["skipped"].append(url)
@@ -943,7 +950,7 @@ def process_urls(
 
     print(f"\n{'='*60}")
     print(f"✅ Success : {len(results['ok'])}")
-    print(f"⏭️  Skipped : {len(results['skipped'])} (already in DB)")
+    print(f"⏭️  Skipped : {len(results['skipped'])} (already on Tracker)")
     print(f"❌ Failed  : {len(results['failed'])}")
     if results["skipped"]:
         for u in results["skipped"]:
