@@ -138,7 +138,8 @@ STATUS_MAP = {
     "duplicate":  "Duplicate",
 }
 
-# Other-dropdown statuses: no application progress, not counted as applied
+# Other-dropdown overlay statuses. They do not wipe an existing application
+# record (applied_at / timeline); only Reset Not Applied (pending) does.
 SIDE_STATUSES = ("unsuitable", "closed", "repost", "duplicate")
 
 # Application progress timeline steps (ordered interview track)
@@ -243,10 +244,11 @@ def _hydrate_timeline(job: dict) -> list:
     if isinstance(timeline, list) and timeline:
         return timeline
     status = job.get("status") or "pending"
-    # Do not invent progress for side / reset statuses
-    if status in (*SIDE_STATUSES, "pending"):
+    # Reset Not Applied means there is no application to show
+    if status == "pending":
         return []
-    # Backfill: older records only had a flat status (+ applied_at)
+    # Backfill: older records only had a flat status (+ applied_at).
+    # Side-status jobs that were applied still show that progress.
     if job.get("applied_at") or status in APPLIED_STATUSES:
         at = job.get("applied_at") or job.get("updated_at") or job.get("matched_at")
         seeded = [{"step": "applied", "at": at or datetime.now()}]
@@ -258,6 +260,87 @@ def _hydrate_timeline(job: dict) -> list:
             seeded.append({"step": "interview_1", "at": job.get("updated_at") or at or datetime.now()})
         return seeded
     return []
+
+
+def _existing_applied_event(job: dict) -> Optional[dict]:
+    """Return the stored Applied timeline event, or one synthesised from applied_at."""
+    raw = job.get("application_timeline") if isinstance(job.get("application_timeline"), list) else []
+    for item in raw:
+        if isinstance(item, dict) and item.get("step") == "applied":
+            at = item.get("at")
+            if at:
+                return {"step": "applied", "at": at}
+    at = job.get("applied_at")
+    if at:
+        return {"step": "applied", "at": at}
+    return None
+
+
+def _ensure_applied_record(job: dict, timeline: list) -> list:
+    """Keep the Applied step when a side-status job's payload omitted it."""
+    if any(e.get("step") == "applied" for e in timeline):
+        return timeline
+    applied = _existing_applied_event(job)
+    if not applied:
+        return timeline
+    return [applied, *timeline]
+
+
+def _status_update_fields(job: dict, new_status: str, now: datetime) -> dict:
+    """
+    Fields for PATCH /status.
+
+    Reset Not Applied (pending) clears the application record.
+    Side statuses only change status — applied_at and timeline stay put.
+    Entering an applied-like status stamps applied_at once, never restamps.
+    """
+    update_fields = {"status": new_status, "updated_at": now}
+    if new_status == "pending":
+        update_fields["application_timeline"] = []
+        update_fields["applied_at"] = None
+        return update_fields
+    if new_status in APPLIED_STATUSES and not job.get("applied_at"):
+        update_fields["applied_at"] = now
+    return update_fields
+
+
+def _timeline_update_fields(job: dict, timeline: list, now: datetime) -> dict:
+    """
+    Fields for PATCH /timeline.
+
+    Side-status overlays stay in place (progress is independent of Other).
+    applied_at is stamped from the Applied event when missing, synced from
+    that event when the job is not on a side status, and never cleared except
+    when the derived status is pending (undo back to Not Applied).
+    """
+    prev_status = job.get("status") or "pending"
+    if prev_status in SIDE_STATUSES:
+        timeline = _ensure_applied_record(job, timeline)
+        new_status = prev_status
+    else:
+        new_status = _status_from_timeline(timeline, fallback="pending")
+
+    update_fields = {
+        "application_timeline": timeline,
+        "status": new_status,
+        "updated_at": now,
+    }
+
+    applied_event = next((e for e in timeline if e.get("step") == "applied"), None)
+    existing_applied = job.get("applied_at")
+
+    if new_status == "pending":
+        update_fields["applied_at"] = None
+    elif existing_applied:
+        # Do not restamp a side-status job; allow an Applied-step edit otherwise
+        if applied_event and prev_status not in SIDE_STATUSES:
+            update_fields["applied_at"] = applied_event["at"]
+    elif applied_event:
+        update_fields["applied_at"] = applied_event["at"]
+    elif timeline:
+        update_fields["applied_at"] = timeline[0]["at"]
+
+    return update_fields
 
 
 def _normalize_link(job: dict) -> str:
@@ -562,7 +645,7 @@ def api_get_unmatched_job(job_id: str):
 @app.route("/api/jobs/<job_id>/status", methods=["PATCH"])
 @login_required
 def api_update_status(job_id: str):
-    """Update job status. Sets applied_at the first time a job is marked applied/rejected/interview."""
+    """Update job status. Stamps applied_at once; side statuses keep the application record."""
     data = request.get_json(silent=True) or {}
     new_status = data.get("status")
     if new_status not in STATUS_MAP:
@@ -579,16 +662,7 @@ def api_update_status(job_id: str):
         return jsonify({"error": "Job not found"}), 404
 
     now = datetime.now()
-    update_fields = {"status": new_status, "updated_at": now}
-    # Stamp applied_at once when entering any post-application status
-    if new_status in APPLIED_STATUSES and not job.get("applied_at"):
-        update_fields["applied_at"] = now
-
-    # Side statuses (unsuitable/closed/repost/duplicate/pending) clear progress; others keep timeline
-    if new_status in (*SIDE_STATUSES, "pending"):
-        update_fields["application_timeline"] = []
-        if new_status == "pending":
-            update_fields["applied_at"] = None
+    update_fields = _status_update_fields(job, new_status, now)
 
     collection.update_one({"_id": oid}, {"$set": update_fields})
     return jsonify({"ok": True, "status": new_status})
@@ -612,24 +686,9 @@ def api_update_timeline(job_id: str):
         return jsonify({"error": "Job not found"}), 404
 
     now = datetime.now()
-    prev_status = job.get("status", "pending")
-    # Keep side statuses only when timeline is empty; otherwise derive from steps
-    fallback = prev_status if prev_status in SIDE_STATUSES and not timeline else "pending"
-    new_status = _status_from_timeline(timeline, fallback=fallback)
-
-    update_fields = {
-        "application_timeline": timeline,
-        "status": new_status,
-        "updated_at": now,
-    }
-
-    applied_event = next((e for e in timeline if e["step"] == "applied"), None)
-    if applied_event:
-        update_fields["applied_at"] = applied_event["at"]
-    elif new_status not in APPLIED_STATUSES:
-        update_fields["applied_at"] = None
-    elif not job.get("applied_at") and timeline:
-        update_fields["applied_at"] = timeline[0]["at"]
+    update_fields = _timeline_update_fields(job, timeline, now)
+    new_status = update_fields["status"]
+    timeline = update_fields["application_timeline"]
 
     collection.update_one({"_id": oid}, {"$set": update_fields})
 
@@ -1061,7 +1120,7 @@ def api_stats():
     raw = list(collection.aggregate(pipeline))
     by_status = {item["_id"]: item["count"] for item in raw}
     ai_matched = sum(by_status.values())
-    # Same as Journey + Locations: applied + rejected + interview + offer
+    # Same as Journey + Locations: APPLICATION_QUERY (keeps side-status applies)
     applied_total = count_applied_applications()
 
     scraper = get_scraper_stats()
@@ -1153,11 +1212,11 @@ def api_journey():
         # Apply date for tracks (may exist even if status later changed)
         applied_at = resolve_applied_at(job)
 
-        # Funnel rule: only current applied / rejected / interview / offer
-        if job.get("status") in APPLIED_STATUSES:
-            total_applied += 1
-            if applied_at and (first_applied is None or applied_at < first_applied):
-                first_applied = applied_at
+        # Same set as funnel / Locations: APPLICATION_QUERY (includes side
+        # statuses that still have applied_at or a timeline)
+        total_applied += 1
+        if applied_at and (first_applied is None or applied_at < first_applied):
+            first_applied = applied_at
 
         if applied_at and not any(s["step"] == "applied" for s in steps):
             steps.insert(0, {

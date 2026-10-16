@@ -833,23 +833,22 @@ def resolve_applied_at(job) -> datetime | None:
 
 def count_applied_applications() -> int:
     """
-    Applications in an active post-apply status (funnel / Journey / Locations).
+    Applications counted in funnel / Journey / Locations.
 
-    Counts current status in APPLIED_STATUSES only:
-    applied + rejected + interview + offer.
-    Side statuses (closed / unsuitable / repost / duplicate) and pending are excluded.
+    Includes current APPLIED_STATUSES and jobs later marked with a side
+    status (closed / unsuitable / repost / duplicate) that still have
+    applied_at or an application timeline. Pending (reset) is excluded.
     """
-    return get_collection("matched_jobs").count_documents(
-        {"status": {"$in": list(APPLIED_STATUSES)}}
-    )
+    return get_collection("matched_jobs").count_documents(APPLICATION_QUERY)
 
 
 def get_applied_location_stats() -> dict:
     """
     Aggregate applications by normalized location.
 
-    Same job set as funnel Applied and Journey total_applied: current status
-    in APPLIED_STATUSES (applied / rejected / interview / offer).
+    Same job set as funnel Applied and Journey total_applied: APPLICATION_QUERY
+    (applied-like status, or a recorded apply date / timeline). Jobs later
+    marked closed / unsuitable / repost / duplicate still count.
 
     Returns:
         {
@@ -863,7 +862,7 @@ def get_applied_location_stats() -> dict:
     counter: Counter = Counter()
     total = 0
     for doc in collection.find(
-        {"status": {"$in": list(APPLIED_STATUSES)}},
+        APPLICATION_QUERY,
         {"location": 1},
     ):
         total += 1
@@ -888,7 +887,7 @@ def get_daily_activity_stats(days: int = 120) -> list:
           "title_clicked": int,    # detail pages opened
           "german_filtered": int,  # non-English JDs skipped (UI: German Filtered)
           "ai_matched": int,       # jobs copied to matched_jobs
-          "applied": int,          # applied + rejected + interview + offer (by applied_at)
+          "applied": int,          # applications dated by applied_at (incl. side statuses)
         }
 
     title_clicked / german_filtered come from daily scraper_stats docs.
@@ -949,12 +948,12 @@ def get_daily_activity_stats(days: int = 120) -> list:
         if row["_id"]:
             buckets[row["_id"]]["ai_matched"] = int(row["count"])
 
-    # 4) Applied = applied + rejected + interview + offer, dated by applied_at only.
+    # 4) Applied = any job with an application timestamp, dated by applied_at.
+    #    Side statuses still count; pending (reset) has applied_at cleared.
     #    Do NOT fall back to updated_at: editing notes/highlights/status on an old
     #    applied job bumps updated_at and would inflate "applied today".
     for row in db["matched_jobs"].aggregate([
         {"$match": {
-            "status": {"$in": list(APPLIED_STATUSES)},
             "applied_at": {"$ne": None, "$gte": start, "$lte": end},
         }},
         {"$group": {
@@ -1150,14 +1149,15 @@ def count_unmatched_jobs(threshold=7.0):
 
 def get_applied_job_keys():
     """
-    Return set of (job_id, source) already applied / rejected / interviewed
-    in matched_jobs. Used so manually-pursued low-score jobs keep their JD.
+    Return set of (job_id, source) with an application record in matched_jobs.
+    Used so manually-pursued low-score jobs keep their JD (including jobs later
+    marked closed / unsuitable / repost / duplicate).
     """
     db = get_db()
     return {
         (doc.get("job_id"), doc.get("source"))
         for doc in db["matched_jobs"].find(
-            {"status": {"$in": list(APPLIED_STATUSES)}},
+            APPLICATION_QUERY,
             {"job_id": 1, "source": 1},
         )
     }
