@@ -3397,9 +3397,9 @@ function renderCard(job) {
       </details>
 
       <div class="card-actions-row">
-        <a class="btn-apply ${['applied','interview','rejected','offer'].includes(status) ? 'btn-applied' : ''}"
+        <a class="btn-apply ${isAppliedLike(status, job.application_timeline) ? 'btn-applied' : ''}"
            href="${escHtml(job.link || '#')}" target="_blank" rel="noopener">
-          ${['applied','interview','rejected','offer'].includes(status) ? '🔗 View Detail' : '🚀 Apply Now'}
+          ${isAppliedLike(status, job.application_timeline) ? '🔗 View Detail' : '🚀 Apply Now'}
         </a>
         <button type="button" class="${runAiCls}" data-id="${job._id}"
                 onclick="event.stopPropagation(); runAiForJob('${job._id}', this)"
@@ -3509,6 +3509,21 @@ function nextTimelineActions(timeline) {
     actions.push({ step: 'offer', label: '+ Offer', cls: 'btn-offer-step' });
   }
   return actions;
+}
+
+function statusFromTimeline(timeline) {
+  if (!Array.isArray(timeline) || !timeline.length) return '';
+  const last = timeline[timeline.length - 1].step;
+  if (last === 'applied') return 'applied';
+  if (String(last).startsWith('interview_')) return 'interview';
+  if (last === 'rejected') return 'rejected';
+  if (last === 'offer') return 'offer';
+  return '';
+}
+
+function isAppliedLike(status, timeline) {
+  if (['applied', 'interview', 'rejected', 'offer'].includes(status)) return true;
+  return Array.isArray(timeline) && timeline.length > 0;
 }
 
 function renderProgressBlock(job) {
@@ -3843,7 +3858,7 @@ function refreshProgressUI(jobId, timeline, status) {
 
   const btn = card.querySelector('.btn-apply');
   if (btn) {
-    const appliedLike = ['applied', 'interview', 'rejected', 'offer'].includes(status);
+    const appliedLike = isAppliedLike(status, timeline);
     btn.classList.toggle('btn-applied', appliedLike);
     btn.innerHTML = appliedLike ? '🔗 View Detail' : '🚀 Apply Now';
   }
@@ -3912,6 +3927,15 @@ async function editTimelineStep(jobId, index) {
 async function undoTimelineStep(jobId) {
   const timeline = (jobTimelines[jobId] || []).slice();
   if (!timeline.length) return;
+  const wrap = document.getElementById(`progress-${jobId}`);
+  const sideVal = wrap && wrap.querySelector('.status-side-select')
+    ? wrap.querySelector('.status-side-select').value
+    : '';
+  // Side-status jobs keep the Applied record; undo later steps only
+  if (SIDE_STATUSES.includes(sideVal) && timeline.length === 1 && timeline[0].step === 'applied') {
+    showToast('Application record is kept for this status');
+    return;
+  }
   const removed = timeline.pop();
   try {
     await saveTimeline(jobId, timeline);
@@ -3923,11 +3947,15 @@ async function undoTimelineStep(jobId) {
 
 async function updateSideStatus(select) {
   const id = select.dataset.id;
-  const status = select.value;
+  let status = select.value;
+  const currentTimeline = jobTimelines[id] || [];
   if (!status) {
-    // Revert select to current derived status display
-    select.value = '';
-    return;
+    // "—" restores the status derived from application progress
+    status = statusFromTimeline(currentTimeline);
+    if (!status) {
+      select.value = '';
+      return;
+    }
   }
 
   try {
@@ -3937,7 +3965,7 @@ async function updateSideStatus(select) {
       body: JSON.stringify({ status }),
     });
     if (!res.ok) throw new Error('Request failed');
-    const timeline = (status === 'pending' || SIDE_STATUSES.includes(status)) ? [] : (jobTimelines[id] || []);
+    const timeline = status === 'pending' ? [] : currentTimeline;
     refreshProgressUI(id, timeline, status);
     showToast(`✅ Status updated to "${STATUS_LABEL[status]}"`);
     loadStats();
