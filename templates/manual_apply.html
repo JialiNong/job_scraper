@@ -346,10 +346,10 @@
   <h1>📝 Log Manually Job</h1>
   <p class="subtitle">
     Paste one job URL per line (LinkedIn, Indeed, or any company careers page).<br>
-    If the URL is already in the Tracker, this page opens that matched card instead of scraping again.<br>
-    <strong>Scrape &amp; Log</strong> needs debug Chrome + AI.
-    <strong>Save Link Only</strong> stores the URL with no scrape (for travel) — run AI later from Tracker.<br>
-    Default status is <strong>Not Applied</strong> — switch to Applied only when you already applied.
+    If the URL is already in the Tracker, paste opens that card; submit with <strong>Applied</strong> updates it.<br>
+    <strong>Scrape &amp; Log</strong> uses debug Chrome + AI when available. If Indeed blocks or Chrome is down,
+    the URL is still saved — you will see a warning, not a silent miss.<br>
+    Default status is <strong>Not Applied</strong> — switch to Applied when you already applied.
   </p>
 
   <!-- Status + optional applied date -->
@@ -401,8 +401,9 @@ https://careers.example.com/jobs/frontend-engineer"
   <div class="tip">
     <strong>💡 Tips</strong><br>
     • Paste a URL that is already in Matched — the Tracker opens that card automatically.<br>
+    • Submit with <strong>Applied</strong> to mark an existing Tracker card applied (notes/timeline stay).<br>
     • <strong>Save Link Only</strong>: no Chrome needed; card shows AI pending until you click <strong>Run AI</strong> on Tracker.<br>
-    • <strong>Scrape &amp; Log</strong>: Chrome debug session must be open; log in to LinkedIn / Indeed if needed.<br>
+    • <strong>Scrape &amp; Log</strong>: Chrome is used when available. If Indeed blocks or Chrome is missing, the link is still saved.<br>
     • LinkedIn: <code>https://www.linkedin.com/jobs/view/JOB_ID/</code><br>
     • Indeed: <code>https://de.indeed.com/viewjob?jk=JOB_KEY</code><br>
     • Other sites: paste the job detail URL — main content is extracted automatically.<br>
@@ -434,11 +435,25 @@ function colorLine(line) {
 }
 function esc(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
+function normalizePastedUrl(raw) {
+  let u = String(raw || '').trim();
+  if (!u || u.startsWith('#')) return '';
+  u = u.replace(/^<+|>+$/g, '').trim();
+  if ((u.startsWith('"') && u.endsWith('"')) || (u.startsWith("'") && u.endsWith("'"))) {
+    u = u.slice(1, -1).trim();
+  }
+  u = u.replace(/[.,;:)\]"']+$/g, '');
+  if (!u) return '';
+  if (u.startsWith('//')) u = 'https:' + u;
+  else if (!/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(u)) u = 'https://' + u;
+  return u;
+}
+
 function parseUrlLines(raw) {
   return String(raw || '')
     .split('\n')
-    .map(u => u.trim())
-    .filter(u => u && !u.startsWith('#') && /^https?:\/\//i.test(u));
+    .map(normalizePastedUrl)
+    .filter(u => u && /^https?:\/\//i.test(u));
 }
 
 function stageLabel(h) {
@@ -505,7 +520,8 @@ async function lookupUrls(urls, { autoOpen = true } = {}) {
       return { hits, misses, results, trackerHits, promotableHits };
     }
 
-    // Single Tracker URL → open that card immediately
+    // Single Tracker URL → open that card immediately (paste only; submit
+    // must still run so Applied can update an existing card).
     if (autoOpen && urls.length === 1 && trackerHits.length === 1 && misses.length === 0 && promotableHits.length === 0) {
       const hit = trackerHits[0];
       setBanner('success',
@@ -583,28 +599,28 @@ async function submitUrls({ linkOnly = false } = {}) {
   const raw = document.getElementById('urlBox').value.trim();
   if (!raw) { alert('Please enter at least one URL.'); return; }
 
-  const urls = raw.split('\n')
-    .map(u => u.trim())
-    .filter(u => u && !u.startsWith('#'));
+  const urls = parseUrlLines(raw);
 
   if (urls.length === 0) { alert('No valid URLs found.'); return; }
 
-  // Prefer opening Tracker cards; still allow promoting scraped/timeout rows
-  const httpUrls = parseUrlLines(raw);
-  if (httpUrls.length) {
-    const looked = await lookupUrls(httpUrls, { autoOpen: true });
-    if (looked) {
-      const actionable = [
-        ...looked.misses.map(m => m.url),
-        ...(looked.promotableHits || []).map(h => h.url),
-      ];
-      if (!actionable.length) {
-        // All already on Tracker — do not start scrape
-        return;
-      }
-      urls.length = 0;
-      actionable.forEach(u => urls.push(u));
+  // Do not auto-open on submit — Applied must still update an existing card.
+  const looked = await lookupUrls(urls, { autoOpen: false });
+  if (looked) {
+    const statusNow = document.getElementById('jobStatus').value || 'pending';
+    const trackerToApply = statusNow === 'applied'
+      ? (looked.trackerHits || []).map(h => h.url)
+      : [];
+    const actionable = [
+      ...looked.misses.map(m => m.url),
+      ...(looked.promotableHits || []).map(h => h.url),
+      ...trackerToApply,
+    ];
+    if (!actionable.length) {
+      // All already on Tracker and not marking applied
+      return;
     }
+    urls.length = 0;
+    actionable.forEach(u => urls.push(u));
   }
 
   const status = document.getElementById('jobStatus').value || 'pending';
@@ -680,21 +696,30 @@ async function pollStatus() {
       document.getElementById('linkOnlyBtn').disabled = false;
       const statusLabel = _submittedStatus === 'applied' ? 'Applied' : 'Not Applied';
       const modeHint = _submittedLinkOnly ? ' (link-only, AI pending)' : '';
+      const logText = (data.log || []).join('\n');
+      const hasFatal = /Fatal error|Cannot open Chrome/.test(logText);
+      const savedPartial = (data.log || []).some(l =>
+        /saving with URL|saving link only|AI pending|No user profile|Cannot open Chrome/i.test(l)
+      );
       const parts = [];
       if (data.done_count > 0) parts.push(`${data.done_count} saved as ${statusLabel}${modeHint}`);
       if (skipCount > 0) parts.push(`${skipCount} already on Tracker (skipped)`);
       if (data.fail_count > 0) parts.push(`${data.fail_count} failed`);
-      if (data.done_count === 0 && data.fail_count > 0 && skipCount === 0) {
-        setBanner('error', `❌ All ${data.fail_count} URL(s) failed. Check the log above.`);
+      if (data.done_count === 0 && (data.fail_count > 0 || hasFatal) && skipCount === 0) {
+        const fatalLine = (data.log || []).find(l => /Fatal error|Cannot open Chrome/.test(l));
+        setBanner('error', `❌ ${fatalLine || `All ${data.fail_count || 1} URL(s) failed. Check the log above.`}`);
       } else if (data.done_count === 0 && skipCount > 0 && data.fail_count === 0) {
         setBanner('error', `⚠️ All ${skipCount} URL(s) already on Tracker — nothing saved.`);
+      } else if (data.done_count === 0 && !parts.length) {
+        setBanner('error', `❌ Nothing was saved. Check the log above — scrape/AI may have aborted.`);
+      } else if (parts.length && savedPartial && data.fail_count === 0) {
+        const link = ` <a href="/" style="color:var(--accent)">View Matched →</a>`;
+        setBanner('info', `⚠️ Done — ${parts.join(', ')}. Details were incomplete (link saved; use Run AI later).${link}`);
       } else if (parts.length) {
         const link = data.done_count > 0
           ? ` <a href="/" style="color:var(--accent)">View Matched →</a>`
           : '';
         setBanner('success', `✅ Done — ${parts.join(', ')}.${link}`);
-      } else {
-        setBanner('success', `✅ Done — nothing to process.`);
       }
     }
   } catch(e) {

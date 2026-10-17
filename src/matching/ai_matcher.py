@@ -59,6 +59,22 @@ def is_blocked_match_company(company: Optional[str]) -> bool:
     return any(name in lower for name in MATCH_BLOCKED_COMPANIES)
 
 
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def _resolve_data_path(path: str) -> str:
+    """Prefer cwd, then the repo root (so Flask cwd does not hide docs/)."""
+    if os.path.isabs(path):
+        return path
+    cwd_path = os.path.abspath(path)
+    if os.path.exists(cwd_path):
+        return cwd_path
+    root_path = os.path.join(_PROJECT_ROOT, path)
+    if os.path.exists(root_path):
+        return root_path
+    return cwd_path
+
+
 def load_user_profile(profile_path: str = "docs/user_profile.md") -> str:
     """
     Load user's resume and profile information.
@@ -69,8 +85,9 @@ def load_user_profile(profile_path: str = "docs/user_profile.md") -> str:
     Returns:
         User profile content as string
     """
+    resolved = _resolve_data_path(profile_path)
     try:
-        with open(profile_path, "r", encoding="utf-8") as f:
+        with open(resolved, "r", encoding="utf-8") as f:
             return f.read()
     except FileNotFoundError:
         print(f"Warning: Profile file not found at {profile_path}")
@@ -87,8 +104,9 @@ def load_matching_criteria(criteria_path: str = "docs/matching_criteria.md") -> 
     Returns:
         Matching criteria as string
     """
+    resolved = _resolve_data_path(criteria_path)
     try:
-        with open(criteria_path, "r", encoding="utf-8") as f:
+        with open(resolved, "r", encoding="utf-8") as f:
             return f.read()
     except FileNotFoundError:
         print(f"Warning: Criteria file not found at {criteria_path}")

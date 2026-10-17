@@ -19,15 +19,17 @@ Usage:
 
 What it does for EACH url
 --------------------------
-1. Resolves job_id from the URL; if it is already on Tracker (matched_jobs),
-   prints a warning and skips. Rows only in jobs (awaiting AI / unmatched) or
-   timeout_jobs are still logged to Tracker.
-2. Opens the URL in the existing debug Chrome session (CDP).
+1. Resolves job_id from the URL. Already on Tracker (matched_jobs): skip, or
+   mark applied if --status applied. Rows only in jobs / timeout_jobs are
+   still logged to Tracker.
+2. Opens the URL in the existing debug Chrome session (CDP) when available.
 3. Scrapes title / company / location / description.
    - LinkedIn / Indeed: site-specific selectors
    - Other URLs: trafilatura main-content extract + AI metadata
-4. Runs AI matching (score stored but NOT used as a filter).
+4. Runs AI matching when a description and user profile are available.
 5. Saves the job to matched_jobs with status="pending" (default) or "applied".
+   If Chrome / Indeed / AI fails, still saves the URL + parsed job_id
+   (ai_pending stub) instead of dropping the paste.
 6. Also upserts a record in the main jobs collection.
 
 Link-only mode (--link-only / UI "Save Link Only")
@@ -37,13 +39,10 @@ No Chrome / AI required. Later use Tracker "Run AI" to scrape + score.
 """
 import sys
 import os
-import re
 import json
-import hashlib
 import argparse
 from datetime import datetime
 from typing import Optional
-from urllib.parse import urlparse, urlunparse
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -62,6 +61,8 @@ from core.db_mongo import (
     mark_job_as_matched,
     save_job,
     is_job_on_tracker,
+    indeed_job_id_variants,
+    APPLIED_STATUSES,
 )
 from matching.ai_matcher import evaluate_job, load_user_profile, load_matching_criteria, _analysis_fields
 from core.scraper_utils import (
@@ -70,63 +71,25 @@ from core.scraper_utils import (
     pause,
     is_non_english_job_detail,
     safe_text,
-    extract_indeed_jk_from_url,
     extract_indeed_detail_meta,
 )
+from core.job_url import (
+    canonicalize_url,
+    detect_source,
+    extract_indeed_job_id,
+    extract_linkedin_job_id,
+    job_id_from_url,
+    job_stub_from_url,
+    link_only_job_title,
+    normalize_pasted_job_url,
+    plan_manual_log_action,
+    resolve_job_id,
+)
+from core.challenge_wait import is_indeed_challenge_page
 from core.config import INDEED_CONFIG
 
 # Minimum chars of extracted body text before we treat a generic page as a JD
 _GENERIC_MIN_DESC_CHARS = 200
-
-# ── helpers ───────────────────────────────────────────────────────────────────
-
-def detect_source(url: str) -> str:
-    """Return 'linkedin', 'indeed', or 'manual' based on the URL hostname."""
-    url_lower = url.lower()
-    if "linkedin.com" in url_lower:
-        return "linkedin"
-    if "indeed.com" in url_lower:
-        return "indeed"
-    return "manual"
-
-
-def canonicalize_url(url: str) -> str:
-    """Strip fragment and trailing slash for stable job_id hashing."""
-    parsed = urlparse(url.strip())
-    path = parsed.path.rstrip("/") or "/"
-    return urlunparse((parsed.scheme, parsed.netloc.lower(), path, "", parsed.query, ""))
-
-
-def job_id_from_url(url: str) -> str:
-    """Stable short id derived from the canonical URL (for non-LinkedIn/Indeed)."""
-    return hashlib.sha1(canonicalize_url(url).encode("utf-8")).hexdigest()[:16]
-
-
-def extract_linkedin_job_id(url: str) -> Optional[str]:
-    # /jobs/view/1234567890/
-    m = re.search(r"/jobs/view/(\d+)", url)
-    if m:
-        return m.group(1)
-    # ?currentJobId=1234567890  (search-results page with detail panel open)
-    m = re.search(r"[?&]currentJobId=(\d+)", url)
-    if m:
-        return m.group(1)
-    return None
-
-
-def extract_indeed_job_id(url: str) -> Optional[str]:
-    jk = extract_indeed_jk_from_url(url or "")
-    return jk or None
-
-
-def resolve_job_id(url: str, source: str) -> Optional[str]:
-    """Extract the same job_id that scrapers persist for this URL/source."""
-    if source == "linkedin":
-        return extract_linkedin_job_id(url)
-    if source == "indeed":
-        return extract_indeed_job_id(url)
-    return job_id_from_url(url)
-
 
 # ── per-source scrapers ───────────────────────────────────────────────────────
 
@@ -267,8 +230,12 @@ def _dismiss_indeed_overlays(page):
 def scrape_indeed_job(page, url: str) -> Optional[dict]:
     """
     Navigate to an Indeed viewjob URL and extract job data.
-    Mirrors the extraction logic of indeed_scraper.py.
+
+    Always returns a job dict when jk= can be parsed — even if Chrome is
+    blocked, the detail timed out, or Indeed showed a challenge. Callers
+    must still save that stub instead of dropping the URL.
     """
+    url = normalize_pasted_job_url(url)
     job_id = extract_indeed_job_id(url)
     if not job_id:
         print(f"  ⚠️  Cannot extract Indeed job_id from: {url}")
@@ -276,16 +243,38 @@ def scrape_indeed_job(page, url: str) -> Optional[dict]:
 
     # Canonical Indeed URL (strip tracking params, keep only jk=)
     canonical_url = f"https://de.indeed.com/viewjob?jk={job_id}"
+    job = {
+        "title": "",
+        "company": "",
+        "location": "",
+        "applicants": "",
+        "description": "",
+        "link": canonical_url,
+        "job_id": job_id,
+        "source": "indeed",
+        "scrape_warning": "",
+    }
 
-    print(f"  → Navigating to {url}")
+    print(f"  → Navigating to {canonical_url}")
     try:
-        page.goto(url, wait_until="domcontentloaded", timeout=20000)
+        page.goto(canonical_url, wait_until="domcontentloaded", timeout=20000)
     except Exception as e:
-        print(f"  ⚠️  Navigation error: {e}")
-        return None
+        job["scrape_warning"] = f"Navigation error: {e}"
+        print(f"  ⚠️  {job['scrape_warning']}")
+        return job
 
     # Dismiss cookie / consent dialogs — same as indeed_scraper.py
     _dismiss_indeed_overlays(page)
+
+    try:
+        if is_indeed_challenge_page(page):
+            job["scrape_warning"] = (
+                "Indeed challenge/captcha page — details not fetched"
+            )
+            print(f"  ⚠️  {job['scrape_warning']}")
+            return job
+    except Exception:
+        pass
 
     try:
         page.wait_for_selector(
@@ -293,14 +282,23 @@ def scrape_indeed_job(page, url: str) -> Optional[dict]:
             timeout=15000,
         )
     except PlaywrightTimeoutError:
-        print("  ⚠️  Timed out waiting for Indeed job detail; are you logged in?")
-        return None
+        job["scrape_warning"] = (
+            "Timed out waiting for Indeed job detail (login or block?)"
+        )
+        print(f"  ⚠️  {job['scrape_warning']}")
 
     pause(1.5, 2.5)
 
     # Prefer DOM header fields; AI inference remains a fallback in process_urls.
-    company, location = extract_indeed_detail_meta(page)
-    title = safe_text(page.locator('[data-testid="vj-job-title"]')) or ""
+    try:
+        company, location = extract_indeed_detail_meta(page)
+    except Exception:
+        company, location = "", ""
+    title = ""
+    try:
+        title = safe_text(page.locator('[data-testid="vj-job-title"]')) or ""
+    except Exception:
+        pass
 
     # ── Description ───────────────────────────────────────────────────────
     # Prefer the JD body; fall back to the full detail container.
@@ -323,17 +321,13 @@ def scrape_indeed_job(page, url: str) -> Optional[dict]:
         except Exception:
             pass
 
-    return {
-        "title": title,
-        "company": company,
-        "location": location,
-        "applicants": "",
-        "description": description,
-        "link": canonical_url,
-        "job_id": job_id,
-        "source": "indeed",
-        "status": "applied",
-    }
+    job["title"] = title
+    job["company"] = company
+    job["location"] = location
+    job["description"] = description
+    if not description and not title and not job["scrape_warning"]:
+        job["scrape_warning"] = "Indeed page loaded but title/description were empty"
+    return job
 
 
 def _extract_main_text_from_html(html: str, url: str) -> str:
@@ -512,24 +506,50 @@ def _stub_ai_pending_analysis() -> dict:
     }
 
 
-def _canonical_link(url: str, source: str, job_id: str) -> str:
-    """Stable URL stored on the Tracker card."""
-    if source == "linkedin" and job_id:
-        return f"https://www.linkedin.com/jobs/view/{job_id}/"
-    if source == "indeed" and job_id:
-        return f"https://de.indeed.com/viewjob?jk={job_id}"
-    return canonicalize_url(url)
+def mark_tracker_job_applied(job_id: str, source: str, applied_date: datetime = None) -> str:
+    """
+    Set an existing Tracker row to applied without wiping notes / timeline.
+
+    Returns:
+        applied  — status updated (or applied_at stamped)
+        already  — already an application record
+        missing  — not on Tracker
+    """
+    col = get_collection("matched_jobs")
+    if source == "indeed":
+        variants = indeed_job_id_variants(job_id)
+        query = {"job_id": {"$in": variants} if variants else job_id, "source": source}
+    else:
+        query = {"job_id": job_id, "source": source}
+    job = col.find_one(query)
+    if not job:
+        return "missing"
+
+    now = datetime.now()
+    t = applied_date or now
+    already_applied = bool(job.get("applied_at")) or job.get("status") in APPLIED_STATUSES
+    if already_applied and (job.get("status") or "") in APPLIED_STATUSES:
+        return "already"
+
+    fields = {
+        "status": "applied",
+        "updated_at": now,
+        "manually_applied": True,
+        "manually_logged": True,
+    }
+    if not job.get("applied_at"):
+        fields["applied_at"] = t
+    col.update_one({"_id": job["_id"]}, {"$set": fields})
+    return "applied"
 
 
-def _link_only_title(url: str, source: str, job_id: str) -> str:
-    if source == "linkedin" and job_id:
-        return f"(Link only) LinkedIn {job_id}"
-    if source == "indeed" and job_id:
-        return f"(Link only) Indeed {job_id}"
-    short = (url or "").strip()
-    if len(short) > 72:
-        short = short[:69] + "…"
-    return f"(Link only) {short or 'job'}"
+def _print_saved(status: str, applied_date: datetime = None, *, extra: str = ""):
+    suffix = extra if extra.startswith(",") or not extra else f", {extra}"
+    if status == "applied":
+        date_str = applied_date.strftime("%Y-%m-%d") if applied_date else "today"
+        print(f"  ✅ Saved to matched_jobs (status=applied, applied_at={date_str}{suffix})")
+    else:
+        print(f"  ✅ Saved to matched_jobs (status=pending / Not Applied{suffix})")
 
 
 def force_save_manual_job(
@@ -777,6 +797,56 @@ def enrich_job_and_evaluate(
 
 # ── main processors ───────────────────────────────────────────────────────────
 
+def _handle_existing_tracker(url: str, job_id: str, source: str, status: str, applied_date) -> str:
+    """skip | applied | already | missing — print a line the UI can count."""
+    action = plan_manual_log_action(True, status, job_id)
+    if action == "mark_applied":
+        result = mark_tracker_job_applied(job_id, source, applied_date)
+        if result == "applied":
+            date_str = applied_date.strftime("%Y-%m-%d") if applied_date else "today"
+            print(
+                f"  ✅ Marked existing Tracker job as applied "
+                f"(job_id={job_id}, applied_at={date_str})"
+            )
+            return "applied"
+        if result == "already":
+            print(
+                f"  ⚠️  Already on Tracker as an application: "
+                f"job_id={job_id} source={source} — skipping"
+            )
+            return "already"
+        print(f"  ⚠️  Tracker row vanished for job_id={job_id} — will save a new card")
+        return "missing"
+    print(
+        f"  ⚠️  Already on Tracker (matched_jobs): "
+        f"job_id={job_id} source={source} — skipping"
+    )
+    return "skip"
+
+
+def _save_job_record(job: dict, analysis: dict, status: str, applied_date, *, ai_pending: bool, extra: str = "") -> bool:
+    if not job.get("title"):
+        job["title"] = link_only_job_title(
+            job.get("link") or "",
+            job.get("source") or "",
+            job.get("job_id") or "",
+        )
+    ok = force_save_manual_job(
+        job,
+        analysis,
+        status=status,
+        applied_date=applied_date,
+        ai_pending=ai_pending,
+    )
+    if not ok:
+        return False
+    note = extra
+    if ai_pending and "AI pending" not in extra:
+        note = (extra + ", AI pending").strip(", ")
+    _print_saved(status, applied_date, extra=note)
+    return True
+
+
 def save_link_only_urls(
     urls: list[str],
     applied_date: datetime = None,
@@ -801,8 +871,8 @@ def save_link_only_urls(
     results = {"ok": [], "failed": [], "skipped": []}
     analysis = _stub_ai_pending_analysis()
 
-    for i, url in enumerate(urls, 1):
-        url = (url or "").strip()
+    for i, raw in enumerate(urls, 1):
+        url = normalize_pasted_job_url(raw)
         if not url:
             continue
         print(f"\n{'='*60}")
@@ -810,48 +880,32 @@ def save_link_only_urls(
 
         source = detect_source(url)
         job_id = resolve_job_id(url, source)
-        if not job_id and source in ("linkedin", "indeed"):
-            print(f"  ⚠️  Cannot extract {source} job_id from URL — skipping")
-            results["failed"].append(url)
-            continue
         if not job_id:
-            print("  ⚠️  Cannot resolve job_id — skipping")
+            print("  ❌ Cannot resolve job_id from URL")
             results["failed"].append(url)
             continue
         if is_job_on_tracker(job_id, source):
-            print(
-                f"  ⚠️  Already on Tracker (matched_jobs): "
-                f"job_id={job_id} source={source} — skipping"
-            )
-            results["skipped"].append(url)
-            continue
+            outcome = _handle_existing_tracker(url, job_id, source, status, applied_date)
+            if outcome in ("applied",):
+                results["ok"].append(url)
+            elif outcome in ("already", "skip"):
+                results["skipped"].append(url)
+            else:
+                pass  # missing — fall through and save
+            if outcome != "missing":
+                continue
 
-        link = _canonical_link(url, source, job_id)
-        job = {
-            "title": _link_only_title(url, source, job_id),
-            "company": "",
-            "location": "",
-            "applicants": "",
-            "description": "",
-            "link": link,
-            "job_id": job_id,
-            "source": source,
-        }
-        ok = force_save_manual_job(
-            job,
-            analysis,
-            status=status,
-            applied_date=applied_date,
-            ai_pending=True,
+        job = job_stub_from_url(url, scrape_warning="Link-only save")
+        if not job:
+            print("  ❌ Cannot build a job record from this URL")
+            results["failed"].append(url)
+            continue
+        ok = _save_job_record(
+            job, analysis, status, applied_date, ai_pending=True, extra="link-only"
         )
         if not ok:
             results["failed"].append(url)
             continue
-        if status == "applied":
-            date_str = applied_date.strftime("%Y-%m-%d") if applied_date else "today"
-            print(f"  ✅ Saved to matched_jobs (link-only, AI pending, status=applied, applied_at={date_str})")
-        else:
-            print("  ✅ Saved to matched_jobs (link-only, AI pending, status=pending / Not Applied)")
         results["ok"].append(url)
 
     print(f"\n{'='*60}")
@@ -891,62 +945,104 @@ def process_urls(
 
     user_profile = load_user_profile()
     if not user_profile:
-        print("❌ No user profile found. Create docs/user_profile.md first.")
-        return
-
+        print(
+            "⚠️  No user profile found (docs/user_profile.md). "
+            "Will save links without AI scoring."
+        )
     criteria = load_matching_criteria()
+    stub_analysis = _stub_ai_pending_analysis()
 
     results = {"ok": [], "failed": [], "skipped": []}
+    page = None
 
-    with sync_playwright() as playwright:
-        browser = connect_browser(playwright, "job sites")
-        context = browser.contexts[0]
-        page = context.pages[0] if context.pages else context.new_page()
-
-        for i, url in enumerate(urls, 1):
-            url = url.strip()
-            if not url:
-                continue
-            print(f"\n{'='*60}")
-            print(f"[{i}/{len(urls)}] {url}")
-
-            source = detect_source(url)
-            job_id = resolve_job_id(url, source)
-            if job_id and is_job_on_tracker(job_id, source):
+    try:
+        with sync_playwright() as playwright:
+            try:
+                browser = connect_browser(playwright, "job sites")
+                context = browser.contexts[0]
+                page = context.pages[0] if context.pages else context.new_page()
+            except Exception as e:
                 print(
-                    f"  ⚠️  Already on Tracker (matched_jobs): "
-                    f"job_id={job_id} source={source} — skipping"
+                    f"❌ Cannot open Chrome ({e}). "
+                    "Saving URL(s) without scrape."
                 )
-                results["skipped"].append(url)
-                continue
-            if not job_id and source in ("linkedin", "indeed"):
-                print(f"  ⚠️  Cannot extract {source} job_id from URL — skipping")
-                results["failed"].append(url)
-                continue
+                page = None
 
-            job = scrape_job_page(page, url)
-            if not job:
-                print("  ❌ Scraping failed")
-                results["failed"].append(url)
-                continue
+            for i, raw in enumerate(urls, 1):
+                url = normalize_pasted_job_url(raw)
+                if not url:
+                    continue
+                print(f"\n{'='*60}")
+                print(f"[{i}/{len(urls)}] {url}")
 
-            analysis = enrich_job_and_evaluate(job, user_profile, criteria)
-            if not analysis:
-                print("  ❌ Scraping failed")
-                results["failed"].append(url)
-                continue
+                source = detect_source(url)
+                job_id = resolve_job_id(url, source)
+                if not job_id:
+                    print("  ❌ Cannot resolve job_id from URL")
+                    results["failed"].append(url)
+                    continue
+                if is_job_on_tracker(job_id, source):
+                    outcome = _handle_existing_tracker(
+                        url, job_id, source, status, applied_date
+                    )
+                    if outcome == "applied":
+                        results["ok"].append(url)
+                    elif outcome in ("already", "skip"):
+                        results["skipped"].append(url)
+                    if outcome != "missing":
+                        continue
 
-            force_save_manual_job(
-                job, analysis, status=status, applied_date=applied_date, ai_pending=False
-            )
-            if status == "applied":
-                date_str = applied_date.strftime("%Y-%m-%d") if applied_date else "today"
-                print(f"  ✅ Saved to matched_jobs (status=applied, applied_at={date_str})")
-            else:
-                print("  ✅ Saved to matched_jobs (status=pending / Not Applied)")
-            results["ok"].append(url)
+                job = None
+                if page is not None:
+                    job = scrape_job_page(page, url)
+                if not job:
+                    warn = (
+                        "Scraping failed"
+                        if page is not None
+                        else "Chrome was not available"
+                    )
+                    job = job_stub_from_url(url, scrape_warning=warn)
+                if not job:
+                    print("  ❌ Cannot build a job record from this URL")
+                    results["failed"].append(url)
+                    continue
 
-            pause(2, 4, "  ⏳ Brief pause before next URL")
+                warning = (job.get("scrape_warning") or "").strip()
+                analysis = None
+                ai_pending = False
+                if job.get("description") and user_profile:
+                    analysis = enrich_job_and_evaluate(job, user_profile, criteria)
+                if not analysis:
+                    analysis = stub_analysis
+                    ai_pending = True
+                    if warning:
+                        print(
+                            f"  ⚠️  {warning} — saving with URL and parsed fields "
+                            "(AI pending)"
+                        )
+                    elif not job.get("description"):
+                        print("  ⚠️  No description — saving link only (AI pending)")
+                    else:
+                        print("  ⚠️  No user profile — saving without AI (AI pending)")
+
+                extra = "AI pending" if ai_pending else ""
+                if not _save_job_record(
+                    job, analysis, status, applied_date,
+                    ai_pending=ai_pending, extra=extra,
+                ):
+                    results["failed"].append(url)
+                    continue
+                results["ok"].append(url)
+
+                if page is not None:
+                    pause(2, 4, "  ⏳ Brief pause before next URL")
+    except Exception as e:
+        print(f"❌ Fatal error: {e}")
+        remaining = [u for u in urls if u not in results["ok"] and u not in results["failed"] and u not in results["skipped"]]
+        if remaining:
+            print("  → Falling back to link-only save for remaining URLs")
+            save_link_only_urls(remaining, applied_date=applied_date, status=status)
+            return
 
     print(f"\n{'='*60}")
     print(f"✅ Success : {len(results['ok'])}")

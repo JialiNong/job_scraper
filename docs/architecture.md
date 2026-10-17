@@ -135,7 +135,7 @@ Indeed pacing is slower and more human-like than LinkedIn: random think-time bef
 | `python3 src/scrapers/linkedin_quick_scraper.py [-p N] [-j N]` | LinkedIn 12h quick URL (default 3 pages × 30) |
 | `./run_linkedin.sh [--hours N] [-p N] [-j N]` | LinkedIn-only scrape + AI match (default `--hours 24`; short window → 2 pages/keyword) |
 | `python3 src/matching/ai_matcher.py [-l N] [-s source] [-t 7.0]` | AI match only (jobs without `matched_at`) |
-| `python3 src/scrapers/manual_apply_scraper.py <urls…>` | Manual job URLs → skip only if already on Tracker (`matched_jobs`); rows only in `jobs` / `timeout_jobs` are still logged → `matched_jobs` (default `status=pending`; `--status applied` optional; `--link-only` skips scrape/AI) |
+| `python3 src/scrapers/manual_apply_scraper.py <urls…>` | Manual job URLs → `matched_jobs` (default `status=pending`; `--status applied` optional). Already on Tracker: skip, or mark applied when requested. Chrome / Indeed / AI failure still saves a URL stub (`ai_pending`). `--link-only` skips scrape/AI. |
 | `python3 scripts/cleanup_unmatched_descriptions.py …` | Clear old unmatched JD text (also run at end of full pipeline) |
 | `python3 scripts/cleanup_excluded_titles.py …` | Cleanup DB rows by title blacklist |
 | `python3 scripts/eval_matcher.py …` | Matcher evaluation |
@@ -373,15 +373,15 @@ Web UI (`web_app.py`) reads these for today’s funnel, match list, unmatched re
 
 | Stage | Meaning | UI |
 |-------|---------|-----|
-| `tracker` | Already in `matched_jobs` | Opens Tracker at `/?open=<matched_jobs _id>`; scrape is skipped |
+| `tracker` | Already in `matched_jobs` | Opens Tracker at `/?open=<matched_jobs _id>` on paste; submit with Applied updates that card |
 | `unmatched` | In `jobs` with AI score below threshold | Opens `/unmatched?open=<jobs _id>`; still promotable via Scrape & Log / Save Link Only |
 | `awaiting_match` | In `jobs` but not yet AI-matched (invisible on Unmatched) | Explains “scraped, awaiting AI”; Scrape & Log / Save Link Only adds it to Tracker |
 | `timeout` | Pending on `/timeouts` | Link to Timeouts; still promotable |
 
-- **Scrape & Log** (`mode=scrape`, default): CDP Chrome scrape + AI score → `matched_jobs` (skips only when already on Tracker)
+- **Scrape & Log** (`mode=scrape`, default): CDP Chrome scrape + AI score → `matched_jobs`. If Chrome, Indeed, or AI is unavailable, the URL + parsed `job_id` (Indeed `jk=` / LinkedIn id) is still saved as an `ai_pending` stub instead of being dropped. Already on Tracker: skip, or mark **Applied** when that status was requested (does not wipe notes / timeline).
 - **Save Link Only** (`mode=link_only`): no browser / no AI — stores URL stub with `ai_pending=True` and empty description
 
-Default status is **Not Applied** (`pending`); choose **Applied** only when you already applied (optional applied date).
+Default status is **Not Applied** (`pending`); choose **Applied** only when you already applied (optional applied date). Paste `de.indeed.com/viewjob?jk=…` with or without `https://`.
 
 **Tracker Run AI:** every matched card has **Run AI** / **Re-run AI**. `POST /api/jobs/<id>/run-ai` opens the card’s link in debug Chrome, scrapes the JD, runs `evaluate_job`, and patches analysis fields on `matched_jobs` + `jobs` without wiping notes / timeline / status. Clears `ai_pending`. Requires the same CDP Chrome session as scrapers.
 
@@ -408,6 +408,7 @@ job_scraper/
 │   ├── core/
 │   │   ├── config.py            # keywords, title blacklist, platform URLs
 │   │   ├── db_mongo.py          # Mongo helpers
+│   │   ├── job_url.py           # Log Job URL parse / Indeed jk= / stubs
 │   │   ├── scraper_utils.py     # title gates, Lingua, CDP helpers
 │   │   ├── challenge_wait.py    # Indeed captcha detect + auto-continue / Telegram resume
 │   │   ├── pipeline_lock.py     # Single-flight pidfile for run_task / run_quick / run_linkedin
