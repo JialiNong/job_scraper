@@ -379,7 +379,7 @@ Web UI (`web_app.py`) reads these for today’s funnel, match list, unmatched re
 | `timeout` | Pending on `/timeouts` | Link to Timeouts; still promotable |
 
 - **Scrape & Log** (`mode=scrape`, default): CDP Chrome scrape + AI score → `matched_jobs`. If Chrome, Indeed, or AI is unavailable, the URL + parsed `job_id` (Indeed `jk=` / LinkedIn id) is still saved as an `ai_pending` stub instead of being dropped. Already on Tracker: skip, or mark **Applied** when that status was requested (does not wipe notes / timeline).
-- **Save Link Only** (`mode=link_only`): no browser / no AI — stores URL stub with `ai_pending=True` and empty description
+- **Save Link Only** (`mode=link_only`): no browser / no AI — `core.manual_log.save_link_only_urls` stores a URL stub with `ai_pending=True`. This path never imports Playwright or scraper modules (required on Render, where Playwright is not installed). If scrape is requested but Playwright is missing, it falls back to the same stub save.
 
 Default status is **Not Applied** (`pending`); choose **Applied** only when you already applied (optional applied date). Paste `de.indeed.com/viewjob?jk=…` with or without `https://`.
 
@@ -409,6 +409,7 @@ job_scraper/
 │   │   ├── config.py            # keywords, title blacklist, platform URLs
 │   │   ├── db_mongo.py          # Mongo helpers
 │   │   ├── job_url.py           # Log Job URL parse / Indeed jk= / stubs
+│   │   ├── manual_log.py        # Save Link Only / stub save (no Playwright)
 │   │   ├── scraper_utils.py     # title gates, Lingua, CDP helpers
 │   │   ├── challenge_wait.py    # Indeed captcha detect + auto-continue / Telegram resume
 │   │   ├── pipeline_lock.py     # Single-flight pidfile for run_task / run_quick / run_linkedin

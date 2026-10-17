@@ -97,7 +97,7 @@ class FallbackSaveTests(unittest.TestCase):
     """Scrape / profile / Chrome failure must still persist the URL."""
 
     def test_save_link_only_persists_applied_indeed_url(self):
-        import scrapers.manual_apply_scraper as mas
+        import core.manual_log as ml
 
         saved = []
 
@@ -112,10 +112,10 @@ class FallbackSaveTests(unittest.TestCase):
             )
             return True
 
-        with patch.object(mas, "is_job_on_tracker", return_value=False), patch.object(
-            mas, "force_save_manual_job", side_effect=fake_save
+        with patch.object(ml, "is_job_on_tracker", return_value=False), patch.object(
+            ml, "force_save_manual_job", side_effect=fake_save
         ):
-            mas.save_link_only_urls([USER_URL], status="applied")
+            ml.save_link_only_urls([USER_URL], status="applied")
 
         self.assertEqual(len(saved), 1)
         self.assertEqual(saved[0]["job"]["job_id"], JOB_KEY)
@@ -124,18 +124,19 @@ class FallbackSaveTests(unittest.TestCase):
         self.assertTrue(saved[0]["ai_pending"])
 
     def test_save_link_only_marks_existing_tracker_applied(self):
-        import scrapers.manual_apply_scraper as mas
+        import core.manual_log as ml
 
-        with patch.object(mas, "is_job_on_tracker", return_value=True), patch.object(
-            mas, "mark_tracker_job_applied", return_value="applied"
-        ) as mark, patch.object(mas, "force_save_manual_job") as save:
-            mas.save_link_only_urls([USER_URL], status="applied")
+        with patch.object(ml, "is_job_on_tracker", return_value=True), patch.object(
+            ml, "mark_tracker_job_applied", return_value="applied"
+        ) as mark, patch.object(ml, "force_save_manual_job") as save:
+            ml.save_link_only_urls([USER_URL], status="applied")
 
         mark.assert_called_once()
         save.assert_not_called()
 
     def test_process_urls_falls_back_when_chrome_missing(self):
         import scrapers.manual_apply_scraper as mas
+        import core.manual_log as ml
 
         saved = []
 
@@ -147,13 +148,17 @@ class FallbackSaveTests(unittest.TestCase):
         fake_pw.return_value.__enter__.return_value = MagicMock()
         fake_pw.return_value.__exit__.return_value = False
 
-        with patch.object(mas, "sync_playwright", fake_pw), patch.object(
-            mas, "connect_browser", side_effect=RuntimeError("no CDP")
-        ), patch.object(mas, "load_user_profile", return_value=""), patch.object(
-            mas, "load_matching_criteria", return_value=""
-        ), patch.object(mas, "is_job_on_tracker", return_value=False), patch.object(
+        with patch.object(mas, "_load_playwright", return_value=(fake_pw, Exception)), patch(
+            "core.scraper_utils.connect_browser", side_effect=RuntimeError("no CDP")
+        ), patch(
+            "matching.ai_matcher.load_user_profile", return_value=""
+        ), patch(
+            "matching.ai_matcher.load_matching_criteria", return_value=""
+        ), patch.object(ml, "is_job_on_tracker", return_value=False), patch.object(
+            mas, "is_job_on_tracker", return_value=False
+        ), patch.object(ml, "force_save_manual_job", side_effect=fake_save), patch.object(
             mas, "force_save_manual_job", side_effect=fake_save
-        ), patch.object(mas, "pause"):
+        ):
             mas.process_urls([USER_URL], status="applied")
 
         self.assertEqual(len(saved), 1)
@@ -163,6 +168,7 @@ class FallbackSaveTests(unittest.TestCase):
 
     def test_process_urls_saves_stub_when_scrape_returns_none(self):
         import scrapers.manual_apply_scraper as mas
+        import core.manual_log as ml
 
         saved = []
 
@@ -178,15 +184,17 @@ class FallbackSaveTests(unittest.TestCase):
         fake_pw.return_value.__enter__.return_value = MagicMock()
         fake_pw.return_value.__exit__.return_value = False
 
-        with patch.object(mas, "sync_playwright", fake_pw), patch.object(
-            mas, "connect_browser", return_value=browser
-        ), patch.object(mas, "load_user_profile", return_value="profile"), patch.object(
-            mas, "load_matching_criteria", return_value="criteria"
+        with patch.object(mas, "_load_playwright", return_value=(fake_pw, Exception)), patch(
+            "core.scraper_utils.connect_browser", return_value=browser
+        ), patch(
+            "matching.ai_matcher.load_user_profile", return_value="profile"
+        ), patch(
+            "matching.ai_matcher.load_matching_criteria", return_value="criteria"
         ), patch.object(mas, "is_job_on_tracker", return_value=False), patch.object(
             mas, "scrape_job_page", return_value=None
-        ), patch.object(mas, "force_save_manual_job", side_effect=fake_save), patch.object(
-            mas, "pause"
-        ):
+        ), patch.object(ml, "force_save_manual_job", side_effect=fake_save), patch.object(
+            mas, "force_save_manual_job", side_effect=fake_save
+        ), patch("core.scraper_utils.pause"):
             mas.process_urls([USER_URL], status="applied")
 
         self.assertEqual(len(saved), 1)
@@ -196,22 +204,101 @@ class FallbackSaveTests(unittest.TestCase):
 
     def test_process_urls_marks_existing_as_applied(self):
         import scrapers.manual_apply_scraper as mas
+        import core.manual_log as ml
 
-        fake_pw = MagicMock()
-        fake_pw.return_value.__enter__.return_value = MagicMock()
-        fake_pw.return_value.__exit__.return_value = False
-
-        with patch.object(mas, "sync_playwright", fake_pw), patch.object(
-            mas, "connect_browser", side_effect=RuntimeError("no CDP")
-        ), patch.object(mas, "load_user_profile", return_value=""), patch.object(
-            mas, "load_matching_criteria", return_value=""
-        ), patch.object(mas, "is_job_on_tracker", return_value=True), patch.object(
-            mas, "mark_tracker_job_applied", return_value="applied"
-        ) as mark, patch.object(mas, "force_save_manual_job") as save:
+        with patch.object(
+            mas, "_load_playwright", side_effect=ImportError("No module named 'playwright'")
+        ), patch.object(ml, "is_job_on_tracker", return_value=True), patch.object(
+            ml, "mark_tracker_job_applied", return_value="applied"
+        ) as mark, patch.object(ml, "force_save_manual_job") as save:
             mas.process_urls([USER_URL], status="applied")
 
         mark.assert_called_once()
         save.assert_not_called()
+
+
+class PlaywrightUnavailableTests(unittest.TestCase):
+    """Render: Playwright is not installed; Save Link Only must still work."""
+
+    def test_manual_log_module_does_not_import_playwright(self):
+        import core.manual_log as ml
+        import inspect
+
+        source = inspect.getsource(ml)
+        self.assertNotIn("from playwright", source)
+        self.assertNotIn("import playwright", source)
+        self.assertNotIn("from trafilatura", source)
+        self.assertNotIn("import trafilatura", source)
+        self.assertNotIn("from scrapers", source)
+        self.assertNotIn("import scrapers", source)
+
+    def test_save_link_only_works_when_playwright_is_blocked(self):
+        import core.manual_log as ml
+
+        blocked = {
+            "playwright": None,
+            "playwright.sync_api": None,
+            "trafilatura": None,
+        }
+        saved = []
+
+        def fake_save(job, analysis, status="pending", applied_date=None, *, ai_pending=False):
+            saved.append({"job": job, "status": status, "ai_pending": ai_pending})
+            return True
+
+        with patch.dict(sys.modules, blocked), patch.object(
+            ml, "is_job_on_tracker", return_value=False
+        ), patch.object(ml, "force_save_manual_job", side_effect=fake_save):
+            ml.save_link_only_urls([USER_URL], status="applied")
+
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(saved[0]["job"]["job_id"], JOB_KEY)
+        self.assertEqual(saved[0]["status"], "applied")
+        self.assertTrue(saved[0]["ai_pending"])
+
+    def test_process_urls_falls_back_when_playwright_missing(self):
+        import scrapers.manual_apply_scraper as mas
+        import core.manual_log as ml
+
+        saved = []
+
+        def fake_save(job, analysis, status="pending", applied_date=None, *, ai_pending=False):
+            saved.append({"job": job, "status": status, "ai_pending": ai_pending})
+            return True
+
+        with patch.object(
+            mas, "_load_playwright", side_effect=ImportError("No module named 'playwright'")
+        ), patch.object(ml, "is_job_on_tracker", return_value=False), patch.object(
+            ml, "force_save_manual_job", side_effect=fake_save
+        ):
+            mas.process_urls([USER_URL], status="applied")
+
+        self.assertEqual(len(saved), 1)
+        self.assertEqual(saved[0]["job"]["job_id"], JOB_KEY)
+        self.assertEqual(saved[0]["status"], "applied")
+        self.assertTrue(saved[0]["ai_pending"])
+
+    def test_importing_scraper_module_does_not_need_playwright(self):
+        """Module import must succeed even if playwright is absent from sys.modules."""
+        import importlib
+
+        blocked = dict(sys.modules)
+        blocked["playwright"] = None
+        blocked["playwright.sync_api"] = None
+        # Drop a previously-imported scraper so we re-import under the block
+        for key in list(blocked):
+            if key == "scrapers.manual_apply_scraper" or key.startswith(
+                "scrapers.manual_apply_scraper."
+            ):
+                blocked.pop(key, None)
+
+        with patch.dict(sys.modules, blocked, clear=False):
+            sys.modules.pop("scrapers.manual_apply_scraper", None)
+            sys.modules["playwright"] = None
+            sys.modules["playwright.sync_api"] = None
+            mas = importlib.import_module("scrapers.manual_apply_scraper")
+            self.assertTrue(hasattr(mas, "save_link_only_urls"))
+            self.assertTrue(hasattr(mas, "process_urls"))
 
 
 if __name__ == "__main__":
