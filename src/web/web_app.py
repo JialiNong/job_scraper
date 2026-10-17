@@ -1470,11 +1470,17 @@ def api_manual_apply():
             _manual_apply_state["fail_count"] = 0
             _manual_apply_state["skip_count"] = 0
 
-            # Import here to avoid circular deps at module load
-            from scrapers.manual_apply_scraper import (
-                process_urls as _process_urls,
-                save_link_only_urls as _save_link_only,
-            )
+            # Link-only must not import Playwright / scrapers (Render has neither).
+            from core.manual_log import save_link_only_urls as _save_link_only
+
+            def _process_urls(*args, **kwargs):
+                try:
+                    from scrapers.manual_apply_scraper import process_urls as _scrape
+                except ImportError as e:
+                    print(f"⚠️  Scrape is unavailable ({e}). Saving link(s) only.")
+                    _save_link_only(*args, **kwargs)
+                    return
+                _scrape(*args, **kwargs)
 
             # Monkey-patch print so progress goes to the state log
             import builtins

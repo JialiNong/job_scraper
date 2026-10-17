@@ -52,27 +52,7 @@ _SRC_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SRC_ROOT not in sys.path:
     sys.path.insert(0, _SRC_ROOT)
 
-from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
-import trafilatura
-
-from core.db_mongo import (
-    init_db,
-    get_collection,
-    mark_job_as_matched,
-    save_job,
-    is_job_on_tracker,
-    indeed_job_id_variants,
-    APPLIED_STATUSES,
-)
-from matching.ai_matcher import evaluate_job, load_user_profile, load_matching_criteria, _analysis_fields
-from core.scraper_utils import (
-    connect_browser,
-    strip_html,
-    pause,
-    is_non_english_job_detail,
-    safe_text,
-    extract_indeed_detail_meta,
-)
+from core.db_mongo import init_db, get_collection, is_job_on_tracker
 from core.job_url import (
     canonicalize_url,
     detect_source,
@@ -80,13 +60,34 @@ from core.job_url import (
     extract_linkedin_job_id,
     job_id_from_url,
     job_stub_from_url,
-    link_only_job_title,
     normalize_pasted_job_url,
-    plan_manual_log_action,
     resolve_job_id,
 )
-from core.challenge_wait import is_indeed_challenge_page
+from core.manual_log import (
+    analysis_fields,
+    force_save_manual_job,
+    handle_existing_tracker,
+    mark_tracker_job_applied,
+    save_job_record,
+    save_link_only_urls,
+    stub_ai_pending_analysis,
+)
 from core.config import INDEED_CONFIG
+
+# Aliases for callers that imported these names from this module
+force_save_applied_job = force_save_manual_job
+
+
+def _load_playwright():
+    """Lazy import — Render's web image does not install Playwright."""
+    from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeoutError
+    return sync_playwright, PlaywrightTimeoutError
+
+
+def _su():
+    """Lazy scraper_utils — not imported for Save Link Only."""
+    import core.scraper_utils as su
+    return su
 
 # Minimum chars of extracted body text before we treat a generic page as a JD
 _GENERIC_MIN_DESC_CHARS = 200
@@ -98,6 +99,11 @@ def scrape_linkedin_job(page, url: str) -> Optional[dict]:
     Navigate to a LinkedIn search-results page with currentJobId and extract
     job data using the same selectors as linkedin_scraper.py.
     """
+    su = _su()
+    pause = su.pause
+    safe_text = su.safe_text
+    strip_html = su.strip_html
+
     job_id = extract_linkedin_job_id(url)
     if not job_id:
         print(f"  ⚠️  Cannot extract LinkedIn job_id from: {url}")
@@ -135,7 +141,9 @@ def scrape_linkedin_job(page, url: str) -> Optional[dict]:
             " [id*='JobDetails_AboutTheJob']",
             timeout=15000,
         )
-    except PlaywrightTimeoutError:
+    except Exception as e:
+        if type(e).__name__ != "TimeoutError" and "Timeout" not in type(e).__name__:
+            raise
         print("  ⚠️  Timed out waiting for LinkedIn job detail; are you logged in?")
         return None
 
@@ -221,7 +229,7 @@ def _dismiss_indeed_overlays(page):
             btn = page.locator(selector)
             if btn.count() > 0 and btn.first.is_visible():
                 btn.first.click(timeout=2000)
-                pause(0.5, 1.0)
+                _su().pause(0.5, 1.0)
                 return
         except Exception:
             continue
@@ -235,6 +243,9 @@ def scrape_indeed_job(page, url: str) -> Optional[dict]:
     blocked, the detail timed out, or Indeed showed a challenge. Callers
     must still save that stub instead of dropping the URL.
     """
+    su = _su()
+    from core.challenge_wait import is_indeed_challenge_page
+
     url = normalize_pasted_job_url(url)
     job_id = extract_indeed_job_id(url)
     if not job_id:
@@ -281,22 +292,24 @@ def scrape_indeed_job(page, url: str) -> Optional[dict]:
             f"{_INDEED_DETAIL_SELECTOR}, h1, #jobDescriptionText",
             timeout=15000,
         )
-    except PlaywrightTimeoutError:
+    except Exception as e:
+        if type(e).__name__ != "TimeoutError" and "Timeout" not in type(e).__name__:
+            raise
         job["scrape_warning"] = (
             "Timed out waiting for Indeed job detail (login or block?)"
         )
         print(f"  ⚠️  {job['scrape_warning']}")
 
-    pause(1.5, 2.5)
+    su.pause(1.5, 2.5)
 
     # Prefer DOM header fields; AI inference remains a fallback in process_urls.
     try:
-        company, location = extract_indeed_detail_meta(page)
+        company, location = su.extract_indeed_detail_meta(page)
     except Exception:
         company, location = "", ""
     title = ""
     try:
-        title = safe_text(page.locator('[data-testid="vj-job-title"]')) or ""
+        title = su.safe_text(page.locator('[data-testid="vj-job-title"]')) or ""
     except Exception:
         pass
 
@@ -314,7 +327,7 @@ def scrape_indeed_job(page, url: str) -> Optional[dict]:
             if loc.count() > 0:
                 desc_html = loc.inner_html(timeout=8000) or ""
                 if desc_html:
-                    description = strip_html(desc_html)
+                    description = su.strip_html(desc_html)
                     if description:
                         print(f"  🔍 Description found via: {sel}")
                         break
@@ -337,6 +350,7 @@ def _extract_main_text_from_html(html: str, url: str) -> str:
     """
     if not html:
         return ""
+    import trafilatura
     text = trafilatura.extract(
         html,
         url=url,
@@ -379,10 +393,10 @@ def scrape_generic_job(page, url: str) -> Optional[dict]:
         return None
 
     # Give SPA career sites a moment to hydrate
-    pause(1.5, 2.5)
+    _su().pause(1.5, 2.5)
     try:
         page.wait_for_load_state("networkidle", timeout=8000)
-    except PlaywrightTimeoutError:
+    except Exception:
         pass
 
     html = ""
@@ -484,180 +498,6 @@ def infer_job_metadata_with_ai(description_text: str) -> dict:
         return {}
 
 
-# ── DB helpers ────────────────────────────────────────────────────────────────
-
-def _stub_ai_pending_analysis() -> dict:
-    """Placeholder analysis for link-only saves (no scrape / no score yet)."""
-    return {
-        "match_score": None,
-        "recommendation": "",
-        "special_match": False,
-        "special_match_reasons": [],
-        "disqualification_reason": "",
-        "match_reasons": ["Link-only save — AI pending"],
-        "missing_requirements": [],
-        "red_flags": [],
-        "nice_to_have_matches": [],
-        "summary": "Link saved without scrape/AI. Use Run AI on Tracker when Chrome is available.",
-        "what_youll_do": {"matched": [], "unmatched": []},
-        "what_theyre_looking_for": {"matched": [], "unmatched": []},
-        "match_gate": "",
-        "requirement_extract": {},
-    }
-
-
-def mark_tracker_job_applied(job_id: str, source: str, applied_date: datetime = None) -> str:
-    """
-    Set an existing Tracker row to applied without wiping notes / timeline.
-
-    Returns:
-        applied  — status updated (or applied_at stamped)
-        already  — already an application record
-        missing  — not on Tracker
-    """
-    col = get_collection("matched_jobs")
-    if source == "indeed":
-        variants = indeed_job_id_variants(job_id)
-        query = {"job_id": {"$in": variants} if variants else job_id, "source": source}
-    else:
-        query = {"job_id": job_id, "source": source}
-    job = col.find_one(query)
-    if not job:
-        return "missing"
-
-    now = datetime.now()
-    t = applied_date or now
-    already_applied = bool(job.get("applied_at")) or job.get("status") in APPLIED_STATUSES
-    if already_applied and (job.get("status") or "") in APPLIED_STATUSES:
-        return "already"
-
-    fields = {
-        "status": "applied",
-        "updated_at": now,
-        "manually_applied": True,
-        "manually_logged": True,
-    }
-    if not job.get("applied_at"):
-        fields["applied_at"] = t
-    col.update_one({"_id": job["_id"]}, {"$set": fields})
-    return "applied"
-
-
-def _print_saved(status: str, applied_date: datetime = None, *, extra: str = ""):
-    suffix = extra if extra.startswith(",") or not extra else f", {extra}"
-    if status == "applied":
-        date_str = applied_date.strftime("%Y-%m-%d") if applied_date else "today"
-        print(f"  ✅ Saved to matched_jobs (status=applied, applied_at={date_str}{suffix})")
-    else:
-        print(f"  ✅ Saved to matched_jobs (status=pending / Not Applied{suffix})")
-
-
-def force_save_manual_job(
-    job: dict,
-    analysis: dict,
-    status: str = "pending",
-    applied_date: datetime = None,
-    *,
-    ai_pending: bool = False,
-) -> bool:
-    """
-    Save to matched_jobs regardless of AI score.
-    If the job already exists in matched_jobs, update it instead of inserting.
-    Also upsert the record in the main jobs collection.
-
-    Args:
-        job: Scraped job data dict
-        analysis: AI analysis result dict
-        status: Tracker status — "pending" (Not Applied, default) or "applied"
-        applied_date: Date the user applied (only used when status=applied; defaults to now)
-        ai_pending: True when saved as link-only (Run AI later on Tracker)
-    """
-    if status not in ("pending", "applied"):
-        status = "pending"
-
-    jobs_col = get_collection("jobs")
-    matched_col = get_collection("matched_jobs")
-
-    now = datetime.utcnow()
-    # For applied jobs, timestamps use the user-provided applied date (defaults to now)
-    t = (applied_date or now) if status == "applied" else now
-    job_id = job["job_id"]
-    source = job["source"]
-    # Preserve explicit None (link-only) — do not coerce to 0
-    match_score = analysis["match_score"] if "match_score" in analysis else 0
-
-    jobs_set = {
-        "title":       job.get("title", ""),
-        "company":     job.get("company", ""),
-        "location":    job.get("location", ""),
-        "description": job.get("description", ""),
-        "applicants":  job.get("applicants", ""),
-        "status":      status,
-        "source":      source,
-        "matched_at":  t,
-        "updated_at":  t,
-        "match_score": match_score,
-        "ai_pending":  bool(ai_pending),
-        **_analysis_fields(analysis),
-    }
-    if status == "applied":
-        jobs_set["applied_at"] = t
-
-    # ── 1. Upsert into main jobs collection ──────────────────────────────
-    jobs_col.update_one(
-        {"job_id": job_id, "source": source},
-        {
-            "$setOnInsert": {"created_at": t, "link": job.get("link", "")},
-            "$set": jobs_set,
-        },
-        upsert=True,
-    )
-
-    # ── 2. Upsert into matched_jobs collection ───────────────────────────
-    # NOTE: created_at must NOT appear in $set — it lives only in $setOnInsert
-    # so that re-runs do not overwrite the original insert timestamp.
-    # Putting the same key in both $set and $setOnInsert causes a MongoDB
-    # WriteError ("conflict at 'created_at'") and silently aborts the write.
-    matched_data = {
-        "title":       job.get("title", ""),
-        "company":     job.get("company", ""),
-        "location":    job.get("location", ""),
-        "link":        job.get("link", ""),
-        "job_id":      job_id,
-        "source":      source,
-        "description": job.get("description", ""),
-        "applicants":  job.get("applicants", ""),
-        "match_score": match_score,
-        **_analysis_fields(analysis),
-        "status":      status,
-        "matched_at":  t,
-        "updated_at":  t,
-        # created_at is intentionally omitted here — set only on first insert below
-        "notes":       "",
-        "application_qa": [],
-        "manually_logged": True,
-        "ai_pending":  bool(ai_pending),
-    }
-    if status == "applied":
-        matched_data["applied_at"] = t
-        matched_data["manually_applied"] = True
-
-    try:
-        matched_col.update_one(
-            {"job_id": job_id, "source": source},
-            {"$set": matched_data, "$setOnInsert": {"created_at": t}},
-            upsert=True,
-        )
-    except Exception as e:
-        print(f"  ❌ Failed to save to matched_jobs: {type(e).__name__}: {e}")
-        return False
-    return True
-
-
-# Keep old name as alias for any external callers
-force_save_applied_job = force_save_manual_job
-
-
 def apply_analysis_to_existing(
     job: dict,
     analysis: dict,
@@ -683,7 +523,7 @@ def apply_analysis_to_existing(
         "applicants":  job.get("applicants", ""),
         "link":        job.get("link", ""),
         "match_score": match_score,
-        **_analysis_fields(analysis),
+        **analysis_fields(analysis),
         "updated_at":  now,
         "ai_pending":  False,
     }
@@ -767,7 +607,8 @@ def enrich_job_and_evaluate(
         job["title"] = f"(Unknown title — job_id {job.get('job_id', '')})"
         print(f"  ⚠️  Title not found, using fallback: {job['title']}")
 
-    should_skip, lang, de_share = is_non_english_job_detail(job.get("description", ""))
+    from matching.ai_matcher import evaluate_job
+    should_skip, lang, de_share = _su().is_non_english_job_detail(job.get("description", ""))
     if should_skip:
         if allow_non_english:
             print(
@@ -797,129 +638,6 @@ def enrich_job_and_evaluate(
 
 # ── main processors ───────────────────────────────────────────────────────────
 
-def _handle_existing_tracker(url: str, job_id: str, source: str, status: str, applied_date) -> str:
-    """skip | applied | already | missing — print a line the UI can count."""
-    action = plan_manual_log_action(True, status, job_id)
-    if action == "mark_applied":
-        result = mark_tracker_job_applied(job_id, source, applied_date)
-        if result == "applied":
-            date_str = applied_date.strftime("%Y-%m-%d") if applied_date else "today"
-            print(
-                f"  ✅ Marked existing Tracker job as applied "
-                f"(job_id={job_id}, applied_at={date_str})"
-            )
-            return "applied"
-        if result == "already":
-            print(
-                f"  ⚠️  Already on Tracker as an application: "
-                f"job_id={job_id} source={source} — skipping"
-            )
-            return "already"
-        print(f"  ⚠️  Tracker row vanished for job_id={job_id} — will save a new card")
-        return "missing"
-    print(
-        f"  ⚠️  Already on Tracker (matched_jobs): "
-        f"job_id={job_id} source={source} — skipping"
-    )
-    return "skip"
-
-
-def _save_job_record(job: dict, analysis: dict, status: str, applied_date, *, ai_pending: bool, extra: str = "") -> bool:
-    if not job.get("title"):
-        job["title"] = link_only_job_title(
-            job.get("link") or "",
-            job.get("source") or "",
-            job.get("job_id") or "",
-        )
-    ok = force_save_manual_job(
-        job,
-        analysis,
-        status=status,
-        applied_date=applied_date,
-        ai_pending=ai_pending,
-    )
-    if not ok:
-        return False
-    note = extra
-    if ai_pending and "AI pending" not in extra:
-        note = (extra + ", AI pending").strip(", ")
-    _print_saved(status, applied_date, extra=note)
-    return True
-
-
-def save_link_only_urls(
-    urls: list[str],
-    applied_date: datetime = None,
-    status: str = "pending",
-):
-    """
-    Save job URLs to the Tracker without opening a browser or running AI.
-
-    Useful while traveling: paste links now, Run AI later from Tracker cards
-    when Chrome/CDP is available again.
-    """
-    if status not in ("pending", "applied"):
-        status = "pending"
-
-    if not urls:
-        print("No URLs provided.")
-        return
-
-    status_label = "applied" if status == "applied" else "pending (Not Applied)"
-    print(f"\n🔗 Link-only save — {len(urls)} URL(s) as {status_label} (no scrape / no AI)…")
-
-    results = {"ok": [], "failed": [], "skipped": []}
-    analysis = _stub_ai_pending_analysis()
-
-    for i, raw in enumerate(urls, 1):
-        url = normalize_pasted_job_url(raw)
-        if not url:
-            continue
-        print(f"\n{'='*60}")
-        print(f"[{i}/{len(urls)}] {url}")
-
-        source = detect_source(url)
-        job_id = resolve_job_id(url, source)
-        if not job_id:
-            print("  ❌ Cannot resolve job_id from URL")
-            results["failed"].append(url)
-            continue
-        if is_job_on_tracker(job_id, source):
-            outcome = _handle_existing_tracker(url, job_id, source, status, applied_date)
-            if outcome in ("applied",):
-                results["ok"].append(url)
-            elif outcome in ("already", "skip"):
-                results["skipped"].append(url)
-            else:
-                pass  # missing — fall through and save
-            if outcome != "missing":
-                continue
-
-        job = job_stub_from_url(url, scrape_warning="Link-only save")
-        if not job:
-            print("  ❌ Cannot build a job record from this URL")
-            results["failed"].append(url)
-            continue
-        ok = _save_job_record(
-            job, analysis, status, applied_date, ai_pending=True, extra="link-only"
-        )
-        if not ok:
-            results["failed"].append(url)
-            continue
-        results["ok"].append(url)
-
-    print(f"\n{'='*60}")
-    print(f"✅ Success : {len(results['ok'])}")
-    print(f"⏭️  Skipped : {len(results['skipped'])} (already on Tracker)")
-    print(f"❌ Failed  : {len(results['failed'])}")
-    if results["skipped"]:
-        for u in results["skipped"]:
-            print(f"   • {u}")
-    if results["failed"]:
-        for u in results["failed"]:
-            print(f"   • {u}")
-
-
 def process_urls(
     urls: list[str],
     applied_date: datetime = None,
@@ -943,6 +661,15 @@ def process_urls(
     status_label = "applied" if status == "applied" else "pending (Not Applied)"
     print(f"\n🔗 Processing {len(urls)} URL(s) as {status_label}…")
 
+    try:
+        sync_playwright, _ = _load_playwright()
+        from core.scraper_utils import connect_browser, pause
+        from matching.ai_matcher import load_user_profile, load_matching_criteria
+    except ImportError as e:
+        print(f"⚠️  Scrape is unavailable ({e}). Saving link(s) only.")
+        save_link_only_urls(urls, applied_date=applied_date, status=status)
+        return
+
     user_profile = load_user_profile()
     if not user_profile:
         print(
@@ -950,7 +677,7 @@ def process_urls(
             "Will save links without AI scoring."
         )
     criteria = load_matching_criteria()
-    stub_analysis = _stub_ai_pending_analysis()
+    stub_analysis = stub_ai_pending_analysis()
 
     results = {"ok": [], "failed": [], "skipped": []}
     page = None
@@ -982,7 +709,7 @@ def process_urls(
                     results["failed"].append(url)
                     continue
                 if is_job_on_tracker(job_id, source):
-                    outcome = _handle_existing_tracker(
+                    outcome = handle_existing_tracker(
                         url, job_id, source, status, applied_date
                     )
                     if outcome == "applied":
@@ -1026,7 +753,7 @@ def process_urls(
                         print("  ⚠️  No user profile — saving without AI (AI pending)")
 
                 extra = "AI pending" if ai_pending else ""
-                if not _save_job_record(
+                if not save_job_record(
                     job, analysis, status, applied_date,
                     ai_pending=ai_pending, extra=extra,
                 ):
@@ -1077,6 +804,14 @@ def run_ai_on_matched_job(matched_doc: dict) -> dict:
 
     print(f"\n🤖 Run AI for Tracker job: {matched_doc.get('title') or matched_doc.get('job_id')}")
     print(f"  → {url}")
+
+    try:
+        sync_playwright, _ = _load_playwright()
+        from core.scraper_utils import connect_browser
+        from matching.ai_matcher import load_user_profile, load_matching_criteria
+    except ImportError as e:
+        print(f"  ❌ Scrape is unavailable ({e})")
+        return {"ok": False, "error": f"Scrape unavailable: {e}", "match_score": None}
 
     user_profile = load_user_profile()
     if not user_profile:
