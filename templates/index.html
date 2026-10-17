@@ -2457,6 +2457,7 @@ const STATUS_LABEL = {
   duplicate:  'Duplicate',
 };
 const SIDE_STATUSES = ['unsuitable', 'closed', 'repost', 'duplicate'];
+const PROGRESS_STAGES = ['applied', 'rejected', 'interview', 'offer'];
 
 const TIMELINE_LABEL = {
   applied:          'Applied',
@@ -3521,6 +3522,24 @@ function statusFromTimeline(timeline) {
   return '';
 }
 
+function progressStage(status, timeline, appliedAt) {
+  if (Array.isArray(timeline) && timeline.length) {
+    return statusFromTimeline(timeline) || '';
+  }
+  if (status === 'pending') return '';
+  if (PROGRESS_STAGES.includes(status)) return status;
+  if (appliedAt) return 'applied';
+  return '';
+}
+
+function jobMatchesStatusFilter(job, filter) {
+  if (!filter || filter === 'all') return true;
+  if (PROGRESS_STAGES.includes(filter)) {
+    return progressStage(job.status, job.application_timeline, job.applied_at) === filter;
+  }
+  return (job.status || 'pending') === filter;
+}
+
 function isAppliedLike(status, timeline) {
   if (['applied', 'interview', 'rejected', 'offer'].includes(status)) return true;
   return Array.isArray(timeline) && timeline.length > 0;
@@ -3873,6 +3892,13 @@ async function saveTimeline(jobId, timeline) {
   if (!res.ok) throw new Error('Request failed');
   const data = await res.json();
   refreshProgressUI(jobId, data.application_timeline || timeline, data.status);
+  if (!jobMatchesStatusFilter({
+    status: data.status,
+    application_timeline: data.application_timeline || timeline,
+    applied_at: data.applied_at,
+  }, currentStatusFilter)) {
+    loadJobs();
+  }
   loadStats();
   loadJourney();
   loadLocationStats();
@@ -3967,6 +3993,9 @@ async function updateSideStatus(select) {
     if (!res.ok) throw new Error('Request failed');
     const timeline = status === 'pending' ? [] : currentTimeline;
     refreshProgressUI(id, timeline, status);
+    if (!jobMatchesStatusFilter({ status, application_timeline: timeline }, currentStatusFilter)) {
+      loadJobs();
+    }
     showToast(`✅ Status updated to "${STATUS_LABEL[status]}"`);
     loadStats();
     loadJourney();
