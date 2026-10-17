@@ -142,6 +142,16 @@ STATUS_MAP = {
 # record (applied_at / timeline); only Reset Not Applied (pending) does.
 SIDE_STATUSES = ("unsuitable", "closed", "repost", "duplicate")
 
+# Tracker chips for application progress (derived from timeline / applied_at).
+PROGRESS_STAGES = APPLIED_STATUSES
+INTERVIEW_TIMELINE_STEPS = (
+    "interview_invite",
+    "interview_1",
+    "interview_2",
+    "interview_3",
+    "interview_final",
+)
+
 # Application progress timeline steps (ordered interview track)
 TIMELINE_STEPS = {
     "applied":         "Applied",
@@ -220,6 +230,98 @@ def _status_from_timeline(timeline: list, fallback: str = "pending") -> str:
     if last == "offer":
         return "offer"
     return fallback
+
+
+def application_progress(job: dict) -> Optional[str]:
+    """
+    Application stage for Tracker chips: applied / interview / rejected / offer.
+
+    Uses timeline (then applied_at / applied-like status). Side overlays
+    (unsuitable / closed / repost / duplicate) do not hide progress.
+    """
+    raw = job.get("application_timeline")
+    if isinstance(raw, list) and raw:
+        derived = _status_from_timeline(raw, fallback="")
+        return derived if derived in PROGRESS_STAGES else None
+    status = job.get("status") or "pending"
+    if status == "pending":
+        return None
+    if status in PROGRESS_STAGES:
+        return status
+    if job.get("applied_at"):
+        return "applied"
+    return None
+
+
+def job_matches_status_filter(job: dict, status_filter: Optional[str]) -> bool:
+    """Same rules as GET /api/jobs?status= and the filter-chip counts."""
+    if not status_filter or status_filter == "all":
+        return True
+    if status_filter in PROGRESS_STAGES:
+        return application_progress(job) == status_filter
+    return (job.get("status") or "pending") == status_filter
+
+
+def jobs_status_filter_query(status_filter: Optional[str]) -> dict:
+    """
+    Mongo clause for a Tracker status chip.
+
+    Progress stages match the latest timeline step (or a flat applied-like
+    status / applied_at when there is no timeline). Overlay chips still
+    match the status field so Unsuitable stays a real filter.
+    """
+    if not status_filter or status_filter == "all":
+        return {}
+    if status_filter not in PROGRESS_STAGES:
+        return {"status": status_filter}
+
+    last_step = {"$arrayElemAt": ["$application_timeline.step", -1]}
+    if status_filter == "interview":
+        last_matches = {"$expr": {"$in": [last_step, list(INTERVIEW_TIMELINE_STEPS)]}}
+    else:
+        last_matches = {"$expr": {"$eq": [last_step, status_filter]}}
+
+    no_timeline = {"application_timeline.0": {"$exists": False}}
+    clauses = [
+        last_matches,
+        {**no_timeline, "status": status_filter},
+    ]
+    if status_filter == "applied":
+        clauses.append({
+            **no_timeline,
+            "applied_at": {"$ne": None},
+            "status": {"$in": list(SIDE_STATUSES)},
+        })
+    return {"$or": clauses}
+
+
+def combine_job_list_query(clauses: list) -> dict:
+    """AND independent list filters so a status $or does not clash with search $or."""
+    parts = [c for c in clauses if c]
+    if not parts:
+        return {}
+    if len(parts) == 1:
+        return parts[0]
+    return {"$and": parts}
+
+
+def chip_status_counts(jobs: list) -> dict:
+    """
+    Filter-chip counts.
+
+    Overlay chips (pending / side statuses) use the status field.
+    Progress chips use application_progress, so a side-status interview
+    increments both Unsuitable and Interview.
+    """
+    counts: dict = {}
+    for job in jobs:
+        status = job.get("status") or "pending"
+        if status not in PROGRESS_STAGES:
+            counts[status] = counts.get(status, 0) + 1
+        progress = application_progress(job)
+        if progress:
+            counts[progress] = counts.get(progress, 0) + 1
+    return counts
 
 
 def _normalize_timeline(raw) -> list:
@@ -490,20 +592,20 @@ def api_jobs():
     date_from     = request.args.get("date_from", "").strip() or None
     date_to       = request.args.get("date_to", "").strip() or None
 
-    query: dict = {}
-    if status_filter and status_filter != "all":
-        query["status"] = status_filter
-    if source_filter and source_filter != "all":
-        query["source"] = source_filter
-    # Filter by manual UI highlights (not AI special_match)
     highlights_filter = request.args.get("highlights", "").strip().lower()
+    clauses = [jobs_status_filter_query(status_filter)]
+    if source_filter and source_filter != "all":
+        clauses.append({"source": source_filter})
+    # Filter by manual UI highlights (not AI special_match)
     if highlights_filter in ("1", "true", "yes"):
-        query["highlights.0"] = {"$exists": True}
+        clauses.append({"highlights.0": {"$exists": True}})
     if search_query:
-        query["$or"] = [
-            {"title":   {"$regex": search_query, "$options": "i"}},
-            {"company": {"$regex": search_query, "$options": "i"}},
-        ]
+        clauses.append({
+            "$or": [
+                {"title":   {"$regex": search_query, "$options": "i"}},
+                {"company": {"$regex": search_query, "$options": "i"}},
+            ]
+        })
     if date_from or date_to:
         time_filter: dict = {}
         start = _parse_filter_date(date_from)
@@ -512,7 +614,9 @@ def api_jobs():
             time_filter["$gte"] = start
         if end:
             time_filter["$lte"] = end
-        query["matched_at"] = time_filter
+        if time_filter:
+            clauses.append({"matched_at": time_filter})
+    query = combine_job_list_query(clauses)
 
     # Count total matching documents
     total = collection.count_documents(query)
@@ -1116,10 +1220,13 @@ def api_timeout_dismiss(doc_id: str):
 def api_stats():
     """Return status counts for the summary bar and pipeline funnel."""
     collection = get_collection("matched_jobs")
-    pipeline = [{"$group": {"_id": "$status", "count": {"$sum": 1}}}]
-    raw = list(collection.aggregate(pipeline))
-    by_status = {item["_id"]: item["count"] for item in raw}
-    ai_matched = sum(by_status.values())
+    # Slim projection: progress chips use timeline / applied_at, not status alone
+    docs = list(collection.find(
+        {},
+        {"_id": 0, "status": 1, "applied_at": 1, "application_timeline.step": 1},
+    ))
+    by_status = chip_status_counts(docs)
+    ai_matched = len(docs)
     # Same as Journey + Locations: APPLICATION_QUERY (keeps side-status applies)
     applied_total = count_applied_applications()
 
