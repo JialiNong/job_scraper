@@ -1355,10 +1355,11 @@ def api_manual_apply_lookup():
     if not cleaned:
         return jsonify({"error": "No valid URLs provided"}), 400
 
-    from scrapers.manual_apply_scraper import detect_source, resolve_job_id
+    from core.job_url import detect_source, normalize_pasted_job_url, resolve_job_id
 
     results = []
-    for url in cleaned:
+    for raw in cleaned:
+        url = normalize_pasted_job_url(raw) or raw
         source = detect_source(url)
         job_id = resolve_job_id(url, source)
         hit = lookup_known_job(job_id, source) if job_id else None
@@ -1424,7 +1425,14 @@ def api_manual_apply():
     urls = data.get("urls", [])
     if not isinstance(urls, list):
         return jsonify({"error": "urls must be a list"}), 400
-    urls = [u.strip() for u in urls if isinstance(u, str) and u.strip()]
+    from core.job_url import normalize_pasted_job_url
+
+    urls = [
+        normalize_pasted_job_url(u) or u.strip()
+        for u in urls
+        if isinstance(u, str) and u.strip()
+    ]
+    urls = [u for u in urls if u]
     if not urls:
         return jsonify({"error": "No valid URLs provided"}), 400
 
@@ -1485,7 +1493,10 @@ def api_manual_apply():
                     _process_urls(urls, applied_date=applied_date, status=job_status)
                 # Count results from log
                 for line in _manual_apply_state["log"]:
-                    if "✅ Saved to matched_jobs" in line:
+                    if (
+                        "✅ Saved to matched_jobs" in line
+                        or "Marked existing Tracker job as applied" in line
+                    ):
                         _manual_apply_state["done_count"] += 1
                     elif "Already on Tracker" in line and "skipping" in line:
                         _manual_apply_state["skip_count"] += 1
@@ -1493,6 +1504,8 @@ def api_manual_apply():
                         "❌ Scraping failed" in line
                         or "Cannot extract" in line
                         or "Cannot resolve job_id" in line
+                        or "Cannot build a job record" in line
+                        or "Fatal error" in line
                     ):
                         _manual_apply_state["fail_count"] += 1
             finally:

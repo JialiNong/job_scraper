@@ -69,14 +69,18 @@ def extract_indeed_jk_from_url(url: str) -> str:
     Extract the Indeed job key from a URL.
 
     Prefers jk= (viewjob / rc/clk); falls back to vjk= (SERP selected card).
+    Accepts percent-encoded query strings (jk%3D…).
     Returns the bare key only (no jk_/vjk_ prefix).
     """
     if not url:
         return ""
-    m = _INDEED_JK_RE.search(url)
+    from urllib.parse import unquote
+
+    text = unquote(str(url).strip())
+    m = _INDEED_JK_RE.search(text)
     if m:
         return m.group(1)
-    m = _INDEED_VJK_RE.search(url)
+    m = _INDEED_VJK_RE.search(text)
     return m.group(1) if m else ""
 
 
