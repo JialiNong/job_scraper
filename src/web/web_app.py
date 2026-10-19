@@ -42,8 +42,10 @@ from core.db_mongo import (
 )
 from core.scraper_utils import indeed_job_id_variants
 from core.manual_log import (
+    IDENTITY_FIELDS,
     PLAYWRIGHT_UNAVAILABLE_MSG,
     RECOMMENDED_BY_AGENTS,
+    normalize_manual_identity,
     normalize_recommended_by,
 )
 
@@ -511,6 +513,13 @@ def _serialize(job: dict) -> dict:
     job.setdefault("status", "pending")
     rec = normalize_recommended_by(job.get("recommended_by"))
     job["recommended_by"] = rec
+    raw_manual = job.get("manual_fields")
+    if isinstance(raw_manual, list):
+        job["manual_fields"] = [
+            f for f in raw_manual if f in IDENTITY_FIELDS
+        ]
+    else:
+        job["manual_fields"] = []
     # Hydrate / serialise application timeline
     timeline = _hydrate_timeline(job)
     job["application_timeline"] = [
@@ -1535,6 +1544,7 @@ def api_manual_apply():
 
     mode=link_only: save URL stubs with ai_pending (no Chrome / no AI).
     Optional recommended_by: claude | cursor | gemini | gpt.
+    Optional title / company / location (user-typed; later scrape will not overwrite).
     """
     data = request.get_json(silent=True) or {}
     urls = data.get("urls", [])
@@ -1567,6 +1577,10 @@ def api_manual_apply():
             return jsonify({
                 "error": "recommended_by must be none, claude, cursor, gemini, or gpt",
             }), 400
+
+    identity = normalize_manual_identity(
+        data.get("title"), data.get("company"), data.get("location")
+    )
 
     # Parse optional applied_date (only meaningful when status=applied).
     # HTML <input type="date"> is day-only; strptime would yield midnight.
@@ -1622,6 +1636,7 @@ def api_manual_apply():
                         applied_date=applied_date,
                         status=job_status,
                         recommended_by=recommended_by,
+                        identity=identity,
                     )
                 else:
                     _process_urls(
@@ -1629,6 +1644,7 @@ def api_manual_apply():
                         applied_date=applied_date,
                         status=job_status,
                         recommended_by=recommended_by,
+                        identity=identity,
                     )
                 # Count results from log
                 for line in _manual_apply_state["log"]:

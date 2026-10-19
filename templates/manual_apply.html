@@ -87,9 +87,11 @@
       transition: border-color .15s;
     }
     .option-input:focus { border-color: var(--accent); }
+    .option-text { cursor: text; min-width: 160px; flex: 1; }
     .option-hint { font-size: .8rem; color: var(--muted); }
     #appliedDateGroup { display: none; align-items: center; gap: 10px; }
     #appliedDateGroup.visible { display: flex; }
+    .identity-row { align-items: flex-end; }
 
     /* ── textarea ── */
     .url-box {
@@ -378,6 +380,21 @@
     </div>
   </div>
 
+  <div class="options-row identity-row">
+    <div class="option-group">
+      <label for="jobTitle">Job title</label>
+      <input type="text" id="jobTitle" class="option-input option-text" maxlength="200" placeholder="Optional" autocomplete="off" />
+    </div>
+    <div class="option-group">
+      <label for="jobCompany">Company name</label>
+      <input type="text" id="jobCompany" class="option-input option-text" maxlength="160" placeholder="Optional" autocomplete="off" />
+    </div>
+    <div class="option-group">
+      <label for="jobLocation">Location / address</label>
+      <input type="text" id="jobLocation" class="option-input option-text" maxlength="200" placeholder="Optional" autocomplete="off" />
+    </div>
+  </div>
+
   <textarea
     id="urlBox"
     class="url-box"
@@ -412,6 +429,7 @@ https://careers.example.com/jobs/frontend-engineer"
     <strong>💡 Tips</strong><br>
     • Paste a URL that is already in Matched — the Tracker opens that card automatically.<br>
     • Submit with <strong>Applied</strong> to mark an existing Tracker card applied (notes/timeline stay).<br>
+    • Optional <strong>Job title / Company / Location</strong> are saved on the Tracker card (works with Save Link Only). Later scrape or Fetch job details will not overwrite a field you typed unless you left it blank.<br>
     • Optional <strong>Recommended by AI agent</strong> tags the Tracker card (Claude / Cursor / Gemini / GPT). Agent-recommended cards get <strong>Fetch job details</strong> (scrape only, no AI).<br>
     • <strong>Save Link Only</strong>: no Chrome needed; card shows AI pending until you click <strong>Run AI</strong> on Tracker.<br>
     • <strong>Scrape &amp; Log</strong>: Chrome is used when available. If Indeed blocks or Chrome is missing, the link is still saved.<br>
@@ -639,6 +657,9 @@ async function submitUrls({ linkOnly = false } = {}) {
     ? (document.getElementById('appliedDate').value || '')
     : '';
   const recommendedBy = document.getElementById('recommendedBy').value || '';
+  const title = (document.getElementById('jobTitle').value || '').trim();
+  const company = (document.getElementById('jobCompany').value || '').trim();
+  const location = (document.getElementById('jobLocation').value || '').trim();
   _submittedStatus = status;
   _submittedLinkOnly = linkOnly;
 
@@ -661,6 +682,9 @@ async function submitUrls({ linkOnly = false } = {}) {
         applied_date: appliedDate,
         mode: linkOnly ? 'link_only' : 'scrape',
         recommended_by: recommendedBy,
+        title,
+        company,
+        location,
       }),
     });
     const data = await res.json();

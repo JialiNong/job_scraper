@@ -66,10 +66,13 @@ from core.job_url import (
 from core.manual_log import (
     PLAYWRIGHT_UNAVAILABLE_MSG,
     analysis_fields,
+    apply_identity_to_job,
     apply_scraped_details,
     force_save_manual_job,
     handle_existing_tracker,
+    keep_manual_identity,
     mark_tracker_job_applied,
+    normalize_manual_identity,
     normalize_recommended_by,
     save_job_record,
     save_link_only_urls,
@@ -646,6 +649,10 @@ def process_urls(
     applied_date: datetime = None,
     status: str = "pending",
     recommended_by=None,
+    identity=None,
+    title=None,
+    company=None,
+    location=None,
 ):
     """
     Scrape, AI-match, and save each URL to the tracker.
@@ -655,10 +662,12 @@ def process_urls(
         applied_date: Date the user applied (only used when status=applied)
         status: "pending" (Not Applied, default) or "applied"
         recommended_by: Optional Log Job agent tag (claude/cursor/gemini/gpt)
+        identity / title / company / location: optional user-typed card fields
     """
     if status not in ("pending", "applied"):
         status = "pending"
     rec = normalize_recommended_by(recommended_by)
+    identity = identity or normalize_manual_identity(title, company, location)
 
     if not urls:
         print("No URLs provided.")
@@ -674,7 +683,11 @@ def process_urls(
     except ImportError as e:
         print(f"⚠️  Scrape is unavailable ({e}). Saving link(s) only.")
         save_link_only_urls(
-            urls, applied_date=applied_date, status=status, recommended_by=rec
+            urls,
+            applied_date=applied_date,
+            status=status,
+            recommended_by=rec,
+            identity=identity,
         )
         return
 
@@ -719,7 +732,7 @@ def process_urls(
                 if is_job_on_tracker(job_id, source):
                     outcome = handle_existing_tracker(
                         url, job_id, source, status, applied_date,
-                        recommended_by=rec,
+                        recommended_by=rec, identity=identity,
                     )
                     if outcome == "applied":
                         results["ok"].append(url)
@@ -764,6 +777,7 @@ def process_urls(
                 extra = "AI pending" if ai_pending else ""
                 if rec:
                     job["recommended_by"] = rec
+                apply_identity_to_job(job, identity)
                 if not save_job_record(
                     job, analysis, status, applied_date,
                     ai_pending=ai_pending, extra=extra,
@@ -780,7 +794,11 @@ def process_urls(
         if remaining:
             print("  → Falling back to link-only save for remaining URLs")
             save_link_only_urls(
-                remaining, applied_date=applied_date, status=status, recommended_by=rec
+                remaining,
+                applied_date=applied_date,
+                status=status,
+                recommended_by=rec,
+                identity=identity,
             )
             return
 
@@ -853,11 +871,7 @@ def fetch_job_details_for_matched_job(matched_doc: dict) -> dict:
             print("  ❌ Scraping failed")
             return {"ok": False, "error": "Scraping failed"}
 
-        for field in ("title", "company", "location"):
-            if not job.get(field) and matched_doc.get(field):
-                existing = str(matched_doc.get(field) or "")
-                if existing and not existing.startswith("(Link only)"):
-                    job[field] = existing
+        keep_manual_identity(job, matched_doc)
         if not job.get("title"):
             job["title"] = matched_doc.get("title") or ""
         if not job.get("job_id"):
@@ -919,14 +933,9 @@ def run_ai_on_matched_job(matched_doc: dict) -> dict:
             print("  ❌ Scraping failed")
             return {"ok": False, "error": "Scraping failed", "match_score": None}
 
-        # Prefer existing user-edited title/company/location if scrape left them empty
-        for field in ("title", "company", "location"):
-            if not job.get(field) and matched_doc.get(field):
-                existing = str(matched_doc.get(field) or "")
-                if existing and not existing.startswith("(Link only)"):
-                    job[field] = existing
-
+        keep_manual_identity(job, matched_doc)
         analysis = enrich_job_and_evaluate(job, user_profile, criteria)
+        keep_manual_identity(job, matched_doc)
         if not analysis:
             print("  ❌ No description — cannot run AI")
             return {"ok": False, "error": "Empty description after scrape", "match_score": None}
@@ -979,6 +988,9 @@ def main():
         default=None,
         help="Tag the job as recommended by an AI agent",
     )
+    parser.add_argument("--title", default=None, help="Optional job title")
+    parser.add_argument("--company", default=None, help="Optional company name")
+    parser.add_argument("--location", default=None, help="Optional location / address")
     args = parser.parse_args()
 
     urls: list[str] = list(args.urls)
@@ -997,12 +1009,21 @@ def main():
         sys.exit(0)
 
     init_db()
+    identity = normalize_manual_identity(args.title, args.company, args.location)
     if args.link_only:
         save_link_only_urls(
-            urls, status=args.status, recommended_by=args.recommended_by
+            urls,
+            status=args.status,
+            recommended_by=args.recommended_by,
+            identity=identity,
         )
     else:
-        process_urls(urls, status=args.status, recommended_by=args.recommended_by)
+        process_urls(
+            urls,
+            status=args.status,
+            recommended_by=args.recommended_by,
+            identity=identity,
+        )
 
 
 if __name__ == "__main__":

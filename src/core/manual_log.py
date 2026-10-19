@@ -43,7 +43,11 @@ DETAILS_PRESERVE_FIELDS = (
     "application_qa",
     "recommended_by",
     "match_score",
+    "manual_fields",
 )
+
+IDENTITY_FIELDS = ("title", "company", "location")
+_IDENTITY_MAX_LEN = {"title": 200, "company": 160, "location": 200}
 
 
 def normalize_recommended_by(value) -> str:
@@ -52,6 +56,68 @@ def normalize_recommended_by(value) -> str:
     if key in ("", "none", "null"):
         return ""
     return key if key in RECOMMENDED_BY_AGENTS else ""
+
+
+def _clean_identity_text(value, field: str) -> str:
+    text = " ".join(str(value or "").split()).strip()
+    if not text:
+        return ""
+    limit = _IDENTITY_MAX_LEN.get(field, 200)
+    if len(text) > limit:
+        text = text[:limit].rstrip()
+    return text
+
+
+def normalize_manual_identity(title=None, company=None, location=None) -> dict:
+    """
+    Optional Log Job identity fields.
+
+    Returns {"values": {field: text}, "manual_fields": (field, ...)} for
+    non-empty user-typed title / company / location.
+    """
+    values = {}
+    manual = []
+    for field, raw in (("title", title), ("company", company), ("location", location)):
+        text = _clean_identity_text(raw, field)
+        if text:
+            values[field] = text
+            manual.append(field)
+    return {"values": values, "manual_fields": tuple(manual)}
+
+
+def apply_identity_to_job(job: dict, identity: dict | None) -> dict:
+    """Overlay user-typed title/company/location onto a job dict."""
+    identity = identity or {}
+    values = identity.get("values") or {}
+    manual = [f for f in (identity.get("manual_fields") or []) if f in IDENTITY_FIELDS]
+    for field in IDENTITY_FIELDS:
+        if values.get(field):
+            job[field] = values[field]
+    if manual:
+        prev = [f for f in (job.get("manual_fields") or []) if f in IDENTITY_FIELDS]
+        job["manual_fields"] = list(dict.fromkeys([*prev, *manual]))
+    return job
+
+
+def keep_manual_identity(scraped: dict, existing: dict | None) -> dict:
+    """
+    Prefer user-typed title/company/location over a later scrape.
+
+    A field listed in existing.manual_fields is kept whenever it is non-empty.
+    If scrape left a field blank, keep a non-stub existing value.
+    """
+    existing = existing or {}
+    manual = {f for f in (existing.get("manual_fields") or []) if f in IDENTITY_FIELDS}
+    for field in IDENTITY_FIELDS:
+        current = str(existing.get(field) or "").strip()
+        scraped_val = str(scraped.get(field) or "").strip()
+        if field in manual and current:
+            scraped[field] = current
+        elif not scraped_val and current and not current.startswith("(Link only)"):
+            scraped[field] = current
+    if manual:
+        scraped["manual_fields"] = list(manual)
+    return scraped
 
 
 def stub_ai_pending_analysis() -> dict:
@@ -171,6 +237,36 @@ def stamp_recommended_by(job_id: str, source: str, recommended_by) -> bool:
     return result.matched_count > 0
 
 
+def stamp_manual_identity(job_id: str, source: str, identity: dict | None) -> bool:
+    """Fill user-typed title/company/location on an existing Tracker row."""
+    identity = identity or {}
+    values = dict(identity.get("values") or {})
+    if not values:
+        return False
+    col = get_collection("matched_jobs")
+    if source == "indeed":
+        variants = indeed_job_id_variants(job_id)
+        query = {"job_id": {"$in": variants} if variants else job_id, "source": source}
+    else:
+        query = {"job_id": job_id, "source": source}
+    job = col.find_one(query)
+    if not job:
+        return False
+    now = datetime.now()
+    fields = {**values, "updated_at": now}
+    prev = [f for f in (job.get("manual_fields") or []) if f in IDENTITY_FIELDS]
+    extra = [f for f in (identity.get("manual_fields") or []) if f in IDENTITY_FIELDS]
+    merged = list(dict.fromkeys([*prev, *extra]))
+    if merged:
+        fields["manual_fields"] = merged
+    col.update_one({"_id": job["_id"]}, {"$set": fields})
+    get_collection("jobs").update_one(
+        {"job_id": job.get("job_id") or job_id, "source": source},
+        {"$set": {**values, "updated_at": now}},
+    )
+    return True
+
+
 def _print_saved(status: str, applied_date: datetime = None, *, extra: str = ""):
     suffix = extra if extra.startswith(",") or not extra else f", {extra}"
     if status == "applied":
@@ -225,6 +321,9 @@ def force_save_manual_job(
     rec = normalize_recommended_by(job.get("recommended_by"))
     if rec:
         jobs_set["recommended_by"] = rec
+    manual = [f for f in (job.get("manual_fields") or []) if f in IDENTITY_FIELDS]
+    if manual:
+        jobs_set["manual_fields"] = manual
 
     jobs_col.update_one(
         {"job_id": job_id, "source": source},
@@ -259,6 +358,8 @@ def force_save_manual_job(
         matched_data["manually_applied"] = True
     if rec:
         matched_data["recommended_by"] = rec
+    if manual:
+        matched_data["manual_fields"] = manual
 
     try:
         matched_col.update_one(
@@ -282,6 +383,7 @@ def handle_existing_tracker(
     status: str,
     applied_date,
     recommended_by=None,
+    identity=None,
 ) -> str:
     """skip | applied | already | missing — print a line the UI can count."""
     action = plan_manual_log_action(True, status, job_id)
@@ -295,8 +397,10 @@ def handle_existing_tracker(
                 f"  ✅ Marked existing Tracker job as applied "
                 f"(job_id={job_id}, applied_at={date_str})"
             )
+            stamp_manual_identity(job_id, source, identity)
             return "applied"
         if result == "already":
+            stamp_manual_identity(job_id, source, identity)
             print(
                 f"  ⚠️  Already on Tracker as an application: "
                 f"job_id={job_id} source={source} — skipping"
@@ -305,6 +409,7 @@ def handle_existing_tracker(
         print(f"  ⚠️  Tracker row vanished for job_id={job_id} — will save a new card")
         return "missing"
     stamp_recommended_by(job_id, source, recommended_by)
+    stamp_manual_identity(job_id, source, identity)
     print(
         f"  ⚠️  Already on Tracker (matched_jobs): "
         f"job_id={job_id} source={source} — skipping"
@@ -388,6 +493,10 @@ def save_link_only_urls(
     applied_date: datetime = None,
     status: str = "pending",
     recommended_by=None,
+    identity=None,
+    title=None,
+    company=None,
+    location=None,
 ):
     """
     Save job URLs to the Tracker without opening a browser or running AI.
@@ -397,6 +506,7 @@ def save_link_only_urls(
     if status not in ("pending", "applied"):
         status = "pending"
     rec = normalize_recommended_by(recommended_by)
+    identity = identity or normalize_manual_identity(title, company, location)
 
     if not urls:
         print("No URLs provided.")
@@ -423,7 +533,8 @@ def save_link_only_urls(
             continue
         if is_job_on_tracker(job_id, source):
             outcome = handle_existing_tracker(
-                url, job_id, source, status, applied_date, recommended_by=rec
+                url, job_id, source, status, applied_date,
+                recommended_by=rec, identity=identity,
             )
             if outcome == "applied":
                 results["ok"].append(url)
@@ -439,6 +550,7 @@ def save_link_only_urls(
             continue
         if rec:
             job["recommended_by"] = rec
+        apply_identity_to_job(job, identity)
         ok = save_job_record(
             job, analysis, status, applied_date, ai_pending=True, extra="link-only"
         )
