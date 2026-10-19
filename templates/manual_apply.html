@@ -35,8 +35,19 @@
       height: 56px;
       display: flex; align-items: center; justify-content: space-between;
     }
-    .logo { font-size: 1.1rem; font-weight: 700; letter-spacing: .03em; color: var(--accent); text-decoration: none; }
-    .header-actions { display: flex; align-items: center; gap: 10px; }
+    .logo { font-size: 1.1rem; font-weight: 700; letter-spacing: .03em; color: var(--accent); text-decoration: none; flex-shrink: 0; }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      overflow-y: hidden;
+      min-width: 0;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .header-actions::-webkit-scrollbar { display: none; }
     .nav-btn {
       display: inline-flex; align-items: center; gap: 6px;
       background: var(--surface);
@@ -46,8 +57,12 @@
       padding: 6px 14px;
       font-size: .82rem;
       font-weight: 600;
+      font-family: inherit;
+      line-height: 1.2;
       text-decoration: none;
       cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
       transition: border-color .15s, color .15s;
     }
     .nav-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -237,26 +252,43 @@
 
     /* ── Mobile Responsive Styles ───────────────────────────────────── */
     @media (max-width: 768px) {
+      /* Same single-row scroll as Matched header-actions */
       header {
-        padding: 8px 12px;
-        flex-wrap: wrap;
+        padding: 12px;
+        height: auto;
+        min-height: 56px;
+        flex-direction: column;
+        align-items: flex-start;
         gap: 8px;
       }
       
       .logo {
         font-size: 1rem;
+        width: 100%;
+        padding-bottom: 8px;
+        border-bottom: 1px solid var(--border);
       }
       
       .header-actions {
         width: 100%;
-        gap: 6px;
-        flex-wrap: wrap;
+        display: flex;
+        flex-direction: row;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        overflow-y: hidden;
+        gap: 8px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
       }
       
+      .header-actions::-webkit-scrollbar { display: none; }
+      
       .nav-btn {
-        padding: 6px 10px;
-        font-size: 0.75rem;
-        flex: 1;
+        padding: 8px 16px;
+        font-size: 0.8rem;
+        flex: 0 0 auto;
+        flex-shrink: 0;
+        white-space: nowrap;
       }
 
       .page {
@@ -328,6 +360,8 @@
       .nav-btn {
         font-size: 0.7rem;
         padding: 5px 8px;
+        white-space: nowrap;
+        flex-shrink: 0;
       }
     }
   </style>

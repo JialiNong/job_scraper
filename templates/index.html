@@ -44,9 +44,21 @@
       height: 56px;
       display: flex; align-items: center; justify-content: space-between;
     }
-    .logo { font-size: 1.1rem; font-weight: 700; letter-spacing: .03em; color: var(--accent); text-decoration: none; }
-    .header-actions { display: flex; align-items: center; gap: 10px; }
-    .nav-btn {
+    .logo { font-size: 1.1rem; font-weight: 700; letter-spacing: .03em; color: var(--accent); text-decoration: none; flex-shrink: 0; }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      overflow-y: hidden;
+      min-width: 0;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .header-actions::-webkit-scrollbar { display: none; }
+    .nav-btn,
+    .header-actions .btn-save {
       display: inline-flex; align-items: center; gap: 6px;
       background: var(--surface);
       border: 1px solid var(--border);
@@ -55,11 +67,18 @@
       padding: 6px 14px;
       font-size: .82rem;
       font-weight: 600;
+      font-family: inherit;
+      line-height: 1.2;
       text-decoration: none;
       cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      align-self: center;
+      box-sizing: border-box;
       transition: border-color .15s, color .15s;
     }
-    .nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+    .nav-btn:hover,
+    .header-actions .btn-save:hover { border-color: var(--accent); color: var(--accent); }
     .nav-btn b { color: var(--muted); font-weight: 600; }
 
     /* ── Stats bar ────────────────────────────────────────────────── */
@@ -1926,6 +1945,7 @@
         white-space: nowrap;
         display: inline-flex;
         align-items: center;
+        align-self: center;
       }
       
       .nav-btn b {
@@ -2231,9 +2251,12 @@
         font-size: 0.95rem;
       }
       
-      .nav-btn {
+      .nav-btn,
+      .header-actions .btn-save {
         font-size: 0.7rem;
         padding: 5px 8px;
+        white-space: nowrap;
+        flex-shrink: 0;
       }
       
       .card-title {
