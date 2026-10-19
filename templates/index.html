@@ -1497,22 +1497,27 @@
     }
     .card-select-wrap {
       position: absolute;
-      z-index: 4;
+      z-index: 6;
       left: 10px;
       top: 16px;
-      display: flex; align-items: center;
-      padding: 4px;
+      display: flex; align-items: center; justify-content: center;
+      width: 28px; height: 28px;
+      padding: 0;
     }
     .card-select-wrap input {
-      width: 16px; height: 16px;
+      width: 18px; height: 18px;
       accent-color: #8b5cf6;
       cursor: pointer;
+      flex-shrink: 0;
     }
     .card.has-fetch-select { padding-left: 44px; }
     .card.fetch-selected { border-color: #8b5cf6; }
-    .job-grid.layout-compact .card.has-fetch-select { padding-left: 0; }
-    .job-grid.layout-compact .card-select-wrap { top: 14px; left: 8px; }
-    .job-grid.layout-compact .card.has-fetch-select .card-row { padding-left: 34px; }
+    .job-grid.layout-compact .card.has-fetch-select {
+      padding-left: 0;
+      overflow: visible;
+    }
+    .job-grid.layout-compact .card-select-wrap { top: 12px; left: 6px; }
+    .job-grid.layout-compact .card.has-fetch-select .card-row { padding-left: 36px; }
 
     /* Application progress timeline */
     .progress-wrap {
@@ -2561,9 +2566,9 @@
 </div>
 
 <div class="batch-fetch-bar" id="batchFetchBar">
-  <span class="batch-fetch-label">Agent-recommended</span>
-  <button type="button" class="batch-fetch-btn" id="selectVisibleBtn" onclick="selectVisibleRecommended()" title="Select agent-recommended cards on this page">Select visible</button>
-  <button type="button" class="batch-fetch-btn" id="selectMissingBtn" onclick="selectMissingDetails()" title="Select agent-recommended jobs that still need details (all pages, current filters)">Select missing details</button>
+  <span class="batch-fetch-label">Fetch details</span>
+  <button type="button" class="batch-fetch-btn" id="selectVisibleBtn" onclick="selectVisibleRecommended()" title="Select missing-detail / fetchable cards on this page">Select visible</button>
+  <button type="button" class="batch-fetch-btn" id="selectMissingBtn" onclick="selectMissingDetails()" title="Select jobs that still need details (all pages, current filters — including Applied)">Select missing details</button>
   <button type="button" class="batch-fetch-btn" id="clearFetchSelectBtn" onclick="clearFetchSelection()">Clear selection</button>
   <button type="button" class="btn-fetch-details" id="fetchSelectedBtn" onclick="fetchDetailsForSelected()" disabled>📥 Fetch details for selected</button>
   <span class="batch-fetch-meta" id="batchFetchMeta">0 selected</span>
@@ -3405,6 +3410,22 @@ function needsAiHint(job) {
   return Boolean(job.ai_pending) || !hasAiScore(job) || !job.summary;
 }
 
+function isMissingDetails(job) {
+  if (!job) return false;
+  if (job.details_missing) return true;
+  const title = String(job.title || '');
+  if (title.startsWith('(Link only)')) return true;
+  if (job.ai_pending && !job.details_fetched_at) return true;
+  return false;
+}
+
+function canFetchDetails(job) {
+  const recKey = String((job && job.recommended_by) || '').toLowerCase();
+  return isMissingDetails(job)
+    || Boolean(job && job.can_fetch_details)
+    || Boolean(RECOMMENDED_BY_LABEL[recKey]);
+}
+
 function formatScoreBadge(job) {
   if (!hasAiScore(job)) return '—';
   return Number(job.match_score).toFixed(1);
@@ -3510,8 +3531,8 @@ function renderCard(job) {
   const runAiLabel = aiHint ? '🤖 Run AI' : '🤖 Re-run AI';
   const recBadge = recommendedByBadge(job);
   const recKey = String(job.recommended_by || '').toLowerCase();
-  const canFetch = Boolean(RECOMMENDED_BY_LABEL[recKey]);
-  const missing = Boolean(job.details_missing);
+  const missing = isMissingDetails(job);
+  const canFetch = canFetchDetails(job);
   const fetchBtn = canFetch ? `
         <button type="button" class="btn-fetch-details" data-id="${job._id}"
                 onclick="event.stopPropagation(); fetchJobDetails('${job._id}', this)"

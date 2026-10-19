@@ -45,7 +45,7 @@ from core.manual_log import (
     IDENTITY_FIELDS,
     PLAYWRIGHT_UNAVAILABLE_MSG,
     RECOMMENDED_BY_AGENTS,
-    is_agent_recommended,
+    can_fetch_details,
     job_missing_details,
     normalize_manual_identity,
     normalize_recommended_by,
@@ -523,7 +523,8 @@ def _serialize(job: dict) -> dict:
     job.setdefault("status", "pending")
     rec = normalize_recommended_by(job.get("recommended_by"))
     job["recommended_by"] = rec
-    job["details_missing"] = bool(rec) and job_missing_details(job)
+    job["details_missing"] = job_missing_details(job)
+    job["can_fetch_details"] = can_fetch_details(job)
     raw_manual = job.get("manual_fields")
     if isinstance(raw_manual, list):
         job["manual_fields"] = [
@@ -1791,13 +1792,13 @@ def run_fetch_details_batch_jobs(docs: list, fetch_one=None) -> dict:
         _fetch_batch_state["current"] = i
         title = doc.get("title") or doc.get("job_id") or "job"
         job_key = str(doc.get("_id") or doc.get("job_id") or i)
-        if not is_agent_recommended(doc):
+        if not can_fetch_details(doc):
             skipped += 1
             entry = {
                 "id": job_key,
                 "title": title,
                 "ok": False,
-                "error": "Fetch details is only for jobs recommended by an AI agent",
+                "error": "This card already has job details",
             }
             results.append(entry)
             _fetch_batch_state["skip_count"] = skipped
@@ -1841,11 +1842,38 @@ def run_fetch_details_batch_jobs(docs: list, fetch_one=None) -> dict:
     }
 
 
+def _missing_details_mongo_clause() -> dict:
+    """Link-only / empty-JD stubs, including jobs logged before recommended_by."""
+    return {
+        "$or": [
+            {"title": {"$regex": r"^\(Link only\)"}},
+            {"ai_pending": True, "details_fetched_at": {"$exists": False}},
+            {
+                "details_fetched_at": {"$exists": False},
+                "$or": [
+                    {"summary": {"$exists": False}},
+                    {"summary": {"$in": [None, ""]}},
+                ],
+            },
+        ]
+    }
+
+
 def collect_fetch_detail_targets(query: dict, *, missing_only: bool = False, limit: int = FETCH_DETAILS_BATCH_MAX) -> list:
-    """Agent-recommended Tracker rows matching the list filters, newest first."""
+    """Tracker rows that can Fetch details, matching the list filters, newest first."""
     collection = get_collection("matched_jobs")
-    rec_clause = {"recommended_by": {"$in": list(RECOMMENDED_BY_AGENTS)}}
-    full_query = combine_job_list_query([query, rec_clause])
+    missing_clause = _missing_details_mongo_clause()
+    fetch_clause = (
+        missing_clause
+        if missing_only
+        else {
+            "$or": [
+                {"recommended_by": {"$in": list(RECOMMENDED_BY_AGENTS)}},
+                missing_clause,
+            ]
+        }
+    )
+    full_query = combine_job_list_query([query, fetch_clause])
     cap = max(1, min(int(limit or FETCH_DETAILS_BATCH_MAX), FETCH_DETAILS_BATCH_MAX))
     docs = list(
         collection.find(full_query, JOBS_LIST_PROJECTION)
@@ -1938,16 +1966,14 @@ def api_job_run_ai(job_id: str):
 
 def run_fetch_job_details(doc: dict) -> tuple:
     """
-    Fetch scraped job fields for an agent-recommended Tracker card.
-
-    Lazy-imports the scraper so Render (no Playwright) never crashes at
-    import time. Returns (payload, http_status).
+    Fetch scraped job fields for a Tracker card that still needs a JD
+    (or is agent-tagged). Lazy-imports the scraper so Render never
+    crashes at import time. Returns (payload, http_status).
     """
-    rec = normalize_recommended_by(doc.get("recommended_by"))
-    if not rec:
+    if not can_fetch_details(doc):
         return {
             "ok": False,
-            "error": "Fetch details is only for jobs recommended by an AI agent",
+            "error": "This card already has job details",
         }, 400
     try:
         from scrapers.manual_apply_scraper import fetch_job_details_for_matched_job
@@ -1970,9 +1996,9 @@ def run_fetch_job_details(doc: dict) -> tuple:
 @login_required
 def api_job_fetch_details(job_id: str):
     """
-    Scrape title/company/location/description for a recommended_by job.
-    Does not run AI. Requires debug Chrome locally; on Render returns a
-    friendly Playwright-missing error.
+    Scrape title/company/location/description for a missing-details (or
+    agent-tagged) Tracker job. Does not run AI. Requires debug Chrome
+    locally; on Render returns a friendly Playwright-missing error.
     """
     try:
         oid = ObjectId(job_id)
@@ -1995,10 +2021,10 @@ def api_job_fetch_details(job_id: str):
 @login_required
 def api_fetch_details_ids():
     """
-    IDs of agent-recommended Tracker cards for the current list filters.
+    IDs of Tracker cards that can Fetch details for the current list filters.
 
-    ?missing=1 limits to cards that still look like link-only stubs.
-    Used by 'Select missing details' so the batch can span pages.
+    ?missing=1 limits to link-only / empty-JD stubs (including jobs
+    logged before recommended_by existed). Used by Select missing details.
     """
     missing = (request.args.get("missing") or "").strip().lower() in ("1", "true", "yes")
     query = _jobs_list_query_from_args(request.args)

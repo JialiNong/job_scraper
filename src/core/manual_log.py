@@ -66,11 +66,11 @@ def is_agent_recommended(job: dict | None) -> bool:
 
 def job_missing_details(job: dict | None) -> bool:
     """
-    True when an agent-recommended card likely has no scraped JD yet.
+    True when a Tracker card likely has no scraped JD yet.
 
-    Link-only stubs use a '(Link only)' title and empty description.
-    List payloads omit `description`, so we also treat ai_pending / no
-    summary / no details_fetched_at as missing.
+    Does not require recommended_by — older Save Link Only stubs were
+    stored before that field existed. Link-only titles, empty description,
+    ai_pending, or no summary / details_fetched_at all count as missing.
     """
     job = job or {}
     title = str(job.get("title") or "").strip()
@@ -83,6 +83,11 @@ def job_missing_details(job: dict | None) -> bool:
     if job.get("ai_pending"):
         return True
     return not str(job.get("summary") or "").strip()
+
+
+def can_fetch_details(job: dict | None) -> bool:
+    """Show Fetch details / batch checkbox: missing JD, or agent-tagged."""
+    return job_missing_details(job) or is_agent_recommended(job)
 
 
 def _clean_identity_text(value, field: str) -> str:
