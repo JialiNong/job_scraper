@@ -54,6 +54,27 @@ def _agent_job(**overrides):
     return job
 
 
+def _save_link_only_stub(**overrides):
+    """Realistic pre-recommended_by Save Link Only row (Applied, URL + jk only)."""
+    job = {
+        "_id": "bbbbbbbbbbbbbbbbbbbbbbbb",
+        "job_id": JOB_KEY,
+        "source": "indeed",
+        "link": USER_URL,
+        "title": f"(Link only) Indeed {JOB_KEY}",
+        "company": "",
+        "location": "",
+        "status": "applied",
+        "applied_at": APPLIED_AT,
+        "application_timeline": [{"step": "applied", "at": APPLIED_AT}],
+        "notes": "",
+        "ai_pending": True,
+        "match_score": None,
+    }
+    job.update(overrides)
+    return job
+
+
 class JobMissingDetailsTests(unittest.TestCase):
     def test_link_only_title_is_missing(self):
         self.assertTrue(ml.job_missing_details(_agent_job()))
@@ -79,12 +100,29 @@ class JobMissingDetailsTests(unittest.TestCase):
         }
         self.assertTrue(ml.job_missing_details(job))
 
-    def test_non_agent_serialize_is_not_missing(self):
-        job = _agent_job(recommended_by="", title="Normal match", summary="hi")
+    def test_non_agent_complete_job_is_not_missing(self):
+        job = _agent_job(
+            recommended_by="",
+            title="Normal match",
+            summary="hi",
+            ai_pending=False,
+        )
         job.pop("description", None)
         serialized = _serialize(job)
         self.assertEqual(serialized["recommended_by"], "")
         self.assertFalse(serialized["details_missing"])
+        self.assertFalse(serialized["can_fetch_details"])
+
+    def test_untagged_save_link_only_stub_is_fetchable(self):
+        stub = _save_link_only_stub()
+        self.assertTrue(ml.job_missing_details(stub))
+        self.assertTrue(ml.can_fetch_details(stub))
+        serialized = _serialize(dict(stub))
+        self.assertEqual(serialized["recommended_by"], "")
+        self.assertTrue(serialized["details_missing"])
+        self.assertTrue(serialized["can_fetch_details"])
+        self.assertEqual(serialized["status"], "applied")
+        self.assertTrue(serialized["ai_pending"])
 
 
 class GuardPlaywrightTests(unittest.TestCase):
@@ -107,7 +145,7 @@ class GuardPlaywrightTests(unittest.TestCase):
 
 
 class BatchRunTests(unittest.TestCase):
-    def test_continues_after_one_failure_and_skips_non_agent(self):
+    def test_continues_after_one_failure_and_fetches_untagged_stubs(self):
         calls = []
 
         def fake_fetch(doc):
@@ -116,11 +154,21 @@ class BatchRunTests(unittest.TestCase):
                 return {"ok": False, "error": "Scraping failed"}, 502
             return {"ok": True, "title": doc["title"], "error": None}, 200
 
+        complete = _agent_job(
+            _id="3",
+            job_id="c",
+            title="Complete match",
+            recommended_by="",
+            ai_pending=False,
+            summary="Has AI",
+            description="Full JD",
+            details_fetched_at=datetime(2026, 10, 1),
+        )
         docs = [
             _agent_job(_id="1", job_id="a", title="Job A"),
             _agent_job(_id="2", job_id="b", title="Job B"),
-            _agent_job(_id="3", job_id="c", title="Job C", recommended_by=""),
-            _agent_job(_id="4", job_id="d", title="Job D"),
+            complete,
+            _save_link_only_stub(_id="4", job_id="d", recommended_by=""),
         ]
         summary = run_fetch_details_batch_jobs(docs, fetch_one=fake_fetch)
 
@@ -131,7 +179,7 @@ class BatchRunTests(unittest.TestCase):
         self.assertEqual(len(summary["results"]), 4)
         self.assertTrue(summary["results"][0]["ok"])
         self.assertFalse(summary["results"][1]["ok"])
-        self.assertIn("recommended", summary["results"][2]["error"].lower())
+        self.assertIn("already has job details", summary["results"][2]["error"].lower())
         self.assertTrue(summary["results"][3]["ok"])
 
     def test_does_not_call_ai(self):
@@ -159,6 +207,11 @@ class TrackerUiContractTests(unittest.TestCase):
         self.assertIn("/api/fetch-details/batch", HTML)
         self.assertIn("/api/fetch-details/ids", HTML)
         self.assertIn('class="card-select"', HTML)
+        self.assertIn("function canFetchDetails(", HTML)
+        self.assertIn("function isMissingDetails(", HTML)
+        self.assertIn("(Link only)", HTML)
+        self.assertIn("Fetch details", HTML)
+        self.assertNotIn("Agent-recommended", HTML)
         self.assertIn("Notification.requestPermission", HTML)
         self.assertRegex(HTML, r"white-space:\s*nowrap")
 

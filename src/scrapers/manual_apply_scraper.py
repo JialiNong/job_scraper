@@ -68,6 +68,7 @@ from core.manual_log import (
     analysis_fields,
     apply_identity_to_job,
     apply_scraped_details,
+    can_fetch_details,
     force_save_manual_job,
     handle_existing_tracker,
     keep_manual_identity,
@@ -830,16 +831,17 @@ def _tracker_job_url(matched_doc: dict) -> str:
 
 def fetch_job_details_for_matched_job(matched_doc: dict) -> dict:
     """
-    Scrape title/company/location/description for an agent-recommended job.
+    Scrape title/company/location/description for a Tracker job.
 
+    Allowed for link-only / missing-details stubs (including jobs logged
+    before recommended_by existed) and for agent-tagged cards.
     Lazy Playwright. Does not run AI matching. Does not overwrite status,
     applied_at, timeline, notes, or recommended_by.
     """
-    rec = normalize_recommended_by(matched_doc.get("recommended_by"))
-    if not rec:
+    if not can_fetch_details(matched_doc):
         return {
             "ok": False,
-            "error": "Fetch details is only for jobs recommended by an AI agent",
+            "error": "This card already has job details",
         }
 
     url = _tracker_job_url(matched_doc)

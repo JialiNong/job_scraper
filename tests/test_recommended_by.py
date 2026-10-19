@@ -211,13 +211,34 @@ class FetchDetailsTests(unittest.TestCase):
         ai.assert_not_called()
         save.assert_called_once()
 
-    def test_fetch_rejects_jobs_without_recommended_by(self):
+    def test_fetch_allows_untagged_link_only_stub(self):
         import scrapers.manual_apply_scraper as mas
 
-        with patch.object(mas, "_load_playwright") as load_pw:
-            result = mas.fetch_job_details_for_matched_job(_agent_job(recommended_by=""))
+        stub = _agent_job(recommended_by="")
+        with patch.object(
+            mas, "_load_playwright", side_effect=ImportError("No module named 'playwright'")
+        ) as load_pw:
+            result = mas.fetch_job_details_for_matched_job(stub)
         self.assertFalse(result["ok"])
-        self.assertIn("recommended", result["error"].lower())
+        self.assertEqual(result["error"], PLAYWRIGHT_UNAVAILABLE_MSG)
+        load_pw.assert_called()
+
+    def test_fetch_rejects_complete_job_without_missing_details(self):
+        import scrapers.manual_apply_scraper as mas
+
+        complete = _agent_job(
+            recommended_by="",
+            title="Backend Engineer",
+            company="Acme",
+            description="A full JD",
+            summary="Matched",
+            ai_pending=False,
+            details_fetched_at=datetime(2026, 10, 1),
+        )
+        with patch.object(mas, "_load_playwright") as load_pw:
+            result = mas.fetch_job_details_for_matched_job(complete)
+        self.assertFalse(result["ok"])
+        self.assertIn("already has job details", result["error"].lower())
         load_pw.assert_not_called()
 
     def test_web_helper_returns_friendly_error_when_scraper_import_fails(self):
@@ -228,8 +249,17 @@ class FetchDetailsTests(unittest.TestCase):
         self.assertFalse(payload["ok"])
         self.assertEqual(payload["error"], PLAYWRIGHT_UNAVAILABLE_MSG)
 
-    def test_web_helper_rejects_non_agent_jobs(self):
-        payload, code = run_fetch_job_details(_agent_job(recommended_by=""))
+    def test_web_helper_rejects_complete_non_missing_jobs(self):
+        complete = _agent_job(
+            recommended_by="",
+            title="Backend Engineer",
+            company="Acme",
+            description="A full JD",
+            summary="Matched",
+            ai_pending=False,
+            details_fetched_at=datetime(2026, 10, 1),
+        )
+        payload, code = run_fetch_job_details(complete)
         self.assertEqual(code, 400)
         self.assertFalse(payload["ok"])
 
