@@ -1417,6 +1417,103 @@
     .btn-fetch-details:hover { border-color: #a78bfa; color: #c4b5fd; }
     .btn-fetch-details:disabled { opacity: .45; pointer-events: none; }
 
+    /* ── Batch Fetch details ─────────────────────────────────────── */
+    .batch-fetch-bar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      overflow-y: hidden;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .batch-fetch-bar::-webkit-scrollbar { display: none; }
+    .batch-fetch-label {
+      font-size: .78rem; font-weight: 700; color: #c4b5fd;
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .batch-fetch-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      padding: 6px 12px;
+      font-size: .78rem;
+      font-weight: 600;
+      font-family: inherit;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .batch-fetch-btn:hover { border-color: #a78bfa; color: #c4b5fd; }
+    .batch-fetch-btn:disabled { opacity: .45; pointer-events: none; }
+    .batch-fetch-bar .btn-fetch-details {
+      padding: 6px 12px;
+      font-size: .78rem;
+      flex-shrink: 0;
+    }
+    .batch-fetch-meta {
+      color: var(--muted);
+      font-size: .78rem;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .batch-fetch-progress {
+      margin: 10px 24px 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: .82rem;
+    }
+    .batch-fetch-progress[hidden] { display: none !important; }
+    .batch-fetch-progress .bf-head {
+      display: flex; justify-content: space-between; gap: 12px;
+      font-weight: 700; margin-bottom: 8px;
+    }
+    .batch-fetch-progress .bf-list {
+      display: flex; flex-direction: column; gap: 4px;
+      max-height: 160px; overflow-y: auto;
+      color: var(--muted); font-size: .78rem;
+    }
+    .batch-fetch-progress .bf-ok { color: #22c55e; }
+    .batch-fetch-progress .bf-err { color: #ef4444; }
+    .batch-fetch-banner {
+      margin: 10px 24px 0;
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: .85rem;
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .batch-fetch-banner[hidden] { display: none !important; }
+    .batch-fetch-banner.ok { background: #0e2e1a; border: 1px solid #22c55e; color: #86efac; }
+    .batch-fetch-banner.err { background: #2e0e0e; border: 1px solid #ef4444; color: #fca5a5; }
+    .batch-fetch-banner button {
+      background: transparent; border: 1px solid currentColor;
+      color: inherit; border-radius: 6px; padding: 2px 8px;
+      cursor: pointer; font-size: .75rem;
+    }
+    .card-select-wrap {
+      position: absolute;
+      z-index: 4;
+      left: 10px;
+      top: 16px;
+      display: flex; align-items: center;
+      padding: 4px;
+    }
+    .card-select-wrap input {
+      width: 16px; height: 16px;
+      accent-color: #8b5cf6;
+      cursor: pointer;
+    }
+    .card.has-fetch-select { padding-left: 44px; }
+    .card.fetch-selected { border-color: #8b5cf6; }
+    .job-grid.layout-compact .card.has-fetch-select { padding-left: 0; }
+    .job-grid.layout-compact .card-select-wrap { top: 14px; left: 8px; }
+    .job-grid.layout-compact .card.has-fetch-select .card-row { padding-left: 34px; }
+
     /* Application progress timeline */
     .progress-wrap {
       display: flex;
@@ -1953,6 +2050,14 @@
         white-space: nowrap;
       }
 
+      .batch-fetch-bar {
+        padding: 8px 12px;
+      }
+      .batch-fetch-progress,
+      .batch-fetch-banner {
+        margin: 10px 12px 0;
+      }
+
       /* Stats bar - stack on mobile */
       .stats-bar {
         padding: 12px;
@@ -2455,6 +2560,17 @@
   <span class="count-label" id="countLabel"></span>
 </div>
 
+<div class="batch-fetch-bar" id="batchFetchBar">
+  <span class="batch-fetch-label">Agent-recommended</span>
+  <button type="button" class="batch-fetch-btn" id="selectVisibleBtn" onclick="selectVisibleRecommended()" title="Select agent-recommended cards on this page">Select visible</button>
+  <button type="button" class="batch-fetch-btn" id="selectMissingBtn" onclick="selectMissingDetails()" title="Select agent-recommended jobs that still need details (all pages, current filters)">Select missing details</button>
+  <button type="button" class="batch-fetch-btn" id="clearFetchSelectBtn" onclick="clearFetchSelection()">Clear selection</button>
+  <button type="button" class="btn-fetch-details" id="fetchSelectedBtn" onclick="fetchDetailsForSelected()" disabled>📥 Fetch details for selected</button>
+  <span class="batch-fetch-meta" id="batchFetchMeta">0 selected</span>
+</div>
+<div class="batch-fetch-banner" id="batchFetchBanner" hidden></div>
+<div class="batch-fetch-progress" id="batchFetchProgress" hidden></div>
+
 <!-- ── Job grid ────────────────────────────────────────────────────── -->
 <div class="job-grid" id="jobGrid">
   <div class="spinner"></div>
@@ -2508,6 +2624,9 @@ const RECOMMENDED_BY_LABEL = {
   gemini: 'Gemini',
   gpt: 'GPT',
 };
+const selectedFetchIds = new Set();
+let fetchBatchPollTimer = null;
+let fetchBatchRunning = false;
 
 const TIMELINE_LABEL = {
   applied:          'Applied',
@@ -2549,11 +2668,11 @@ function toggleCardExpand(rowEl) {
 }
 
 /* ── Toast ───────────────────────────────────────────────────────── */
-function showToast(msg, type = 'ok') {
+function showToast(msg, type = 'ok', ms = 2500) {
   const t = document.getElementById('toast');
   t.textContent = msg;
   t.className = `toast ${type} show`;
-  setTimeout(() => { t.className = 'toast'; }, 2500);
+  setTimeout(() => { t.className = 'toast'; }, ms);
 }
 
 /* ── Stats bar + funnel ──────────────────────────────────────────── */
@@ -3391,18 +3510,32 @@ function renderCard(job) {
   const runAiLabel = aiHint ? '🤖 Run AI' : '🤖 Re-run AI';
   const recBadge = recommendedByBadge(job);
   const recKey = String(job.recommended_by || '').toLowerCase();
-  const fetchBtn = RECOMMENDED_BY_LABEL[recKey] ? `
+  const canFetch = Boolean(RECOMMENDED_BY_LABEL[recKey]);
+  const missing = Boolean(job.details_missing);
+  const fetchBtn = canFetch ? `
         <button type="button" class="btn-fetch-details" data-id="${job._id}"
                 onclick="event.stopPropagation(); fetchJobDetails('${job._id}', this)"
                 title="Scrape title, company, location, and description (no AI matching)">
           📥 Fetch job details
         </button>` : '';
+  const selectBox = canFetch ? `
+    <label class="card-select-wrap" onclick="event.stopPropagation()" title="Select for batch Fetch details">
+      <input type="checkbox" class="card-select" data-id="${job._id}"
+             data-missing="${missing ? '1' : '0'}"
+             ${selectedFetchIds.has(job._id) ? 'checked' : ''}
+             ${fetchBatchRunning ? 'disabled' : ''}
+             onchange="onCardFetchSelect(this)" />
+    </label>` : '';
 
   const card = document.createElement('div');
-  card.className = 'card' + (highlights.length ? ' has-highlights' : '');
+  card.className = 'card'
+    + (highlights.length ? ' has-highlights' : '')
+    + (canFetch ? ' has-fetch-select' : '')
+    + (canFetch && selectedFetchIds.has(job._id) ? ' fetch-selected' : '');
   card.id = `card-${job._id}`;
 
   card.innerHTML = `
+    ${selectBox}
     <div class="card-row" onclick="toggleCardExpand(this)">
       <span class="row-chevron">▸</span>
       <div class="row-main">
@@ -3693,11 +3826,22 @@ async function loadJobDescription(detailsEl) {
   }
 }
 
-async function loadJobs() {
-  const grid   = document.getElementById('jobGrid');
+function currentJobListParams() {
+  const params = new URLSearchParams();
   const search = document.getElementById('searchInput').value.trim();
   const source = document.getElementById('sourceFilter').value;
   const dates  = currentDateRange();
+  if (currentStatusFilter !== 'all') params.set('status', currentStatusFilter);
+  if (highlightsOnly) params.set('highlights', 'true');
+  if (source !== 'all') params.set('source', source);
+  if (search) params.set('q', search);
+  if (dates.from) params.set('date_from', dates.from);
+  if (dates.to)   params.set('date_to',   dates.to);
+  return params;
+}
+
+async function loadJobs() {
+  const grid   = document.getElementById('jobGrid');
 
   if (jobsAbortController) jobsAbortController.abort();
   jobsAbortController = new AbortController();
@@ -3707,13 +3851,7 @@ async function loadJobs() {
   grid.classList.toggle('layout-compact', currentLayout === 'compact');
   grid.classList.toggle('layout-cards', currentLayout === 'cards');
 
-  const params = new URLSearchParams();
-  if (currentStatusFilter !== 'all') params.set('status', currentStatusFilter);
-  if (highlightsOnly) params.set('highlights', 'true');
-  if (source !== 'all') params.set('source', source);
-  if (search) params.set('q', search);
-  if (dates.from) params.set('date_from', dates.from);
-  if (dates.to)   params.set('date_to',   dates.to);
+  const params = currentJobListParams();
   params.set('page', currentPage);
   params.set('page_size', PAGE_SIZE);
 
@@ -3768,6 +3906,7 @@ async function loadJobs() {
     });
     
     updatePagination();
+    updateBatchFetchUI();
     await focusOpenJobFromQuery();
   } catch (err) {
     if (err.name === 'AbortError') return;
@@ -4075,8 +4214,201 @@ async function updateSideStatus(select) {
 }
 
 /* ── Fetch job details (scrape only, no AI — agent-recommended cards) ─ */
+function onCardFetchSelect(input) {
+  const id = input.dataset.id;
+  if (!id) return;
+  if (input.checked) selectedFetchIds.add(id);
+  else selectedFetchIds.delete(id);
+  const card = document.getElementById(`card-${id}`);
+  if (card) card.classList.toggle('fetch-selected', input.checked);
+  updateBatchFetchUI();
+}
+
+function updateBatchFetchUI() {
+  const meta = document.getElementById('batchFetchMeta');
+  const fetchBtn = document.getElementById('fetchSelectedBtn');
+  const count = selectedFetchIds.size;
+  if (meta) {
+    meta.textContent = fetchBatchRunning
+      ? `${count} selected · fetching…`
+      : `${count} selected`;
+  }
+  if (fetchBtn) fetchBtn.disabled = fetchBatchRunning || count === 0;
+  document.querySelectorAll('.batch-fetch-btn').forEach(btn => {
+    btn.disabled = fetchBatchRunning;
+  });
+  document.querySelectorAll('.card-select, .btn-fetch-details').forEach(el => {
+    if (el.id === 'fetchSelectedBtn') return;
+    el.disabled = fetchBatchRunning;
+  });
+}
+
+function selectVisibleRecommended() {
+  document.querySelectorAll('.card-select').forEach(input => {
+    input.checked = true;
+    selectedFetchIds.add(input.dataset.id);
+    const card = document.getElementById(`card-${input.dataset.id}`);
+    if (card) card.classList.add('fetch-selected');
+  });
+  updateBatchFetchUI();
+}
+
+async function selectMissingDetails() {
+  document.querySelectorAll('.card-select[data-missing="1"]').forEach(input => {
+    input.checked = true;
+    selectedFetchIds.add(input.dataset.id);
+    const card = document.getElementById(`card-${input.dataset.id}`);
+    if (card) card.classList.add('fetch-selected');
+  });
+  updateBatchFetchUI();
+  try {
+    const params = currentJobListParams();
+    params.set('missing', '1');
+    const res = await fetch('/api/fetch-details/ids?' + params.toString());
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      showToast('❌ ' + (data.error || 'Could not list missing-detail jobs'), 'err');
+      return;
+    }
+    (data.ids || []).forEach(id => selectedFetchIds.add(id));
+    document.querySelectorAll('.card-select').forEach(input => {
+      if (selectedFetchIds.has(input.dataset.id)) {
+        input.checked = true;
+        const card = document.getElementById(`card-${input.dataset.id}`);
+        if (card) card.classList.add('fetch-selected');
+      }
+    });
+    updateBatchFetchUI();
+    const extra = selectedFetchIds.size - document.querySelectorAll('.card-select:checked').length;
+    if (extra > 0) {
+      showToast(`📥 ${selectedFetchIds.size} missing-detail job(s) selected (${extra} on other pages)`);
+    }
+  } catch (err) {
+    showToast('❌ ' + (err.message || 'Could not list missing-detail jobs'), 'err');
+  }
+}
+
+function clearFetchSelection() {
+  selectedFetchIds.clear();
+  document.querySelectorAll('.card-select').forEach(input => { input.checked = false; });
+  document.querySelectorAll('.card.fetch-selected').forEach(c => c.classList.remove('fetch-selected'));
+  updateBatchFetchUI();
+}
+
+function hideBatchBanner() {
+  const el = document.getElementById('batchFetchBanner');
+  if (el) { el.hidden = true; el.innerHTML = ''; }
+}
+
+function showBatchBanner(msg, type = 'ok') {
+  const el = document.getElementById('batchFetchBanner');
+  if (!el) return;
+  el.hidden = false;
+  el.className = `batch-fetch-banner ${type}`;
+  el.innerHTML = `<span>${escHtml(msg)}</span><button type="button" onclick="hideBatchBanner()">Dismiss</button>`;
+}
+
+function renderBatchProgress(data) {
+  const el = document.getElementById('batchFetchProgress');
+  if (!el) return;
+  const total = data.total || 0;
+  const current = data.current || 0;
+  const done = data.done_count || 0;
+  const fail = data.fail_count || 0;
+  const running = Boolean(data.running);
+  const rows = (data.results || []).map(r => {
+    const cls = r.ok ? 'bf-ok' : 'bf-err';
+    const mark = r.ok ? '✅' : '❌';
+    const err = r.error ? ` — ${escHtml(r.error)}` : '';
+    return `<div class="${cls}">${mark} ${escHtml(r.title || r.id)}${err}</div>`;
+  }).join('');
+  const head = running
+    ? `Fetching details ${Math.min(current, total)}/${total}`
+    : `Batch done — ${done} saved, ${fail} failed`;
+  el.hidden = false;
+  el.innerHTML = `<div class="bf-head"><span>${head}</span><span>${done} ok · ${fail} failed</span></div><div class="bf-list">${rows || 'Starting…'}</div>`;
+}
+
+function notifyFetchBatchDone(body, type) {
+  showToast(body, type, 8000);
+  showBatchBanner(body, type);
+  try {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      new Notification('Fetch job details', { body });
+    }
+  } catch (_) {}
+}
+
+async function fetchDetailsForSelected() {
+  if (fetchBatchRunning || selectedFetchIds.size === 0) return;
+  const ids = Array.from(selectedFetchIds);
+  hideBatchBanner();
+  fetchBatchRunning = true;
+  updateBatchFetchUI();
+  showToast('📥 Fetching details for selected jobs — needs debug Chrome');
+  try {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  } catch (_) {}
+
+  try {
+    const res = await fetch('/api/fetch-details/batch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.ok === false) {
+      const err = data.error || 'Failed to start batch Fetch details';
+      notifyFetchBatchDone(err, 'err');
+      fetchBatchRunning = false;
+      updateBatchFetchUI();
+      return;
+    }
+    renderBatchProgress({ running: true, total: data.total || ids.length, current: 0, done_count: 0, fail_count: 0, results: [] });
+    pollFetchBatchStatus();
+  } catch (err) {
+    notifyFetchBatchDone(err.message || 'Network error', 'err');
+    fetchBatchRunning = false;
+    updateBatchFetchUI();
+  }
+}
+
+async function pollFetchBatchStatus() {
+  if (fetchBatchPollTimer) clearTimeout(fetchBatchPollTimer);
+  try {
+    const res = await fetch('/api/fetch-details/batch/status');
+    const data = await res.json();
+    renderBatchProgress(data);
+    if (data.running) {
+      fetchBatchPollTimer = setTimeout(pollFetchBatchStatus, 1200);
+      return;
+    }
+    fetchBatchRunning = false;
+    const done = data.done_count || 0;
+    const fail = data.fail_count || 0;
+    const skip = data.skip_count || 0;
+    const parts = [`${done} updated`];
+    if (fail) parts.push(`${fail} failed`);
+    if (skip) parts.push(`${skip} skipped`);
+    const type = fail || data.error ? 'err' : 'ok';
+    const extra = data.error ? ` — ${data.error}` : '';
+    notifyFetchBatchDone(`Fetch details finished — ${parts.join(', ')}${extra}`, type);
+    selectedFetchIds.clear();
+    updateBatchFetchUI();
+    await loadJobs();
+  } catch (err) {
+    fetchBatchPollTimer = setTimeout(pollFetchBatchStatus, 2000);
+  }
+}
+
 async function fetchJobDetails(jobId, btn) {
   if (!jobId || !btn) return;
+  if (fetchBatchRunning) {
+    showToast('Wait for the batch Fetch details to finish', 'err');
+    return;
+  }
   const originalLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = '⏳ Fetching…';
