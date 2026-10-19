@@ -48,6 +48,7 @@ DETAILS_PRESERVE_FIELDS = (
 
 IDENTITY_FIELDS = ("title", "company", "location")
 _IDENTITY_MAX_LEN = {"title": 200, "company": 160, "location": 200}
+LINK_ONLY_TITLE_PREFIX = "(Link only)"
 
 
 def normalize_recommended_by(value) -> str:
@@ -56,6 +57,32 @@ def normalize_recommended_by(value) -> str:
     if key in ("", "none", "null"):
         return ""
     return key if key in RECOMMENDED_BY_AGENTS else ""
+
+
+def is_agent_recommended(job: dict | None) -> bool:
+    """True when the Tracker card was tagged from Log Job (Claude/Cursor/Gemini/GPT)."""
+    return bool(normalize_recommended_by((job or {}).get("recommended_by")))
+
+
+def job_missing_details(job: dict | None) -> bool:
+    """
+    True when an agent-recommended card likely has no scraped JD yet.
+
+    Link-only stubs use a '(Link only)' title and empty description.
+    List payloads omit `description`, so we also treat ai_pending / no
+    summary / no details_fetched_at as missing.
+    """
+    job = job or {}
+    title = str(job.get("title") or "").strip()
+    if title.startswith(LINK_ONLY_TITLE_PREFIX):
+        return True
+    if job.get("details_fetched_at"):
+        return False
+    if "description" in job:
+        return not str(job.get("description") or "").strip()
+    if job.get("ai_pending"):
+        return True
+    return not str(job.get("summary") or "").strip()
 
 
 def _clean_identity_text(value, field: str) -> str:

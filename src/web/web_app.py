@@ -45,6 +45,8 @@ from core.manual_log import (
     IDENTITY_FIELDS,
     PLAYWRIGHT_UNAVAILABLE_MSG,
     RECOMMENDED_BY_AGENTS,
+    is_agent_recommended,
+    job_missing_details,
     normalize_manual_identity,
     normalize_recommended_by,
 )
@@ -195,6 +197,7 @@ UNMATCHED_PAGE_SIZE = 20
 # List payload omits full JD text (often multi-KB per job). Lazy-load via
 # GET /api/jobs/<id>/description when the user expands "Original description".
 JOBS_LIST_PROJECTION = {"description": 0}
+FETCH_DETAILS_BATCH_MAX = 80
 
 # Ensure indexes once at import (Flask reloader may import twice; ensure_indexes is idempotent)
 try:
@@ -477,7 +480,14 @@ def _normalize_link(job: dict) -> str:
 def _serialize(job: dict) -> dict:
     """Convert MongoDB document to JSON-serialisable dict."""
     job["_id"] = str(job["_id"])
-    for key in ("matched_at", "applied_at", "created_at", "updated_at", "description_cleared_at"):
+    for key in (
+        "matched_at",
+        "applied_at",
+        "created_at",
+        "updated_at",
+        "description_cleared_at",
+        "details_fetched_at",
+    ):
         if key in job and isinstance(job[key], datetime):
             job[key] = job[key].strftime("%Y-%m-%d %H:%M")
     # Normalise job link (fixes relative LinkedIn URLs)
@@ -513,6 +523,7 @@ def _serialize(job: dict) -> dict:
     job.setdefault("status", "pending")
     rec = normalize_recommended_by(job.get("recommended_by"))
     job["recommended_by"] = rec
+    job["details_missing"] = bool(rec) and job_missing_details(job)
     raw_manual = job.get("manual_fields")
     if isinstance(raw_manual, list):
         job["manual_fields"] = [
@@ -584,6 +595,39 @@ def timeouts():
     return render_template("timeouts.html")
 
 
+def _jobs_list_query_from_args(args) -> dict:
+    """Mongo query for Tracker list filters (status, source, search, dates, highlights)."""
+    status_filter = args.get("status")
+    source_filter = args.get("source")
+    search_query = (args.get("q") or "").strip()
+    date_from = (args.get("date_from") or "").strip() or None
+    date_to = (args.get("date_to") or "").strip() or None
+    highlights_filter = (args.get("highlights") or "").strip().lower()
+    clauses = [jobs_status_filter_query(status_filter)]
+    if source_filter and source_filter != "all":
+        clauses.append({"source": source_filter})
+    if highlights_filter in ("1", "true", "yes"):
+        clauses.append({"highlights.0": {"$exists": True}})
+    if search_query:
+        clauses.append({
+            "$or": [
+                {"title": {"$regex": search_query, "$options": "i"}},
+                {"company": {"$regex": search_query, "$options": "i"}},
+            ]
+        })
+    if date_from or date_to:
+        time_filter: dict = {}
+        start = _parse_filter_date(date_from)
+        end = _parse_filter_date(date_to, end_of_day=True)
+        if start:
+            time_filter["$gte"] = start
+        if end:
+            time_filter["$lte"] = end
+        if time_filter:
+            clauses.append({"matched_at": time_filter})
+    return combine_job_list_query(clauses)
+
+
 @app.route("/api/jobs")
 @login_required
 def api_jobs():
@@ -601,38 +645,7 @@ def api_jobs():
         page_size = 20
     page_size = max(1, min(page_size, 100))
 
-    # Optional filters from query-string
-    status_filter = request.args.get("status")      # e.g. ?status=pending
-    source_filter = request.args.get("source")      # e.g. ?source=linkedin
-    search_query  = request.args.get("q", "").strip()
-    date_from     = request.args.get("date_from", "").strip() or None
-    date_to       = request.args.get("date_to", "").strip() or None
-
-    highlights_filter = request.args.get("highlights", "").strip().lower()
-    clauses = [jobs_status_filter_query(status_filter)]
-    if source_filter and source_filter != "all":
-        clauses.append({"source": source_filter})
-    # Filter by manual UI highlights (not AI special_match)
-    if highlights_filter in ("1", "true", "yes"):
-        clauses.append({"highlights.0": {"$exists": True}})
-    if search_query:
-        clauses.append({
-            "$or": [
-                {"title":   {"$regex": search_query, "$options": "i"}},
-                {"company": {"$regex": search_query, "$options": "i"}},
-            ]
-        })
-    if date_from or date_to:
-        time_filter: dict = {}
-        start = _parse_filter_date(date_from)
-        end   = _parse_filter_date(date_to, end_of_day=True)
-        if start:
-            time_filter["$gte"] = start
-        if end:
-            time_filter["$lte"] = end
-        if time_filter:
-            clauses.append({"matched_at": time_filter})
-    query = combine_job_list_query(clauses)
+    query = _jobs_list_query_from_args(request.args)
 
     # Count total matching documents
     total = collection.count_documents(query)
@@ -1596,6 +1609,10 @@ def api_manual_apply():
         if applied_date.date() == now.date():
             applied_date = now
 
+    busy = _chrome_busy_reason()
+    if busy:
+        return jsonify({"error": busy}), 429
+
     if not _manual_apply_lock.acquire(blocking=False):
         return jsonify({"error": "A manual job log run is already in progress. Please wait."}), 429
 
@@ -1707,6 +1724,148 @@ _run_ai_state: dict = {
     "match_score": None,
 }
 
+_fetch_batch_lock = threading.Lock()
+_fetch_batch_state: dict = {
+    "running": False,
+    "total": 0,
+    "current": 0,
+    "done_count": 0,
+    "fail_count": 0,
+    "skip_count": 0,
+    "results": [],
+    "error": None,
+}
+
+
+def _chrome_busy_reason(*, ignore_run_ai: bool = False) -> Optional[str]:
+    """Why a Chrome scrape cannot start now, or None if idle."""
+    if _fetch_batch_state.get("running"):
+        return "A batch Fetch details is already running."
+    if not ignore_run_ai and _run_ai_state.get("running"):
+        return "Run AI is already in progress. Please wait."
+    if _manual_apply_state.get("running"):
+        return "Manual Log Job is running — wait for it to finish."
+    return None
+
+
+def guard_fetch_details_playwright() -> tuple:
+    """
+    Check Playwright once for Fetch details.
+
+    Returns (error_payload, http_status) when scrape cannot run on this
+    host (Render), otherwise (None, None).
+    """
+    try:
+        from scrapers.manual_apply_scraper import _load_playwright
+        _load_playwright()
+    except ImportError:
+        return {"ok": False, "error": PLAYWRIGHT_UNAVAILABLE_MSG}, 503
+    except Exception as e:
+        err = str(e)
+        if "playwright" in err.lower():
+            return {"ok": False, "error": PLAYWRIGHT_UNAVAILABLE_MSG}, 503
+        return {"ok": False, "error": err}, 500
+    return None, None
+
+
+def run_fetch_details_batch_jobs(docs: list, fetch_one=None) -> dict:
+    """
+    Sequentially fetch details for Tracker docs. One failure does not stop
+    the rest. fetch_one(doc) -> (payload, http_status); default is
+    run_fetch_job_details. Updates _fetch_batch_state as it goes.
+    """
+    fetch_one = fetch_one or run_fetch_job_details
+    results = []
+    done = 0
+    failed = 0
+    skipped = 0
+    total = len(docs)
+    _fetch_batch_state["total"] = total
+    _fetch_batch_state["results"] = results
+    _fetch_batch_state["done_count"] = 0
+    _fetch_batch_state["fail_count"] = 0
+    _fetch_batch_state["skip_count"] = 0
+    _fetch_batch_state["error"] = None
+
+    for i, doc in enumerate(docs, 1):
+        _fetch_batch_state["current"] = i
+        title = doc.get("title") or doc.get("job_id") or "job"
+        job_key = str(doc.get("_id") or doc.get("job_id") or i)
+        if not is_agent_recommended(doc):
+            skipped += 1
+            entry = {
+                "id": job_key,
+                "title": title,
+                "ok": False,
+                "error": "Fetch details is only for jobs recommended by an AI agent",
+            }
+            results.append(entry)
+            _fetch_batch_state["skip_count"] = skipped
+            _fetch_batch_state["fail_count"] = failed
+            continue
+        try:
+            out = fetch_one(doc)
+            if isinstance(out, tuple) and len(out) >= 1:
+                payload = out[0]
+            else:
+                payload = out
+            if not isinstance(payload, dict):
+                payload = {"ok": False, "error": str(payload)}
+        except Exception as e:
+            payload = {"ok": False, "error": str(e)}
+        ok = bool(payload.get("ok"))
+        err = None if ok else (payload.get("error") or "Fetch failed")
+        if ok:
+            done += 1
+            title = payload.get("title") or title
+        else:
+            failed += 1
+        results.append({
+            "id": job_key,
+            "title": title,
+            "ok": ok,
+            "error": err,
+        })
+        _fetch_batch_state["done_count"] = done
+        _fetch_batch_state["fail_count"] = failed
+        _fetch_batch_state["skip_count"] = skipped
+
+    return {
+        "ok": failed == 0 and skipped == 0,
+        "total": total,
+        "done_count": done,
+        "fail_count": failed,
+        "skip_count": skipped,
+        "results": results,
+        "error": None,
+    }
+
+
+def collect_fetch_detail_targets(query: dict, *, missing_only: bool = False, limit: int = FETCH_DETAILS_BATCH_MAX) -> list:
+    """Agent-recommended Tracker rows matching the list filters, newest first."""
+    collection = get_collection("matched_jobs")
+    rec_clause = {"recommended_by": {"$in": list(RECOMMENDED_BY_AGENTS)}}
+    full_query = combine_job_list_query([query, rec_clause])
+    cap = max(1, min(int(limit or FETCH_DETAILS_BATCH_MAX), FETCH_DETAILS_BATCH_MAX))
+    docs = list(
+        collection.find(full_query, JOBS_LIST_PROJECTION)
+        .sort("matched_at", -1)
+        .limit(cap * 3)
+    )
+    out = []
+    for doc in docs:
+        serialized = _serialize(dict(doc))
+        if missing_only and not serialized.get("details_missing"):
+            continue
+        out.append({
+            "id": serialized["_id"],
+            "title": serialized.get("title") or "",
+            "details_missing": bool(serialized.get("details_missing")),
+        })
+        if len(out) >= cap:
+            break
+    return out
+
 
 @app.route("/api/jobs/<job_id>/run-ai", methods=["POST"])
 @login_required
@@ -1731,10 +1890,11 @@ def api_job_run_ai(job_id: str):
             "busy_job_id": _run_ai_state.get("job_id"),
         }), 429
 
-    # Also block if a full manual-apply scrape is using Chrome
-    if _manual_apply_state.get("running"):
+    # Also block if Log Job or batch Fetch details is using Chrome
+    busy = _chrome_busy_reason(ignore_run_ai=True)
+    if busy:
         _run_ai_lock.release()
-        return jsonify({"error": "Manual Log Job is running — wait for it to finish."}), 429
+        return jsonify({"error": busy}), 429
 
     def run():
         try:
@@ -1823,14 +1983,146 @@ def api_job_fetch_details(job_id: str):
     if not doc:
         return jsonify({"error": "Job not found"}), 404
 
-    if _run_ai_state.get("running") or _manual_apply_state.get("running"):
-        return jsonify({
-            "ok": False,
-            "error": "Another scrape is already running. Please wait.",
-        }), 429
+    busy = _chrome_busy_reason()
+    if busy:
+        return jsonify({"ok": False, "error": busy}), 429
 
     payload, status = run_fetch_job_details(doc)
     return jsonify(payload), status
+
+
+@app.route("/api/fetch-details/ids")
+@login_required
+def api_fetch_details_ids():
+    """
+    IDs of agent-recommended Tracker cards for the current list filters.
+
+    ?missing=1 limits to cards that still look like link-only stubs.
+    Used by 'Select missing details' so the batch can span pages.
+    """
+    missing = (request.args.get("missing") or "").strip().lower() in ("1", "true", "yes")
+    query = _jobs_list_query_from_args(request.args)
+    targets = collect_fetch_detail_targets(query, missing_only=missing)
+    return jsonify({
+        "ids": [t["id"] for t in targets],
+        "jobs": targets,
+        "total": len(targets),
+        "missing_only": missing,
+        "limit": FETCH_DETAILS_BATCH_MAX,
+    })
+
+
+@app.route("/api/fetch-details/batch", methods=["POST"])
+@login_required
+def api_fetch_details_batch():
+    """
+    Fetch details for many agent-recommended cards, sequentially.
+
+    Playwright is checked once up front so Render returns the friendly
+    error immediately instead of failing per job. One scrape failure
+    does not stop the rest. Poll GET /api/fetch-details/batch/status.
+    """
+    data = request.get_json(silent=True) or {}
+    raw_ids = data.get("ids") or []
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return jsonify({"ok": False, "error": "Select at least one job"}), 400
+
+    oids = []
+    seen = set()
+    for raw in raw_ids:
+        text = str(raw or "").strip()
+        if not text or text in seen:
+            continue
+        try:
+            oids.append(ObjectId(text))
+        except Exception:
+            return jsonify({"ok": False, "error": f"Invalid id: {text}"}), 400
+        seen.add(text)
+        if len(oids) >= FETCH_DETAILS_BATCH_MAX:
+            break
+    if not oids:
+        return jsonify({"ok": False, "error": "Select at least one job"}), 400
+
+    busy = _chrome_busy_reason()
+    if busy:
+        return jsonify({"ok": False, "error": busy}), 429
+
+    guard, guard_status = guard_fetch_details_playwright()
+    if guard:
+        return jsonify(guard), guard_status
+
+    matched_col = get_collection("matched_jobs")
+    docs_by_id = {
+        doc["_id"]: doc
+        for doc in matched_col.find({"_id": {"$in": oids}})
+    }
+    docs = []
+    missing = []
+    for oid in oids:
+        doc = docs_by_id.get(oid)
+        if not doc:
+            missing.append(str(oid))
+            continue
+        docs.append(doc)
+    if not docs:
+        return jsonify({"ok": False, "error": "No matching Tracker jobs"}), 404
+
+    if not _fetch_batch_lock.acquire(blocking=False):
+        return jsonify({"ok": False, "error": "A batch Fetch details is already running."}), 429
+
+    def run():
+        try:
+            _fetch_batch_state["running"] = True
+            _fetch_batch_state["current"] = 0
+            _fetch_batch_state["error"] = None
+            run_fetch_details_batch_jobs(docs)
+        except Exception as e:
+            _fetch_batch_state["error"] = str(e)
+            _fetch_batch_state["results"].append({
+                "id": "",
+                "title": "batch",
+                "ok": False,
+                "error": str(e),
+            })
+            _fetch_batch_state["fail_count"] = _fetch_batch_state.get("fail_count", 0) + 1
+        finally:
+            _fetch_batch_state["running"] = False
+            _fetch_batch_lock.release()
+
+    _fetch_batch_state["running"] = True
+    _fetch_batch_state["total"] = len(docs)
+    _fetch_batch_state["current"] = 0
+    _fetch_batch_state["done_count"] = 0
+    _fetch_batch_state["fail_count"] = 0
+    _fetch_batch_state["skip_count"] = 0
+    _fetch_batch_state["results"] = []
+    _fetch_batch_state["error"] = None
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({
+        "ok": True,
+        "status": "started",
+        "total": len(docs),
+        "skipped_missing": missing,
+        "truncated": len(raw_ids) > len(oids),
+        "limit": FETCH_DETAILS_BATCH_MAX,
+    })
+
+
+@app.route("/api/fetch-details/batch/status")
+@login_required
+def api_fetch_details_batch_status():
+    """Poll progress for the current / last batch Fetch details run."""
+    state = _fetch_batch_state
+    return jsonify({
+        "running": state["running"],
+        "total": state.get("total") or 0,
+        "current": state.get("current") or 0,
+        "done_count": state.get("done_count") or 0,
+        "fail_count": state.get("fail_count") or 0,
+        "skip_count": state.get("skip_count") or 0,
+        "results": state.get("results") or [],
+        "error": state.get("error"),
+    })
 
 
 @app.route("/api/jobs/<job_id>/run-ai/status")
