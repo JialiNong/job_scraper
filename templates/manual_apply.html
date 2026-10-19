@@ -444,7 +444,7 @@ https://careers.example.com/jobs/frontend-engineer"
     <button id="linkOnlyBtn" class="btn btn-secondary" onclick="submitUrls({ linkOnly: true })">
       📎 Save Link Only
     </button>
-    <button class="btn btn-clear" onclick="document.getElementById('urlBox').value=''">
+    <button id="clearBtn" class="btn btn-clear" type="button" onclick="clearForm()">
       🗑 Clear
     </button>
   </div>
@@ -644,13 +644,51 @@ function onStatusChange() {
   }
 }
 
-// Set today's date as default on page load (used only when Applied is selected)
-document.addEventListener('DOMContentLoaded', () => {
+function todayIsoDate() {
   const d = new Date();
   const yyyy = d.getFullYear();
   const mm   = String(d.getMonth() + 1).padStart(2, '0');
   const dd   = String(d.getDate()).padStart(2, '0');
-  document.getElementById('appliedDate').value = `${yyyy}-${mm}-${dd}`;
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function clearForm() {
+  clearTimeout(_lookupTimer);
+  _lookupTimer = null;
+  _lookupSeq += 1;
+  _lastLookupKey = '';
+  if (_pollTimer) {
+    clearInterval(_pollTimer);
+    _pollTimer = null;
+  }
+
+  document.getElementById('urlBox').value = '';
+  document.getElementById('jobTitle').value = '';
+  document.getElementById('jobCompany').value = '';
+  document.getElementById('jobLocation').value = '';
+  document.getElementById('recommendedBy').value = '';
+  document.getElementById('jobStatus').value = 'pending';
+  document.getElementById('appliedDate').value = todayIsoDate();
+  onStatusChange();
+
+  const banner = document.getElementById('statusBanner');
+  banner.className = 'status-banner';
+  banner.innerHTML = '';
+
+  document.getElementById('logWrap').classList.remove('visible');
+  document.getElementById('logBody').innerHTML = '';
+  document.getElementById('logCounter').textContent = '';
+  _knownLogLen = 0;
+  _submittedStatus = 'pending';
+  _submittedLinkOnly = false;
+
+  document.getElementById('submitBtn').disabled = false;
+  document.getElementById('linkOnlyBtn').disabled = false;
+}
+
+// Set today's date as default on page load (used only when Applied is selected)
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('appliedDate').value = todayIsoDate();
   onStatusChange();
 
   const box = document.getElementById('urlBox');
