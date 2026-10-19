@@ -23,6 +23,36 @@ from core.job_url import (
     resolve_job_id,
 )
 
+# Log Job "Recommended by AI agent" — stored on matched_jobs.recommended_by
+RECOMMENDED_BY_AGENTS = ("claude", "cursor", "gemini", "gpt")
+RECOMMENDED_BY_LABELS = {
+    "claude": "Claude",
+    "cursor": "Cursor",
+    "gemini": "Gemini",
+    "gpt": "GPT",
+}
+PLAYWRIGHT_UNAVAILABLE_MSG = "Playwright not available on this server, run locally"
+
+# User-owned fields Fetch job details must never $set
+DETAILS_PRESERVE_FIELDS = (
+    "status",
+    "applied_at",
+    "application_timeline",
+    "notes",
+    "highlights",
+    "application_qa",
+    "recommended_by",
+    "match_score",
+)
+
+
+def normalize_recommended_by(value) -> str:
+    """Return a stored agent key, or '' for None / unknown."""
+    key = str(value or "").strip().lower()
+    if key in ("", "none", "null"):
+        return ""
+    return key if key in RECOMMENDED_BY_AGENTS else ""
+
 
 def stub_ai_pending_analysis() -> dict:
     """Placeholder analysis for link-only / scrape-failed saves."""
@@ -76,7 +106,12 @@ def analysis_fields(analysis: dict) -> dict:
     }
 
 
-def mark_tracker_job_applied(job_id: str, source: str, applied_date: datetime = None) -> str:
+def mark_tracker_job_applied(
+    job_id: str,
+    source: str,
+    applied_date: datetime = None,
+    recommended_by=None,
+) -> str:
     """
     Set an existing Tracker row to applied without wiping notes / timeline.
 
@@ -98,7 +133,10 @@ def mark_tracker_job_applied(job_id: str, source: str, applied_date: datetime = 
     now = datetime.now()
     t = applied_date or now
     already_applied = bool(job.get("applied_at")) or job.get("status") in APPLIED_STATUSES
+    rec = normalize_recommended_by(recommended_by)
     if already_applied and (job.get("status") or "") in APPLIED_STATUSES:
+        if rec:
+            stamp_recommended_by(job_id, source, rec)
         return "already"
 
     fields = {
@@ -109,8 +147,28 @@ def mark_tracker_job_applied(job_id: str, source: str, applied_date: datetime = 
     }
     if not job.get("applied_at"):
         fields["applied_at"] = t
+    if rec:
+        fields["recommended_by"] = rec
     col.update_one({"_id": job["_id"]}, {"$set": fields})
     return "applied"
+
+
+def stamp_recommended_by(job_id: str, source: str, recommended_by) -> bool:
+    """Set recommended_by on an existing Tracker row without touching progress."""
+    rec = normalize_recommended_by(recommended_by)
+    if not rec:
+        return False
+    col = get_collection("matched_jobs")
+    if source == "indeed":
+        variants = indeed_job_id_variants(job_id)
+        query = {"job_id": {"$in": variants} if variants else job_id, "source": source}
+    else:
+        query = {"job_id": job_id, "source": source}
+    result = col.update_one(
+        query,
+        {"$set": {"recommended_by": rec, "updated_at": datetime.now()}},
+    )
+    return result.matched_count > 0
 
 
 def _print_saved(status: str, applied_date: datetime = None, *, extra: str = ""):
@@ -164,6 +222,10 @@ def force_save_manual_job(
     if status == "applied":
         jobs_set["applied_at"] = t
 
+    rec = normalize_recommended_by(job.get("recommended_by"))
+    if rec:
+        jobs_set["recommended_by"] = rec
+
     jobs_col.update_one(
         {"job_id": job_id, "source": source},
         {
@@ -195,6 +257,8 @@ def force_save_manual_job(
     if status == "applied":
         matched_data["applied_at"] = t
         matched_data["manually_applied"] = True
+    if rec:
+        matched_data["recommended_by"] = rec
 
     try:
         matched_col.update_one(
@@ -211,11 +275,20 @@ def force_save_manual_job(
 force_save_applied_job = force_save_manual_job
 
 
-def handle_existing_tracker(url: str, job_id: str, source: str, status: str, applied_date) -> str:
+def handle_existing_tracker(
+    url: str,
+    job_id: str,
+    source: str,
+    status: str,
+    applied_date,
+    recommended_by=None,
+) -> str:
     """skip | applied | already | missing — print a line the UI can count."""
     action = plan_manual_log_action(True, status, job_id)
     if action == "mark_applied":
-        result = mark_tracker_job_applied(job_id, source, applied_date)
+        result = mark_tracker_job_applied(
+            job_id, source, applied_date, recommended_by=recommended_by
+        )
         if result == "applied":
             date_str = applied_date.strftime("%Y-%m-%d") if applied_date else "today"
             print(
@@ -231,6 +304,7 @@ def handle_existing_tracker(url: str, job_id: str, source: str, status: str, app
             return "already"
         print(f"  ⚠️  Tracker row vanished for job_id={job_id} — will save a new card")
         return "missing"
+    stamp_recommended_by(job_id, source, recommended_by)
     print(
         f"  ⚠️  Already on Tracker (matched_jobs): "
         f"job_id={job_id} source={source} — skipping"
@@ -269,10 +343,51 @@ def save_job_record(
     return True
 
 
+def apply_scraped_details(job: dict) -> dict:
+    """
+    Patch scraped title/company/location/description onto jobs + matched_jobs.
+
+    Never writes status, applied_at, timeline, notes, highlights, Q&A,
+    recommended_by, or match_score. No AI fields.
+    """
+    jobs_col = get_collection("jobs")
+    matched_col = get_collection("matched_jobs")
+    now = datetime.utcnow()
+    job_id = job.get("job_id")
+    source = job.get("source")
+    patch = {
+        "title": job.get("title") or "",
+        "company": job.get("company") or "",
+        "location": job.get("location") or "",
+        "description": job.get("description") or "",
+        "applicants": job.get("applicants") or "",
+        "updated_at": now,
+        "details_fetched_at": now,
+    }
+    if job.get("link"):
+        patch["link"] = job["link"]
+    for forbidden in DETAILS_PRESERVE_FIELDS:
+        patch.pop(forbidden, None)
+    try:
+        jobs_col.update_one(
+            {"job_id": job_id, "source": source},
+            {"$set": patch},
+        )
+        matched_col.update_one(
+            {"job_id": job_id, "source": source},
+            {"$set": patch},
+        )
+    except Exception as e:
+        print(f"  ❌ Failed to save job details: {type(e).__name__}: {e}")
+        return {"ok": False, "error": str(e), "patch": patch}
+    return {"ok": True, "error": None, "patch": patch}
+
+
 def save_link_only_urls(
     urls: list[str],
     applied_date: datetime = None,
     status: str = "pending",
+    recommended_by=None,
 ):
     """
     Save job URLs to the Tracker without opening a browser or running AI.
@@ -281,6 +396,7 @@ def save_link_only_urls(
     """
     if status not in ("pending", "applied"):
         status = "pending"
+    rec = normalize_recommended_by(recommended_by)
 
     if not urls:
         print("No URLs provided.")
@@ -306,7 +422,9 @@ def save_link_only_urls(
             results["failed"].append(url)
             continue
         if is_job_on_tracker(job_id, source):
-            outcome = handle_existing_tracker(url, job_id, source, status, applied_date)
+            outcome = handle_existing_tracker(
+                url, job_id, source, status, applied_date, recommended_by=rec
+            )
             if outcome == "applied":
                 results["ok"].append(url)
             elif outcome in ("already", "skip"):
@@ -319,6 +437,8 @@ def save_link_only_urls(
             print("  ❌ Cannot build a job record from this URL")
             results["failed"].append(url)
             continue
+        if rec:
+            job["recommended_by"] = rec
         ok = save_job_record(
             job, analysis, status, applied_date, ai_pending=True, extra="link-only"
         )

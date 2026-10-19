@@ -64,10 +64,13 @@ from core.job_url import (
     resolve_job_id,
 )
 from core.manual_log import (
+    PLAYWRIGHT_UNAVAILABLE_MSG,
     analysis_fields,
+    apply_scraped_details,
     force_save_manual_job,
     handle_existing_tracker,
     mark_tracker_job_applied,
+    normalize_recommended_by,
     save_job_record,
     save_link_only_urls,
     stub_ai_pending_analysis,
@@ -642,6 +645,7 @@ def process_urls(
     urls: list[str],
     applied_date: datetime = None,
     status: str = "pending",
+    recommended_by=None,
 ):
     """
     Scrape, AI-match, and save each URL to the tracker.
@@ -650,9 +654,11 @@ def process_urls(
         urls: LinkedIn / Indeed / any company career-page job URLs
         applied_date: Date the user applied (only used when status=applied)
         status: "pending" (Not Applied, default) or "applied"
+        recommended_by: Optional Log Job agent tag (claude/cursor/gemini/gpt)
     """
     if status not in ("pending", "applied"):
         status = "pending"
+    rec = normalize_recommended_by(recommended_by)
 
     if not urls:
         print("No URLs provided.")
@@ -667,7 +673,9 @@ def process_urls(
         from matching.ai_matcher import load_user_profile, load_matching_criteria
     except ImportError as e:
         print(f"⚠️  Scrape is unavailable ({e}). Saving link(s) only.")
-        save_link_only_urls(urls, applied_date=applied_date, status=status)
+        save_link_only_urls(
+            urls, applied_date=applied_date, status=status, recommended_by=rec
+        )
         return
 
     user_profile = load_user_profile()
@@ -710,7 +718,8 @@ def process_urls(
                     continue
                 if is_job_on_tracker(job_id, source):
                     outcome = handle_existing_tracker(
-                        url, job_id, source, status, applied_date
+                        url, job_id, source, status, applied_date,
+                        recommended_by=rec,
                     )
                     if outcome == "applied":
                         results["ok"].append(url)
@@ -753,6 +762,8 @@ def process_urls(
                         print("  ⚠️  No user profile — saving without AI (AI pending)")
 
                 extra = "AI pending" if ai_pending else ""
+                if rec:
+                    job["recommended_by"] = rec
                 if not save_job_record(
                     job, analysis, status, applied_date,
                     ai_pending=ai_pending, extra=extra,
@@ -768,7 +779,9 @@ def process_urls(
         remaining = [u for u in urls if u not in results["ok"] and u not in results["failed"] and u not in results["skipped"]]
         if remaining:
             print("  → Falling back to link-only save for remaining URLs")
-            save_link_only_urls(remaining, applied_date=applied_date, status=status)
+            save_link_only_urls(
+                remaining, applied_date=applied_date, status=status, recommended_by=rec
+            )
             return
 
     print(f"\n{'='*60}")
@@ -783,6 +796,89 @@ def process_urls(
             print(f"   • {u}")
 
 
+def _tracker_job_url(matched_doc: dict) -> str:
+    """Canonical page URL for a Tracker row (link, or Indeed/LinkedIn from job_id)."""
+    url = (matched_doc.get("link") or "").strip()
+    if url:
+        return url
+    job_id = matched_doc.get("job_id") or ""
+    source = matched_doc.get("source") or ""
+    if source == "linkedin" and job_id:
+        return f"https://www.linkedin.com/jobs/view/{job_id}/"
+    if source == "indeed" and job_id:
+        return f"https://de.indeed.com/viewjob?jk={job_id}"
+    return ""
+
+
+def fetch_job_details_for_matched_job(matched_doc: dict) -> dict:
+    """
+    Scrape title/company/location/description for an agent-recommended job.
+
+    Lazy Playwright. Does not run AI matching. Does not overwrite status,
+    applied_at, timeline, notes, or recommended_by.
+    """
+    rec = normalize_recommended_by(matched_doc.get("recommended_by"))
+    if not rec:
+        return {
+            "ok": False,
+            "error": "Fetch details is only for jobs recommended by an AI agent",
+        }
+
+    url = _tracker_job_url(matched_doc)
+    if not url:
+        print("  ❌ No link on this Tracker card")
+        return {"ok": False, "error": "No job link"}
+
+    print(f"\n📥 Fetch details: {matched_doc.get('title') or matched_doc.get('job_id')}")
+    print(f"  → {url}")
+
+    try:
+        sync_playwright, _ = _load_playwright()
+        from core.scraper_utils import connect_browser
+    except ImportError:
+        print(f"  ❌ {PLAYWRIGHT_UNAVAILABLE_MSG}")
+        return {"ok": False, "error": PLAYWRIGHT_UNAVAILABLE_MSG}
+
+    with sync_playwright() as playwright:
+        try:
+            browser = connect_browser(playwright, "job sites")
+            context = browser.contexts[0]
+            page = context.pages[0] if context.pages else context.new_page()
+        except Exception as e:
+            print(f"  ❌ Cannot open Chrome ({e})")
+            return {"ok": False, "error": f"Cannot open Chrome: {e}"}
+
+        job = scrape_job_page(page, url)
+        if not job:
+            print("  ❌ Scraping failed")
+            return {"ok": False, "error": "Scraping failed"}
+
+        for field in ("title", "company", "location"):
+            if not job.get(field) and matched_doc.get(field):
+                existing = str(matched_doc.get(field) or "")
+                if existing and not existing.startswith("(Link only)"):
+                    job[field] = existing
+        if not job.get("title"):
+            job["title"] = matched_doc.get("title") or ""
+        if not job.get("job_id"):
+            job["job_id"] = matched_doc.get("job_id")
+        if not job.get("source"):
+            job["source"] = matched_doc.get("source")
+
+        saved = apply_scraped_details(job)
+        if not saved.get("ok"):
+            return {"ok": False, "error": saved.get("error") or "DB update failed"}
+
+        print("  ✅ Job details saved (no AI)")
+        return {
+            "ok": True,
+            "error": None,
+            "title": job.get("title", ""),
+            "company": job.get("company", ""),
+            "location": job.get("location", ""),
+        }
+
+
 def run_ai_on_matched_job(matched_doc: dict) -> dict:
     """
     Open the job link in debug Chrome, scrape JD, run AI matching, and patch
@@ -790,14 +886,7 @@ def run_ai_on_matched_job(matched_doc: dict) -> dict:
 
     Returns {"ok": bool, "error": str|None, "match_score": ...}.
     """
-    url = (matched_doc.get("link") or "").strip()
-    if not url:
-        job_id = matched_doc.get("job_id") or ""
-        source = matched_doc.get("source") or ""
-        if source == "linkedin" and job_id:
-            url = f"https://www.linkedin.com/jobs/view/{job_id}/"
-        elif source == "indeed" and job_id:
-            url = f"https://de.indeed.com/viewjob?jk={job_id}"
+    url = _tracker_job_url(matched_doc)
     if not url:
         print("  ❌ No link on this Tracker card")
         return {"ok": False, "error": "No job link", "match_score": None}
@@ -884,6 +973,12 @@ def main():
         action="store_true",
         help="Save URLs to Tracker without scraping or AI (Run AI later from UI)",
     )
+    parser.add_argument(
+        "--recommended-by",
+        choices=("claude", "cursor", "gemini", "gpt"),
+        default=None,
+        help="Tag the job as recommended by an AI agent",
+    )
     args = parser.parse_args()
 
     urls: list[str] = list(args.urls)
@@ -903,9 +998,11 @@ def main():
 
     init_db()
     if args.link_only:
-        save_link_only_urls(urls, status=args.status)
+        save_link_only_urls(
+            urls, status=args.status, recommended_by=args.recommended_by
+        )
     else:
-        process_urls(urls, status=args.status)
+        process_urls(urls, status=args.status, recommended_by=args.recommended_by)
 
 
 if __name__ == "__main__":

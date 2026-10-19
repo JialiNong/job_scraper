@@ -366,6 +366,16 @@
       <input type="date" id="appliedDate" class="option-input" />
       <span class="option-hint">(Leave blank to default to today)</span>
     </div>
+    <div class="option-group">
+      <label for="recommendedBy">Recommended by AI agent</label>
+      <select id="recommendedBy" class="option-input">
+        <option value="" selected>None</option>
+        <option value="claude">Claude</option>
+        <option value="cursor">Cursor</option>
+        <option value="gemini">Gemini</option>
+        <option value="gpt">GPT</option>
+      </select>
+    </div>
   </div>
 
   <textarea
@@ -402,6 +412,7 @@ https://careers.example.com/jobs/frontend-engineer"
     <strong>💡 Tips</strong><br>
     • Paste a URL that is already in Matched — the Tracker opens that card automatically.<br>
     • Submit with <strong>Applied</strong> to mark an existing Tracker card applied (notes/timeline stay).<br>
+    • Optional <strong>Recommended by AI agent</strong> tags the Tracker card (Claude / Cursor / Gemini / GPT). Agent-recommended cards get <strong>Fetch job details</strong> (scrape only, no AI).<br>
     • <strong>Save Link Only</strong>: no Chrome needed; card shows AI pending until you click <strong>Run AI</strong> on Tracker.<br>
     • <strong>Scrape &amp; Log</strong>: Chrome is used when available. If Indeed blocks or Chrome is missing, the link is still saved.<br>
     • LinkedIn: <code>https://www.linkedin.com/jobs/view/JOB_ID/</code><br>
@@ -627,6 +638,7 @@ async function submitUrls({ linkOnly = false } = {}) {
   const appliedDate = status === 'applied'
     ? (document.getElementById('appliedDate').value || '')
     : '';
+  const recommendedBy = document.getElementById('recommendedBy').value || '';
   _submittedStatus = status;
   _submittedLinkOnly = linkOnly;
 
@@ -648,6 +660,7 @@ async function submitUrls({ linkOnly = false } = {}) {
         status,
         applied_date: appliedDate,
         mode: linkOnly ? 'link_only' : 'scrape',
+        recommended_by: recommendedBy,
       }),
     });
     const data = await res.json();

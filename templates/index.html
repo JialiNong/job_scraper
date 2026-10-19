@@ -958,12 +958,14 @@
     .card-actions-row {
       display: flex;
       flex-direction: row;
+      flex-wrap: wrap;
       align-items: center;
       gap: 12px;
       min-width: 0;
     }
     .card-actions-row .btn-apply,
-    .card-actions-row .btn-run-ai {
+    .card-actions-row .btn-run-ai,
+    .card-actions-row .btn-fetch-details {
       align-self: flex-start;
       flex-shrink: 0;
       white-space: nowrap;
@@ -1376,6 +1378,25 @@
       color: #fbbf24;
       border: 1px solid #f59e0b44;
     }
+    .meta-pill.recommended-pill {
+      background: #1e1b4b;
+      color: #c4b5fd;
+      border: 1px solid #8b5cf644;
+    }
+    .btn-fetch-details {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: .82rem; font-weight: 600;
+      cursor: pointer;
+      transition: opacity .15s, border-color .15s, color .15s;
+      width: fit-content;
+    }
+    .btn-fetch-details:hover { border-color: #a78bfa; color: #c4b5fd; }
+    .btn-fetch-details:disabled { opacity: .45; pointer-events: none; }
 
     /* Application progress timeline */
     .progress-wrap {
@@ -2458,6 +2479,12 @@ const STATUS_LABEL = {
 };
 const SIDE_STATUSES = ['unsuitable', 'closed', 'repost', 'duplicate'];
 const PROGRESS_STAGES = ['applied', 'rejected', 'interview', 'offer'];
+const RECOMMENDED_BY_LABEL = {
+  claude: 'Claude',
+  cursor: 'Cursor',
+  gemini: 'Gemini',
+  gpt: 'GPT',
+};
 
 const TIMELINE_LABEL = {
   applied:          'Applied',
@@ -3284,6 +3311,13 @@ function highlightBadgesHtml(highlights) {
   ).join('');
 }
 
+function recommendedByBadge(job) {
+  const key = String(job.recommended_by || '').toLowerCase();
+  const label = RECOMMENDED_BY_LABEL[key];
+  if (!label) return '';
+  return `<span class="meta-pill recommended-pill" title="Recommended by ${escHtml(label)}">✦ ${escHtml(label)}</span>`;
+}
+
 function renderHighlightChips(highlights) {
   return highlights.map(tag => `
     <span class="hl-chip">
@@ -3332,6 +3366,14 @@ function renderCard(job) {
   const highlightBadges = highlightBadgesHtml(highlights);
   const runAiCls = aiHint ? 'btn-run-ai ai-pending-btn' : 'btn-run-ai';
   const runAiLabel = aiHint ? '🤖 Run AI' : '🤖 Re-run AI';
+  const recBadge = recommendedByBadge(job);
+  const recKey = String(job.recommended_by || '').toLowerCase();
+  const fetchBtn = RECOMMENDED_BY_LABEL[recKey] ? `
+        <button type="button" class="btn-fetch-details" data-id="${job._id}"
+                onclick="event.stopPropagation(); fetchJobDetails('${job._id}', this)"
+                title="Scrape title, company, location, and description (no AI matching)">
+          📥 Fetch job details
+        </button>` : '';
 
   const card = document.createElement('div');
   card.className = 'card' + (highlights.length ? ' has-highlights' : '');
@@ -3347,6 +3389,7 @@ function renderCard(job) {
       <div class="row-meta">
         ${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">📍 ${escHtml(job.location)}</span>` : ''}
         <span class="meta-pill source-pill">${escHtml(job.source || '')}</span>
+        ${recBadge}
         ${aiHint ? '<span class="meta-pill ai-pending-pill">AI pending</span>' : ''}
         <span class="row-highlights" data-row-highlights>${highlightBadges}</span>
         <span class="status-pill s-${status}" data-status-pill>${STATUS_LABEL[status] || status}</span>
@@ -3385,6 +3428,7 @@ function renderCard(job) {
       <div class="card-meta">
         <span class="body-highlights" data-body-highlights>${highlightBadges}</span>
         <span class="meta-pill source-pill">${escHtml(job.source || '')}</span>
+        ${recBadge}
         ${aiHint ? '<span class="meta-pill ai-pending-pill">AI pending</span>' : ''}
         ${job.matched_at ? `<span class="meta-pill">📅 ${job.matched_at}</span>` : ''}
         ${job.applicants ? `<span class="meta-pill">👥 ${escHtml(job.applicants)}</span>` : ''}
@@ -3407,6 +3451,7 @@ function renderCard(job) {
                 title="Open the job page in Chrome, scrape JD, run AI matching">
           ${runAiLabel}
         </button>
+        ${fetchBtn}
       </div>
 
       <div class="card-split">
@@ -4003,6 +4048,41 @@ async function updateSideStatus(select) {
     loadDailyStats();
   } catch (err) {
     showToast('❌ Status update failed', 'err');
+  }
+}
+
+/* ── Fetch job details (scrape only, no AI — agent-recommended cards) ─ */
+async function fetchJobDetails(jobId, btn) {
+  if (!jobId || !btn) return;
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Fetching…';
+  showToast('📥 Fetching job details — needs debug Chrome');
+
+  try {
+    const res = await fetch(`/api/jobs/${jobId}/fetch-details`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      showToast('❌ ' + (data.error || 'Failed to fetch job details'), 'err');
+      return;
+    }
+    showToast('✅ Job details updated');
+    try {
+      const jobRes = await fetch(`/api/jobs/${jobId}`);
+      if (jobRes.ok) {
+        const job = await jobRes.json();
+        const old = document.getElementById(`card-${jobId}`);
+        const wasExpanded = old && old.classList.contains('expanded');
+        const fresh = renderCard(job);
+        if (wasExpanded) fresh.classList.add('expanded');
+        if (old) old.replaceWith(fresh);
+      }
+    } catch (_) {}
+  } catch (err) {
+    showToast('❌ ' + (err.message || 'Network error'), 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
   }
 }
 

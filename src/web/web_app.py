@@ -41,6 +41,11 @@ from core.db_mongo import (
     resolve_applied_at,
 )
 from core.scraper_utils import indeed_job_id_variants
+from core.manual_log import (
+    PLAYWRIGHT_UNAVAILABLE_MSG,
+    RECOMMENDED_BY_AGENTS,
+    normalize_recommended_by,
+)
 
 load_dotenv()
 
@@ -504,6 +509,8 @@ def _serialize(job: dict) -> dict:
         ]
     # Ensure status always exists
     job.setdefault("status", "pending")
+    rec = normalize_recommended_by(job.get("recommended_by"))
+    job["recommended_by"] = rec
     # Hydrate / serialise application timeline
     timeline = _hydrate_timeline(job)
     job["application_timeline"] = [
@@ -1527,6 +1534,7 @@ def api_manual_apply():
     Default tracker status is pending (Not Applied).
 
     mode=link_only: save URL stubs with ai_pending (no Chrome / no AI).
+    Optional recommended_by: claude | cursor | gemini | gpt.
     """
     data = request.get_json(silent=True) or {}
     urls = data.get("urls", [])
@@ -1551,6 +1559,14 @@ def api_manual_apply():
     job_status = (data.get("status") or "pending").strip().lower()
     if job_status not in ("pending", "applied"):
         return jsonify({"error": "status must be 'pending' or 'applied'"}), 400
+
+    recommended_by = normalize_recommended_by(data.get("recommended_by"))
+    if data.get("recommended_by") not in (None, "", "none"):
+        raw_rec = str(data.get("recommended_by") or "").strip().lower()
+        if raw_rec and raw_rec not in RECOMMENDED_BY_AGENTS and raw_rec != "none":
+            return jsonify({
+                "error": "recommended_by must be none, claude, cursor, gemini, or gpt",
+            }), 400
 
     # Parse optional applied_date (only meaningful when status=applied).
     # HTML <input type="date"> is day-only; strptime would yield midnight.
@@ -1601,9 +1617,19 @@ def api_manual_apply():
             builtins.print = _capture_print
             try:
                 if mode == "link_only":
-                    _save_link_only(urls, applied_date=applied_date, status=job_status)
+                    _save_link_only(
+                        urls,
+                        applied_date=applied_date,
+                        status=job_status,
+                        recommended_by=recommended_by,
+                    )
                 else:
-                    _process_urls(urls, applied_date=applied_date, status=job_status)
+                    _process_urls(
+                        urls,
+                        applied_date=applied_date,
+                        status=job_status,
+                        recommended_by=recommended_by,
+                    )
                 # Count results from log
                 for line in _manual_apply_state["log"]:
                     if (
@@ -1732,6 +1758,63 @@ def api_job_run_ai(job_id: str):
     t = threading.Thread(target=run, daemon=True)
     t.start()
     return jsonify({"status": "started", "job_id": job_id})
+
+
+def run_fetch_job_details(doc: dict) -> tuple:
+    """
+    Fetch scraped job fields for an agent-recommended Tracker card.
+
+    Lazy-imports the scraper so Render (no Playwright) never crashes at
+    import time. Returns (payload, http_status).
+    """
+    rec = normalize_recommended_by(doc.get("recommended_by"))
+    if not rec:
+        return {
+            "ok": False,
+            "error": "Fetch details is only for jobs recommended by an AI agent",
+        }, 400
+    try:
+        from scrapers.manual_apply_scraper import fetch_job_details_for_matched_job
+    except ImportError:
+        return {"ok": False, "error": PLAYWRIGHT_UNAVAILABLE_MSG}, 503
+    try:
+        result = fetch_job_details_for_matched_job(doc)
+    except ImportError:
+        return {"ok": False, "error": PLAYWRIGHT_UNAVAILABLE_MSG}, 503
+    except Exception as e:
+        return {"ok": False, "error": str(e)}, 500
+    if result.get("ok"):
+        return result, 200
+    err = result.get("error") or "Fetch failed"
+    code = 503 if PLAYWRIGHT_UNAVAILABLE_MSG in err else 502
+    return {**result, "error": err}, code
+
+
+@app.route("/api/jobs/<job_id>/fetch-details", methods=["POST"])
+@login_required
+def api_job_fetch_details(job_id: str):
+    """
+    Scrape title/company/location/description for a recommended_by job.
+    Does not run AI. Requires debug Chrome locally; on Render returns a
+    friendly Playwright-missing error.
+    """
+    try:
+        oid = ObjectId(job_id)
+    except Exception:
+        return jsonify({"error": "Invalid id"}), 400
+
+    doc = get_collection("matched_jobs").find_one({"_id": oid})
+    if not doc:
+        return jsonify({"error": "Job not found"}), 404
+
+    if _run_ai_state.get("running") or _manual_apply_state.get("running"):
+        return jsonify({
+            "ok": False,
+            "error": "Another scrape is already running. Please wait.",
+        }), 429
+
+    payload, status = run_fetch_job_details(doc)
+    return jsonify(payload), status
 
 
 @app.route("/api/jobs/<job_id>/run-ai/status")
