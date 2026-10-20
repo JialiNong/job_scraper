@@ -328,11 +328,13 @@ flowchart TD
 | **Module** | `scraper_utils.is_non_english_job_detail` | `matching/german_gate.py` |
 | **Question** | What language is the JD **written in**? (Lingua) | Does an **English** JD require German as a must-have skill? |
 | **Typical hit** | Entire German posting | “fluent German required”, “German C1 required”, “German and English required”, “must speak German” |
-| **Does not hit** | — | “Berlin, Germany” alone, German company, German as plus/nice-to-have/basic, “German or English” / “Deutsch- oder Englischkenntnisse” |
+| **Does not hit** | — | “Berlin, Germany” alone, German company, German as plus/nice-to-have/basic (including “Working proficiency in German is a plus, since … businesses … speak German”), “German or English” / “Deutsch- oder Englischkenntnisse” |
 | **Outcome** | **Not saved**; count `german_filtered` | **Saved then rejected**; low score; **no full AI scoring** |
 | **Order** | Earlier (on detail fetch) | Later (matcher entry) |
 
 The AI prompt / `matching_criteria.md` also describes a German gate as a fallback. In code, the rule-based `german_gate` runs first and skips the model when it hits.
+
+Already-rejected jobs are **not** rematched automatically (`process_new_jobs` only reads documents without `matched_at`). To re-score a false German reject after a gate fix: Unmatched **Can Apply** copies the card to Tracker, then **Run AI** / **Re-run AI** (`POST /api/jobs/<id>/run-ai`) scrapes and runs `evaluate_job` in place. Alternatively clear `matched_at` on that `jobs` row and run `ai_matcher.py`. Do not bulk-rewrite live DB.
 
 ### Match-stage gates after German
 

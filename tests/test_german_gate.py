@@ -57,10 +57,75 @@ class GermanOrEnglishPassTests(unittest.TestCase):
 
 
 class GermanOptionalPassTests(unittest.TestCase):
+    def test_working_proficiency_is_a_plus_with_since_clause(self):
+        reason = find_mandatory_german_requirement(
+            _job(
+                "Working proficiency in German is a plus, since many of "
+                "the businesses you build for speak German"
+            )
+        )
+        self.assertIsNone(reason)
+
     def test_german_is_a_plus(self):
         self.assertIsNone(
             find_mandatory_german_requirement(
                 _job("Excellent English skills, German is a plus.")
+            )
+        )
+
+    def test_german_is_a_bonus(self):
+        self.assertIsNone(
+            find_mandatory_german_requirement(
+                _job("German is a bonus for working with local teams.")
+            )
+        )
+
+    def test_preferred_german(self):
+        self.assertIsNone(
+            find_mandatory_german_requirement(
+                _job("German preferred; English is the working language.")
+            )
+        )
+
+    def test_advantageous_and_helpful(self):
+        self.assertIsNone(
+            find_mandatory_german_requirement(
+                _job("German is advantageous and helpful for client visits.")
+            )
+        )
+
+    def test_would_be_great_and_desirable(self):
+        self.assertIsNone(
+            find_mandatory_german_requirement(
+                _job("German would be great. It is desirable but optional.")
+            )
+        )
+
+    def test_no_german_required(self):
+        self.assertIsNone(
+            find_mandatory_german_requirement(
+                _job("No German required. English is enough.")
+            )
+        )
+
+    def test_german_skills_are_welcome(self):
+        self.assertIsNone(
+            find_mandatory_german_requirement(
+                _job("German skills are welcome on the team.")
+            )
+        )
+
+    def test_de_ein_plus_gerne_idealerweise(self):
+        self.assertIsNone(
+            find_mandatory_german_requirement(
+                _job("Deutschkenntnisse sind ein Plus, gerne vorhanden, idealerweise.")
+            )
+        )
+
+    def test_de_wuenschenswert(self):
+        self.assertIsNone(
+            find_mandatory_german_requirement(
+                _job("Deutschkenntnisse wünschenswert.")
             )
         )
 
@@ -145,6 +210,18 @@ class GermanMandatoryFailTests(unittest.TestCase):
     def test_must_speak_german(self):
         self.assertIsNotNone(
             find_mandatory_german_requirement(_job("You must speak German."))
+        )
+
+    def test_german_c1_is_a_must(self):
+        self.assertIsNotNone(
+            find_mandatory_german_requirement(_job("German C1 is a must."))
+        )
+
+    def test_de_sehr_gute_deutschkenntnisse_erforderlich(self):
+        self.assertIsNotNone(
+            find_mandatory_german_requirement(
+                _job("Sehr gute Deutschkenntnisse erforderlich.")
+            )
         )
 
 

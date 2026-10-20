@@ -24,7 +24,8 @@ Non-English postings (mostly German; French etc. rare) are already filtered out 
 
 **Fail examples** (mandatory German):
 
-- "fluent German required", "German C1 required", "C1 Deutsch erforderlich"
+- "fluent German required", "German C1 required", "German C1 is a must", "C1 Deutsch erforderlich"
+- "Sehr gute Deutschkenntnisse erforderlich", "you must speak German"
 - "German and English required" / "Deutsch und Englisch erforderlich" (both languages, not an alternative)
 - German-language postings are already dropped at scrape (Lingua), before this gate
 
@@ -35,11 +36,12 @@ Non-English postings (mostly German; French etc. rare) are already filtered out 
 - The company is German, European, or based in Berlin / Munich / Hamburg
 - The product serves a German/European market or German customers/brands
 
-**Also pass** if German is only optional, basic, or an alternative to English. Do **not** invent a German requirement the JD never wrote. Pass examples:
+**Also pass** if German is only optional, basic, or an alternative to English. Do **not** invent a German requirement the JD never wrote. A plus / nice-to-have still passes when the sentence continues with `since …` explaining that businesses speak German. Pass examples:
 
 - "German or English", "German and/or English", "English or German"
 - "very good German skills or fluent English" / "sehr gute Deutsch- oder Englischkenntnisse"
-- "German is a plus" / "nice to have" / "beneficial" / "von Vorteil"
+- "German is a plus" / "a bonus" / "nice to have" / "beneficial" / "advantageous" / "preferred" / "von Vorteil" / "wünschenswert" / "ein Plus"
+- "Working proficiency in German is a plus, since many of the businesses you build for speak German"
 - "basic German" / "Grundkenntnisse Deutsch"
 - "Excellent English skills, German is a plus"
 

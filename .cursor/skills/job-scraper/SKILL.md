@@ -95,7 +95,7 @@ One-line funnel (must stay true in architecture + code):
 | Scrape | `scraper_utils.is_non_english_job_detail` | Is the JD body non-English? | Do **not** save; count `german_filtered` |
 | Match | `matching.german_gate` | Does an **English** JD require German as a must-have language? | Local reject; skip full AI scoring |
 
-Location / German company / “nice to have German” / German-OR-English / basic German must **not** fail the match gate.
+Location / German company / “nice to have German” / plus / German-OR-English / basic German / “businesses speak German” in a since-clause must **not** fail the match gate.
 
 ### Shared LinkedIn card path
 

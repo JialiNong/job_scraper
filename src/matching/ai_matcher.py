@@ -168,6 +168,8 @@ Use ONLY facts present in the Job Description text below (plus Title / Company /
 
 Code already ran the German gate, backend-stack gate, and AI/ML-core gate. This job passed them (or extract failed open). Do **not** fail again for mandatory German, a hard unknown backend, or an AI/ML-engineering title unless the extract block is missing and Matching Criteria clearly require it.
 
+German as nice-to-have is **not** mandatory. Grounded only in the JD text: "is a plus", "a plus", "is a bonus", "nice to have", "beneficial", "advantageous", "preferred", "desirable", "helpful", "would be great", "ideally", "optional", "not required", "no German required", "welcome", "von Vorteil", "wünschenswert", "ein Plus", "gerne", "idealerweise" — and the same idea with a `since …` explanation that businesses speak German — must **not** be scored as a German language requirement or listed as unmatched/missing. Fail German only when the JD itself says it is required / a must / fluent-required / C1-required.
+
 ### 1. Parse the JD
 Read the full job description and split it into two lists of atomic items (one responsibility or requirement per bullet). Paraphrase clearly; do not invent items that are not in the JD. If a usual section (stack, years, languages) is absent, put "not stated in the description" rather than filling it in.
 
@@ -372,6 +374,8 @@ def analyze_job_with_ai(
                         "requirements, responsibilities, tech stack, languages, years, or company "
                         "details. If information is missing, say 'not stated in the description'. "
                         "German, backend-stack, and AI/ML-core gates already ran in code for this job. "
+                        "German listed as a plus / nice-to-have / von Vorteil is not mandatory — "
+                        "use only the job description, never invent a German requirement. "
                         "Parse each JD into 'what you'll do' and 'what they're looking for', then "
                         "compare every item to the resume. Follow the Matching Criteria document in "
                         "the user message exactly. Special Match A/B/C jobs must score 9–10 (not 8) "
