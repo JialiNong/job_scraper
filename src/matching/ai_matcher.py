@@ -28,7 +28,7 @@ from core.config import MATCH_BLOCKED_COMPANIES
 from core.scraper_utils import (
     strip_html,
     indeed_job_id_variants,
-    is_usable_job_description,
+    assess_job_description,
     scrub_bullet_location,
 )
 from matching.german_gate import (
@@ -49,6 +49,8 @@ load_dotenv()
 AI_MODEL = os.getenv("AI_MODEL", "gpt-4.1-mini")  # or "claude-3-5-sonnet-20241022"
 AI_API_KEY = os.getenv("OPENAI_API_KEY")  # or ANTHROPIC_API_KEY
 MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "7.0"))  # Minimum match score (0-10)
+# Keep scoring deterministic; invented JD facts are worse than a slightly stiff summary.
+MATCH_AI_TEMPERATURE = 0.0
 
 
 def is_blocked_match_company(company: Optional[str]) -> bool:
@@ -139,6 +141,13 @@ def build_matching_prompt(
     
     prompt = f"""You are a professional career advisor. Analyze if this job posting matches the candidate's profile and preferences.
 
+## Grounding (non-negotiable)
+Use ONLY facts present in the Job Description text below (plus Title / Company / Location fields).
+- Never invent requirements, responsibilities, tech stack, years, languages, or company details.
+- If something is not written in the description, say "not stated in the description" — do not guess from the title, company name, typical jobs, or the resume.
+- Every item in what_youll_do and what_theyre_looking_for must be paraphrased from the description. If the description is sparse, keep those lists short.
+- Do not add popular skills (AWS, Kubernetes, Python, German, …) just because similar roles often list them.
+
 ## Job Information
 **Title**: {job.get('title', 'N/A')}
 **Company**: {job.get('company', 'N/A')}
@@ -160,7 +169,7 @@ def build_matching_prompt(
 Code already ran the German gate, backend-stack gate, and AI/ML-core gate. This job passed them (or extract failed open). Do **not** fail again for mandatory German, a hard unknown backend, or an AI/ML-engineering title unless the extract block is missing and Matching Criteria clearly require it.
 
 ### 1. Parse the JD
-Read the full job description and split it into two lists of atomic items (one responsibility or requirement per bullet). Paraphrase clearly; do not invent items that are not in the JD.
+Read the full job description and split it into two lists of atomic items (one responsibility or requirement per bullet). Paraphrase clearly; do not invent items that are not in the JD. If a usual section (stack, years, languages) is absent, put "not stated in the description" rather than filling it in.
 
 1. **What you'll do** — day-to-day responsibilities, duties, tasks, ownership
 2. **What they're looking for** — qualifications, skills, years of experience, languages, education, must-haves and nice-to-haves
@@ -172,7 +181,7 @@ Then compare EACH item against the candidate profile:
 These two breakdowns MUST appear in the JSON.
 
 ### 2. Score using Matching Criteria
-Apply remaining Matching Criteria (years, DevOps, required skills, nice-to-have bonus, domain bonus, Special Match). Do not invent extra disqualification rules beyond that document.
+Apply remaining Matching Criteria (years, DevOps, required skills, nice-to-have bonus, domain bonus, Special Match). Do not invent extra disqualification rules beyond that document. Do not score missing info as if it were required.
 
 If Special Match A, B, or C applies, set `special_match` true and score **9–10** (Leipzig: 9.5–10). Do **not** cap these at 8.
 Category C is frontend-leaning fullstack **only when the JD does not hard-require years, a specific backend language, or German**. If the JD does require those, follow original hard-requirement rules — do not mark special_match.
@@ -312,11 +321,12 @@ EXAMPLE — Special Match, pure frontend in Leipzig (score 9.5–10):
 }}
 
 **Notes**:
-- Always fill what_youll_do and what_theyre_looking_for with concrete JD items
+- Always fill what_youll_do and what_theyre_looking_for with concrete JD items that appear in the description. If the description omits a topic, write "not stated in the description" instead of inventing it.
 - Include "disqualification_reason" ONLY if score ≤ 3
-- List "nice_to_have_matches" for bonus skills the candidate HAS
+- List "nice_to_have_matches" for bonus skills the candidate HAS **and the JD listed**
 - special_match must be true for categories A/B/C; those scores must be 9–10, not 8
 - **Never invent a city.** "Located in Leipzig" / Leipzig bonus ONLY when Location or the JD literally contains Leipzig (or Leipzig-Halle / 04103). Berlin, Munich, Hamburg, remote-Germany, etc. are NOT Leipzig.
+- **Never invent tech stack or requirements.** If the JD does not mention a skill, it must not appear in the JSON lists.
 """
     return prompt
 
@@ -325,7 +335,7 @@ def analyze_job_with_ai(
     job: Dict,
     user_profile: str,
     criteria: str,
-    temperature: float = 0.3,
+    temperature: float = MATCH_AI_TEMPERATURE,
     extract: Optional[Dict] = None,
 ) -> Optional[Dict]:
     """
@@ -356,7 +366,18 @@ def analyze_job_with_ai(
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a strict professional career advisor specializing in job matching. German, backend-stack, and AI/ML-core gates already ran in code for this job. Parse each JD into 'what you'll do' and 'what they're looking for', then compare every item to the resume. Follow the Matching Criteria document in the user message exactly. Special Match A/B/C jobs must score 9–10 (not 8) with special_match=true. Never invent Leipzig or any other city — only claim Leipzig when Location or JD literally say Leipzig. Respond only with valid JSON."
+                    "content": (
+                        "You are a strict professional career advisor specializing in job matching. "
+                        "Use ONLY facts present in the provided job description. Never invent "
+                        "requirements, responsibilities, tech stack, languages, years, or company "
+                        "details. If information is missing, say 'not stated in the description'. "
+                        "German, backend-stack, and AI/ML-core gates already ran in code for this job. "
+                        "Parse each JD into 'what you'll do' and 'what they're looking for', then "
+                        "compare every item to the resume. Follow the Matching Criteria document in "
+                        "the user message exactly. Special Match A/B/C jobs must score 9–10 (not 8) "
+                        "with special_match=true. Never invent Leipzig or any other city — only claim "
+                        "Leipzig when Location or JD literally say Leipzig. Respond only with valid JSON."
+                    )
                 },
                 {
                     "role": "user",
@@ -373,6 +394,7 @@ def analyze_job_with_ai(
         import json
         analysis = json.loads(result)
         finalized = _finalize_special_match(job, analysis)
+        finalized = _ground_analysis_in_description(job, finalized)
         if extract:
             finalized["requirement_extract"] = extract
         finalized.setdefault("match_gate", "scored")
@@ -383,17 +405,68 @@ def analyze_job_with_ai(
         return None
 
 
+def description_skip_analysis(assessment: Dict) -> Dict:
+    """Skip AI when the scraped JD is empty or clearly incomplete."""
+    kind = assessment.get("kind") or "empty"
+    reason = assessment.get("reason") or "Missing job description"
+    incomplete = kind == "incomplete"
+    summary = (
+        "Scraped job description is incomplete or does not match this posting; "
+        "skipped AI matching to avoid hallucinated analysis. Re-fetch details."
+        if incomplete
+        else (
+            "No usable job description scraped; "
+            "skipped AI matching to avoid hallucinated scores."
+        )
+    )
+    return {
+        "match_score": 0,
+        "recommendation": "No",
+        "special_match": False,
+        "special_match_reasons": [],
+        "disqualification_reason": reason,
+        "match_reasons": [],
+        "missing_requirements": [],
+        "red_flags": [
+            "Incomplete job description — needs re-fetch"
+            if incomplete
+            else "Empty or missing job description"
+        ],
+        "nice_to_have_matches": [],
+        "summary": summary,
+        "what_youll_do": {"matched": [], "unmatched": []},
+        "what_theyre_looking_for": {"matched": [], "unmatched": []},
+        "match_gate": "incomplete_desc" if incomplete else "empty_desc",
+        "low_confidence": True,
+        "needs_refetch": True,
+    }
+
+
 def evaluate_job(
     job: Dict,
     user_profile: str,
     criteria: str,
-    temperature: float = 0.3,
+    temperature: float = MATCH_AI_TEMPERATURE,
 ) -> Optional[Dict]:
     """
-    Full match path: German gate → AI/ML title → stack extract + local gate → score.
+    Full match path: description quality → German gate → AI/ML title →
+    stack extract + local gate → score.
 
     Returns an analysis dict, or None if the scoring call fails after gates passed.
     """
+    assessment = assess_job_description(
+        job.get("description", ""),
+        title=job.get("title") or "",
+        company=job.get("company") or "",
+        source=job.get("source") or "",
+    )
+    if not assessment.get("ok"):
+        print(
+            f"⚠ {assessment.get('kind', 'empty')} job description — skip AI"
+        )
+        print(f"   {assessment.get('reason')}")
+        return description_skip_analysis(assessment)
+
     german_reason = find_mandatory_german_requirement(job)
     if german_reason:
         print("🚫 Mandatory German — skip remaining matching")
@@ -500,6 +573,73 @@ def _strip_false_leipzig_claims(analysis: Dict) -> bool:
     return removed
 
 
+_GROUNDED_SKILL = re.compile(
+    r"\b(?:"
+    r"react|angular|vue|svelte|next\.?js|nuxt|"
+    r"python|django|flask|fastapi|java|kotlin|golang|go|"
+    r"node\.?js|typescript|javascript|php|ruby|rails|rust|scala|"
+    r"c\#|\.net|spring|express|nest\.?js|"
+    r"kubernetes|k8s|docker|aws|gcp|azure|terraform|"
+    r"graphql|mongodb|postgresql|postgres|mysql|redis|kafka|"
+    r"spark|tensorflow|pytorch|german|deutsch|french|dutch"
+    r")\b",
+    re.I,
+)
+
+
+def _item_skill_tokens(item: str) -> list:
+    return [m.group(0) for m in _GROUNDED_SKILL.finditer(item or "")]
+
+
+def _item_grounded_in_jd(item: str, jd_lower: str) -> bool:
+    tokens = _item_skill_tokens(item)
+    if not tokens:
+        return True
+    return any(tok.lower() in jd_lower for tok in tokens)
+
+
+def _ground_list(items, jd_lower: str) -> tuple:
+    if not isinstance(items, list):
+        return items, 0
+    kept = []
+    dropped = 0
+    for item in items:
+        text = str(item)
+        if _item_grounded_in_jd(text, jd_lower):
+            kept.append(item)
+        else:
+            dropped += 1
+    return kept, dropped
+
+
+def _ground_analysis_in_description(job: Dict, analysis: Dict) -> Dict:
+    """Drop listed skills/requirements that do not appear in the JD text."""
+    jd_lower = strip_html(str(job.get("description") or "")).lower()
+    dropped = 0
+    for key in ("missing_requirements", "nice_to_have_matches", "match_reasons"):
+        cleaned, n = _ground_list(analysis.get(key), jd_lower)
+        analysis[key] = cleaned
+        dropped += n
+    for breakdown_key in ("what_youll_do", "what_theyre_looking_for"):
+        block = analysis.get(breakdown_key)
+        if not isinstance(block, dict):
+            continue
+        for side in ("matched", "unmatched"):
+            cleaned, n = _ground_list(block.get(side), jd_lower)
+            block[side] = cleaned
+            dropped += n
+    if dropped:
+        flags = analysis.get("red_flags")
+        if not isinstance(flags, list):
+            flags = []
+        note = "Removed skills/requirements that were not stated in the description"
+        if note not in flags:
+            flags.append(note)
+        analysis["red_flags"] = flags
+    analysis["grounded_in_description"] = True
+    return analysis
+
+
 def _finalize_special_match(job: Dict, analysis: Dict) -> Dict:
     """Normalize special_match fields and apply Leipzig / special-match score floors."""
     special = _as_bool(analysis.get("special_match"))
@@ -579,6 +719,9 @@ def _analysis_fields(analysis: Dict) -> Dict:
         "what_theyre_looking_for": _normalize_breakdown(analysis.get("what_theyre_looking_for")),
         "match_gate": analysis.get("match_gate") or "",
         "requirement_extract": analysis.get("requirement_extract") or {},
+        "low_confidence": bool(analysis.get("low_confidence")),
+        "needs_refetch": bool(analysis.get("needs_refetch")),
+        "grounded_in_description": bool(analysis.get("grounded_in_description")),
     }
 
 
@@ -690,33 +833,6 @@ def process_new_jobs(limit: Optional[int] = None, source: Optional[str] = None):
         print(f"Company: {job.get('company')}")
         print(f"Source: {job.get('source')}")
 
-        if not is_usable_job_description(job.get("description", "")):
-            print("⚠ Empty/missing job description — skip AI, mark failed")
-            processed_count += 1
-            mark_job_as_matched(
-                job.get("job_id"),
-                job.get("source"),
-                match_score=0,
-                analysis={
-                    "recommendation": "No",
-                    "special_match": False,
-                    "special_match_reasons": [],
-                    "disqualification_reason": "Missing job description",
-                    "match_reasons": [],
-                    "missing_requirements": [],
-                    "red_flags": ["Empty or missing job description"],
-                    "nice_to_have_matches": [],
-                    "summary": (
-                        "No usable job description scraped; "
-                        "skipped AI matching to avoid hallucinated scores."
-                    ),
-                    "what_youll_do": {"matched": [], "unmatched": []},
-                    "what_theyre_looking_for": {"matched": [], "unmatched": []},
-                    "match_gate": "empty_desc",
-                },
-            )
-            continue
-
         analysis = evaluate_job(job, user_profile, criteria)
         
         if not analysis:
@@ -745,6 +861,8 @@ def process_new_jobs(limit: Optional[int] = None, source: Optional[str] = None):
         if match_gate == "german":
             german_skip_count += 1
             print("✗ Stopped at German gate; not sent to full scorer")
+        elif match_gate in ("empty_desc", "incomplete_desc"):
+            print("✗ Stopped: job description empty or incomplete; not sent to full scorer")
         elif match_gate == "stack":
             stack_skip_count += 1
             print("✗ Stopped at backend-stack gate; not sent to full scorer")
