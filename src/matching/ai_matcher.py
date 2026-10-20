@@ -177,8 +177,10 @@ Read the full job description and split it into two lists of atomic items (one r
 2. **What they're looking for** — qualifications, skills, years of experience, languages, education, must-haves and nice-to-haves
 
 Then compare EACH item against the candidate profile:
-- **matched**: the candidate can reasonably do / already has this, based on the resume
+- **matched**: the resume shows evidence the candidate can do / already has this
 - **unmatched**: the candidate cannot do this, or it is a gap
+- Do **not** mark an item matched just because it is optional or sounds interesting.
+- If the item needs Rust / Java / Go / PHP / Ruby / C# / Scala / Kotlin / production Python (languages the candidate does not know), it is **unmatched**. That includes "And if you want more", "opportunity to", "you can also" extras.
 
 These two breakdowns MUST appear in the JSON.
 
@@ -325,7 +327,8 @@ EXAMPLE — Special Match, pure frontend in Leipzig (score 9.5–10):
 **Notes**:
 - Always fill what_youll_do and what_theyre_looking_for with concrete JD items that appear in the description. If the description omits a topic, write "not stated in the description" instead of inventing it.
 - Include "disqualification_reason" ONLY if score ≤ 3
-- List "nice_to_have_matches" for bonus skills the candidate HAS **and the JD listed**
+- List "nice_to_have_matches" for bonus skills the candidate HAS **and the JD listed**. Never list Rust / Java / Go / PHP / Ruby / C# / Scala / Kotlin here.
+- Optional extra-language work (e.g. "if you want more: work with Rust") belongs in what_youll_do.unmatched, not matched.
 - special_match must be true for categories A/B/C; those scores must be 9–10, not 8
 - **Never invent a city.** "Located in Leipzig" / Leipzig bonus ONLY when Location or the JD literally contains Leipzig (or Leipzig-Halle / 04103). Berlin, Munich, Hamburg, remote-Germany, etc. are NOT Leipzig.
 - **Never invent tech stack or requirements.** If the JD does not mention a skill, it must not appear in the JSON lists.
@@ -399,6 +402,7 @@ def analyze_job_with_ai(
         analysis = json.loads(result)
         finalized = _finalize_special_match(job, analysis)
         finalized = _ground_analysis_in_description(job, finalized)
+        finalized = _reclassify_unknown_stack_matches(finalized)
         if extract:
             finalized["requirement_extract"] = extract
         finalized.setdefault("match_gate", "scored")
@@ -641,6 +645,53 @@ def _ground_analysis_in_description(job: Dict, analysis: Dict) -> Dict:
             flags.append(note)
         analysis["red_flags"] = flags
     analysis["grounded_in_description"] = True
+    return analysis
+
+
+# Languages / backends the candidate does not know (matching_criteria.md).
+# Do not use a bare \bgo\b — it matches ordinary English ("you'll go").
+_UNKNOWN_STACK_ITEM = re.compile(
+    r"\b(?:"
+    r"rust|java|kotlin|php|ruby|rails|scala|"
+    r"c\#|\.net|csharp|golang|"
+    r"spring(?:\s*boot)?|django|flask|fastapi|"
+    r"elixir|erlang|haskell"
+    r")\b",
+    re.I,
+)
+
+
+def _mentions_unknown_stack(text: str) -> bool:
+    return bool(_UNKNOWN_STACK_ITEM.search(text or ""))
+
+
+def _reclassify_unknown_stack_matches(analysis: Dict) -> Dict:
+    """
+    Move JD items that need an unknown language out of matched lists.
+
+    Optional Rust / Java / … work must not show as a green match.
+    """
+    analysis = analysis or {}
+    for breakdown_key in ("what_youll_do", "what_theyre_looking_for"):
+        block = analysis.get(breakdown_key)
+        if not isinstance(block, dict):
+            continue
+        matched = [str(item) for item in (block.get("matched") or [])]
+        unmatched = [str(item) for item in (block.get("unmatched") or [])]
+        keep = []
+        for item in matched:
+            if _mentions_unknown_stack(item):
+                if item not in unmatched:
+                    unmatched.append(item)
+            else:
+                keep.append(item)
+        block["matched"] = keep
+        block["unmatched"] = unmatched
+    nices = analysis.get("nice_to_have_matches")
+    if isinstance(nices, list):
+        analysis["nice_to_have_matches"] = [
+            item for item in nices if not _mentions_unknown_stack(str(item))
+        ]
     return analysis
 
 

@@ -10,6 +10,12 @@ Score 0–10. Apply the steps in order. Each rule is stated once.
 - **Also on resume**: MongoDB, Git, Sentry, Jest, Cypress, Playwright, AI-assisted development (using Copilot / ChatGPT / product LLM features). Not an AI/ML engineer: no model training, fine-tuning, or ML-platform work.
 - **Background**: B2B SaaS, B2C e-commerce, startups, and food compliance / regulatory. Consumer apps, admin tools, high-traffic work (3M+ daily views), UX, complex forms, roles and permissions, product-management UIs, component libraries / design systems, performance optimization.
 
+### Breakdown lists (`what_youll_do` / `what_theyre_looking_for`)
+
+**matched** only when the resume shows the candidate can do that item (named skill or equivalent work).
+
+If a task or skill needs a language/tool the candidate does **not** know (Java, Go, PHP, Ruby, C#, .NET, Scala, Rust, Kotlin, production Python), it is **unmatched** — even when the JD frames it as optional: "if you want more", "opportunity to", "you can also", "nice to have", "plus", "bonus". Optional unknown-stack work is never a green match and never a missing required skill.
+
 ## Step 1 — Hard gates
 
 If **any** gate fails: `match_score` ≤ 3, `recommendation` **No**, `special_match` false. Do not apply bonuses or Special Match.

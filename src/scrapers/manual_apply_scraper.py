@@ -52,7 +52,7 @@ _SRC_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _SRC_ROOT not in sys.path:
     sys.path.insert(0, _SRC_ROOT)
 
-from core.db_mongo import init_db, get_collection, is_job_on_tracker
+from core.db_mongo import init_db, get_collection
 from core.job_url import (
     canonicalize_url,
     detect_source,
@@ -70,6 +70,7 @@ from core.manual_log import (
     apply_scraped_details,
     can_fetch_details,
     force_save_manual_job,
+    get_tracker_job,
     handle_existing_tracker,
     keep_manual_identity,
     mark_tracker_job_applied,
@@ -78,6 +79,7 @@ from core.manual_log import (
     save_job_record,
     save_link_only_urls,
     stub_ai_pending_analysis,
+    tracker_needs_scrape,
 )
 from core.config import INDEED_CONFIG
 
@@ -101,87 +103,162 @@ _GENERIC_MIN_DESC_CHARS = 200
 
 # ── per-source scrapers ───────────────────────────────────────────────────────
 
+_LINKEDIN_VIEW_WAIT = (
+    "h1,"
+    " .job-details-jobs-unified-top-card__job-title,"
+    " .top-card-layout__title,"
+    " .topcard__title,"
+    " .show-more-less-html__markup,"
+    " .description__text,"
+    " .jobs-description-content__text,"
+    " .jobs-box__html-content,"
+    " [id*='JobDetails_AboutTheJob'],"
+    ' [data-sdui-screen="com.linkedin.sdui.flagshipnav.jobs.SemanticJobDetails"]'
+)
+
+_LINKEDIN_TITLE_SELECTORS = (
+    ".job-details-jobs-unified-top-card__job-title",
+    "h1.job-details-jobs-unified-top-card__job-title",
+    ".top-card-layout__title",
+    ".topcard__title",
+    "h1.top-card-layout__title",
+    "h1",
+)
+
+_LINKEDIN_COMPANY_SELECTORS = (
+    ".job-details-jobs-unified-top-card__company-name a",
+    ".job-details-jobs-unified-top-card__company-name",
+    "a.topcard__org-name-link",
+    ".topcard__org-name-link",
+    ".topcard__flavor:not(.topcard__flavor--bullet)",
+)
+
+_LINKEDIN_LOCATION_SELECTORS = (
+    ".job-details-jobs-unified-top-card__bullet",
+    ".topcard__flavor--bullet",
+    ".top-card-layout__card .topcard__flavor--bullet",
+)
+
+
+def linkedin_view_url(job_id: str) -> str:
+    """Canonical LinkedIn job page — used for Log Job / Run AI / Fetch."""
+    return f"https://www.linkedin.com/jobs/view/{job_id}/"
+
+
+def _first_locator_text(page, selectors) -> str:
+    su = _su()
+    for sel in selectors:
+        try:
+            loc = page.locator(sel).first
+            if loc.count() == 0:
+                continue
+            text = (su.safe_text(loc) or "").strip()
+            if text:
+                return text
+        except Exception:
+            continue
+    return ""
+
+
+def _extract_linkedin_view_identity(page) -> tuple[str, str, str, str]:
+    """Title / company / location / applicants from a /jobs/view page."""
+    title = _first_locator_text(page, _LINKEDIN_TITLE_SELECTORS)
+    company = _first_locator_text(page, _LINKEDIN_COMPANY_SELECTORS)
+    location = _first_locator_text(page, _LINKEDIN_LOCATION_SELECTORS)
+    applicants = _first_locator_text(
+        page,
+        (
+            ".job-details-jobs-unified-top-card__tertiary-description-container",
+            ".num-applicants__caption",
+            ".posted-time-ago__text",
+        ),
+    )
+    if title.lower() in {"linkedin", "sign in", "join now"}:
+        title = ""
+    return title, company, location, applicants
+
+
 def scrape_linkedin_job(page, url: str) -> Optional[dict]:
     """
-    Navigate to a LinkedIn search-results page with currentJobId and extract
-    job data using the same selectors as linkedin_scraper.py.
+    Open the LinkedIn /jobs/view/{id}/ page and extract title, company,
+    location, and description.
+
+    Manual Log / Run AI / Fetch always use the view URL — the search-results
+    page (keywords=frontend + last 24h) often does not include this job, so
+    the detail panel never loads and we used to fall back to a link-only stub.
     """
     su = _su()
-    pause = su.pause
-    safe_text = su.safe_text
+    from scrapers.linkedin_scraper import (
+        extract_linkedin_description,
+        _trim_linkedin_sidebar,
+    )
 
     job_id = extract_linkedin_job_id(url)
     if not job_id:
         print(f"  ⚠️  Cannot extract LinkedIn job_id from: {url}")
         return None
 
-    # Canonical URL stored in DB (clean, no tracking params)
-    canonical_url = f"https://www.linkedin.com/jobs/view/{job_id}/"
-
-    # Navigate — use the original URL if it's already a search-results page,
-    # otherwise build one so the left panel + right detail panel both load.
-    if "search-results" in url:
-        nav_url = url
-    else:
-        nav_url = (
-            f"https://www.linkedin.com/jobs/search-results/"
-            f"?currentJobId={job_id}"
-            f"&keywords=frontend"
-            f"&geoId=101282230"
-            f"&origin=JOB_SEARCH_PAGE_JOB_FILTER"
-            f"&f_TPR=r86400"
-        )
-    print(f"  → Navigating to {nav_url}")
-    try:
-        page.goto(nav_url, wait_until="domcontentloaded", timeout=20000)
-    except Exception as e:
-        print(f"  ⚠️  Navigation error: {e}")
-        return None
-
-    # Wait for the detail panel — new SDUI layout first, then classic fallbacks
-    try:
-        page.wait_for_selector(
-            '[data-sdui-screen="com.linkedin.sdui.flagshipnav.jobs.SemanticJobDetails"],'
-            " .job-details-jobs-unified-top-card__tertiary-description-container,"
-            " .jobs-box__html-content,"
-            " [id*='JobDetails_AboutTheJob']",
-            timeout=15000,
-        )
-    except Exception as e:
-        if type(e).__name__ != "TimeoutError" and "Timeout" not in type(e).__name__:
-            raise
-        print("  ⚠️  Timed out waiting for LinkedIn job detail; are you logged in?")
-        return None
-
-    pause(1.0, 2.0)
-
-    # ── Right panel only ──────────────────────────────────────────────────────
-    # title/company/location are left empty — left panel cards may not be present
-    title = ""
-    company = ""
-    location = ""
-
-    applicants = safe_text(
-        page.locator(".job-details-jobs-unified-top-card__tertiary-description-container")
-    )
-
-    from scrapers.linkedin_scraper import extract_linkedin_description
-
-    description = extract_linkedin_description(page, job_id)
-    if description:
-        print("  🔍 Description found via LinkedIn About-the-job extract")
-
-    return {
-        "title": title,
-        "company": company,
-        "location": location,
-        "applicants": applicants,
-        "description": description,
+    canonical_url = linkedin_view_url(job_id)
+    job = {
+        "title": "",
+        "company": "",
+        "location": "",
+        "applicants": "",
+        "description": "",
         "link": canonical_url,
         "job_id": job_id,
         "source": "linkedin",
-        "status": "applied",
+        "scrape_warning": "",
     }
+
+    print(f"  → Navigating to {canonical_url}")
+    try:
+        page.goto(canonical_url, wait_until="domcontentloaded", timeout=20000)
+    except Exception as e:
+        job["scrape_warning"] = f"Navigation error: {e}"
+        print(f"  ⚠️  {job['scrape_warning']}")
+        return job
+
+    try:
+        page.wait_for_selector(_LINKEDIN_VIEW_WAIT, timeout=15000)
+    except Exception as e:
+        if type(e).__name__ != "TimeoutError" and "Timeout" not in type(e).__name__:
+            raise
+        print("  ⚠️  Timed out waiting for LinkedIn job detail — trying extract anyway")
+
+    su.pause(1.0, 2.0)
+
+    title, company, location, applicants = _extract_linkedin_view_identity(page)
+    description = extract_linkedin_description(page, job_id)
+    if description:
+        print("  🔍 Description found via LinkedIn About-the-job extract")
+    else:
+        html = ""
+        try:
+            html = page.content() or ""
+        except Exception as e:
+            print(f"  ⚠️  Could not read LinkedIn HTML: {e}")
+        description = _extract_main_text_from_html(html, canonical_url)
+        if description:
+            print(f"  📄 trafilatura extracted {len(description)} chars from LinkedIn view")
+        else:
+            description = _fallback_page_text(page)
+            if description:
+                print(f"  📄 fallback text: {len(description)} chars")
+        description = _trim_linkedin_sidebar(description)
+
+    job["title"] = title
+    job["company"] = company
+    job["location"] = location
+    job["applicants"] = applicants
+    job["description"] = description
+    if not description and not title and not job["scrape_warning"]:
+        job["scrape_warning"] = (
+            "LinkedIn page loaded but title/description were empty "
+            "(login wall or expired posting?)"
+        )
+        print(f"  ⚠️  {job['scrape_warning']}")
+    return job
 
 
 _INDEED_DETAIL_SELECTOR = INDEED_CONFIG["selectors"]["detail"]  # '[data-testid="viewjob-main-content"]'
@@ -416,6 +493,27 @@ def scrape_generic_job(page, url: str) -> Optional[dict]:
 
 # ── AI metadata inference ─────────────────────────────────────────────────────
 
+def _fill_identity_from_description(job: dict) -> dict:
+    """Infer blank title / company / location from the JD via AI."""
+    if not job.get("description"):
+        return job
+    if job.get("title") and job.get("company") and job.get("location"):
+        return job
+    missing = [f for f in ("title", "company", "location") if not job.get(f)]
+    print(f"  🤖 Inferring missing field(s) {missing} from description via AI…")
+    metadata = infer_job_metadata_with_ai(job.get("description", ""))
+    if metadata:
+        for field in ("title", "company", "location"):
+            if not job.get(field):
+                job[field] = metadata.get(field, "")
+        print(
+            f"  🤖 Inferred → title='{job.get('title')}'"
+            f"  company='{job.get('company')}'"
+            f"  location='{job.get('location')}'"
+        )
+    return job
+
+
 def infer_job_metadata_with_ai(description_text: str) -> dict:
     """
     Ask AI to infer job title, company, and location from plain-text description.
@@ -561,19 +659,7 @@ def enrich_job_and_evaluate(
         print("  ⚠️  Description is empty — page may not have loaded or login required.")
         return None
 
-    if not (job.get("title") and job.get("company") and job.get("location")):
-        missing = [f for f in ("title", "company", "location") if not job.get(f)]
-        print(f"  🤖 Inferring missing field(s) {missing} from description via AI…")
-        metadata = infer_job_metadata_with_ai(job.get("description", ""))
-        if metadata:
-            for field in ("title", "company", "location"):
-                if not job.get(field):
-                    job[field] = metadata.get(field, "")
-            print(
-                f"  🤖 Inferred → title='{job.get('title')}'"
-                f"  company='{job.get('company')}'"
-                f"  location='{job.get('location')}'"
-            )
+    _fill_identity_from_description(job)
 
     if not job.get("title"):
         job["title"] = f"(Unknown title — job_id {job.get('job_id', '')})"
@@ -695,7 +781,8 @@ def process_urls(
                     print("  ❌ Cannot resolve job_id from URL")
                     results["failed"].append(url)
                     continue
-                if is_job_on_tracker(job_id, source):
+                existing = get_tracker_job(job_id, source)
+                if existing and not tracker_needs_scrape(existing):
                     outcome = handle_existing_tracker(
                         url, job_id, source, status, applied_date,
                         recommended_by=rec, identity=identity,
@@ -706,10 +793,58 @@ def process_urls(
                         results["skipped"].append(url)
                     if outcome != "missing":
                         continue
+                    existing = None
 
                 job = None
                 if page is not None:
                     job = scrape_job_page(page, url)
+                if existing:
+                    # Refresh a link-only / AI-pending Tracker card in place.
+                    # Do not force_save (that wipes notes / timeline).
+                    if not job or not str(job.get("description") or "").strip():
+                        warn = (
+                            (job or {}).get("scrape_warning")
+                            or (
+                                "Scraping failed"
+                                if page is not None
+                                else "Chrome was not available"
+                            )
+                        )
+                        print(
+                            f"  ❌ {warn} — existing Tracker card left unchanged"
+                        )
+                        results["failed"].append(url)
+                        continue
+                    if rec:
+                        job["recommended_by"] = rec
+                    keep_manual_identity(job, existing)
+                    apply_identity_to_job(job, identity)
+                    if status == "applied":
+                        mark_tracker_job_applied(
+                            job_id, source, applied_date, recommended_by=rec,
+                        )
+                    analysis = None
+                    if user_profile:
+                        analysis = enrich_job_and_evaluate(
+                            job, user_profile, criteria
+                        )
+                    if analysis:
+                        if not apply_analysis_to_existing(job, analysis):
+                            results["failed"].append(url)
+                            continue
+                        print("  ✅ AI analysis saved to existing Tracker card")
+                    else:
+                        _fill_identity_from_description(job)
+                        saved = apply_scraped_details(job)
+                        if not saved.get("ok"):
+                            results["failed"].append(url)
+                            continue
+                        print("  ✅ Job details saved on existing Tracker card (AI pending)")
+                    results["ok"].append(url)
+                    if page is not None:
+                        pause(2, 4, "  ⏳ Brief pause before next URL")
+                    continue
+
                 if not job:
                     warn = (
                         "Scraping failed"
@@ -834,11 +969,13 @@ def fetch_job_details_for_matched_job(matched_doc: dict) -> dict:
             return {"ok": False, "error": f"Cannot open Chrome: {e}"}
 
         job = scrape_job_page(page, url)
-        if not job:
-            print("  ❌ Scraping failed")
-            return {"ok": False, "error": "Scraping failed"}
+        if not job or not str(job.get("description") or "").strip():
+            warn = (job or {}).get("scrape_warning") or "Scraping failed"
+            print(f"  ❌ {warn}")
+            return {"ok": False, "error": warn}
 
         keep_manual_identity(job, matched_doc)
+        _fill_identity_from_description(job)
         if not job.get("title"):
             job["title"] = matched_doc.get("title") or ""
         if not job.get("job_id"):
@@ -891,14 +1028,19 @@ def run_ai_on_matched_job(matched_doc: dict) -> dict:
     criteria = load_matching_criteria()
 
     with sync_playwright() as playwright:
-        browser = connect_browser(playwright, "job sites")
-        context = browser.contexts[0]
-        page = context.pages[0] if context.pages else context.new_page()
+        try:
+            browser = connect_browser(playwright, "job sites")
+            context = browser.contexts[0]
+            page = context.pages[0] if context.pages else context.new_page()
+        except Exception as e:
+            print(f"  ❌ Cannot open Chrome ({e})")
+            return {"ok": False, "error": f"Cannot open Chrome: {e}", "match_score": None}
 
         job = scrape_job_page(page, url)
-        if not job:
-            print("  ❌ Scraping failed")
-            return {"ok": False, "error": "Scraping failed", "match_score": None}
+        if not job or not str(job.get("description") or "").strip():
+            warn = (job or {}).get("scrape_warning") or "Scraping failed"
+            print(f"  ❌ {warn}")
+            return {"ok": False, "error": warn, "match_score": None}
 
         keep_manual_identity(job, matched_doc)
         analysis = enrich_job_and_evaluate(job, user_profile, criteria)

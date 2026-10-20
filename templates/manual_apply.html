@@ -465,8 +465,8 @@ https://careers.example.com/jobs/frontend-engineer"
     • Submit with <strong>Applied</strong> to mark an existing Tracker card applied (notes/timeline stay).<br>
     • Optional <strong>Job title / Company / Location</strong> are saved on the Tracker card (works with Save Link Only). Later scrape or Fetch job details will not overwrite a field you typed unless you left it blank.<br>
     • Optional <strong>Recommended by AI agent</strong> tags the Tracker card (Claude / Cursor / Gemini / GPT). Agent-recommended cards get <strong>Fetch job details</strong> (scrape only, no AI).<br>
-    • <strong>Save Link Only</strong>: no Chrome needed; card shows AI pending until you click <strong>Run AI</strong> on Tracker.<br>
-    • <strong>Scrape &amp; Log</strong>: Chrome is used when available. If Indeed blocks or Chrome is missing, the link is still saved.<br>
+    • <strong>Save Link Only</strong>: no Chrome needed; card shows AI pending until you click <strong>Run AI</strong> or <strong>Fetch job details</strong> on Tracker.<br>
+    • <strong>Scrape &amp; Log</strong>: opens the job page in debug Chrome, saves details, and runs AI. LinkedIn uses the <code>/jobs/view/ID</code> page (not a 24h search). If the URL is already a link-only Tracker card, this refreshes it in place. If Indeed blocks or Chrome is missing, a new URL is still saved as a stub.<br>
     • LinkedIn: <code>https://www.linkedin.com/jobs/view/JOB_ID/</code><br>
     • Indeed: <code>https://de.indeed.com/viewjob?jk=JOB_KEY</code><br>
     • Other sites: paste the job detail URL — main content is extracted automatically.<br>
@@ -585,8 +585,19 @@ async function lookupUrls(urls, { autoOpen = true } = {}) {
 
     // Single Tracker URL → open that card immediately (paste only; submit
     // must still run so Applied can update an existing card).
+    // Link-only / AI-pending cards stay here so Scrape & Log can refresh them.
     if (autoOpen && urls.length === 1 && trackerHits.length === 1 && misses.length === 0 && promotableHits.length === 0) {
       const hit = trackerHits[0];
+      if (hit.needs_scrape || hit.details_missing || hit.ai_pending) {
+        const open = hit.open_path
+          ? ` <a class="btn-open" href="${esc(hit.open_path)}">Open card →</a>`
+          : '';
+        setBanner('info',
+          `⚠️ Already on Tracker without details: <strong>${esc(hit.title || 'job')}</strong>` +
+          (hit.company ? ` · ${esc(hit.company)}` : '') +
+          ` — use <strong>Scrape &amp; Log</strong> to fetch + AI, or Run AI on the card.${open}`);
+        return { hits, misses, results, trackerHits, promotableHits };
+      }
       setBanner('success',
         `✅ Already in Tracker: <strong>${esc(hit.title || 'job')}</strong>` +
         (hit.company ? ` · ${esc(hit.company)}` : '') +
@@ -711,11 +722,17 @@ async function submitUrls({ linkOnly = false } = {}) {
     const trackerToApply = statusNow === 'applied'
       ? (looked.trackerHits || []).map(h => h.url)
       : [];
-    const actionable = [
+    const trackerToRefresh = !linkOnly
+      ? (looked.trackerHits || [])
+          .filter(h => h.needs_scrape || h.details_missing || h.ai_pending)
+          .map(h => h.url)
+      : [];
+    const actionable = [...new Set([
       ...looked.misses.map(m => m.url),
       ...(looked.promotableHits || []).map(h => h.url),
       ...trackerToApply,
-    ];
+      ...trackerToRefresh,
+    ])];
     if (!actionable.length) {
       // All already on Tracker and not marking applied
       return;

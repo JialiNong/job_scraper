@@ -1449,7 +1449,8 @@
     }
     .batch-fetch-btn:hover { border-color: #a78bfa; color: #c4b5fd; }
     .batch-fetch-btn:disabled { opacity: .45; pointer-events: none; }
-    .batch-fetch-bar .btn-fetch-details {
+    .batch-fetch-bar .btn-fetch-details,
+    .batch-fetch-bar .btn-run-ai {
       padding: 6px 12px;
       font-size: .78rem;
       flex-shrink: 0;
@@ -2566,11 +2567,12 @@
 </div>
 
 <div class="batch-fetch-bar" id="batchFetchBar">
-  <span class="batch-fetch-label">Fetch details</span>
+  <span class="batch-fetch-label">Fetch details / Run AI</span>
   <button type="button" class="batch-fetch-btn" id="selectVisibleBtn" onclick="selectVisibleRecommended()" title="Select missing-detail / fetchable cards on this page">Select visible</button>
   <button type="button" class="batch-fetch-btn" id="selectMissingBtn" onclick="selectMissingDetails()" title="Select jobs that still need details (all pages, current filters — including Applied)">Select missing details</button>
   <button type="button" class="batch-fetch-btn" id="clearFetchSelectBtn" onclick="clearFetchSelection()">Clear selection</button>
-  <button type="button" class="btn-fetch-details" id="fetchSelectedBtn" onclick="fetchDetailsForSelected()" disabled>📥 Fetch details for selected</button>
+  <button type="button" class="btn-fetch-details" id="fetchSelectedBtn" onclick="fetchDetailsForSelected()" disabled title="Scrape title, company, location, and description only (no AI)">📥 Fetch details for selected</button>
+  <button type="button" class="btn-run-ai" id="runAiSelectedBtn" onclick="runAiForSelected()" disabled title="Scrape details if missing, then run AI matching">🤖 Run AI for selected</button>
   <span class="batch-fetch-meta" id="batchFetchMeta">0 selected</span>
 </div>
 <div class="batch-fetch-banner" id="batchFetchBanner" hidden></div>
@@ -2632,6 +2634,7 @@ const RECOMMENDED_BY_LABEL = {
 const selectedFetchIds = new Set();
 let fetchBatchPollTimer = null;
 let fetchBatchRunning = false;
+let fetchBatchMode = 'fetch';
 
 const TIMELINE_LABEL = {
   applied:          'Applied',
@@ -3540,7 +3543,7 @@ function renderCard(job) {
           📥 Fetch job details
         </button>` : '';
   const selectBox = canFetch ? `
-    <label class="card-select-wrap" onclick="event.stopPropagation()" title="Select for batch Fetch details">
+    <label class="card-select-wrap" onclick="event.stopPropagation()" title="Select for batch Fetch details / Run AI">
       <input type="checkbox" class="card-select" data-id="${job._id}"
              data-missing="${missing ? '1' : '0'}"
              ${selectedFetchIds.has(job._id) ? 'checked' : ''}
@@ -4248,18 +4251,21 @@ function onCardFetchSelect(input) {
 function updateBatchFetchUI() {
   const meta = document.getElementById('batchFetchMeta');
   const fetchBtn = document.getElementById('fetchSelectedBtn');
+  const runAiBtn = document.getElementById('runAiSelectedBtn');
   const count = selectedFetchIds.size;
+  const verb = fetchBatchMode === 'run_ai' ? 'running AI…' : 'fetching…';
   if (meta) {
     meta.textContent = fetchBatchRunning
-      ? `${count} selected · fetching…`
+      ? `${count} selected · ${verb}`
       : `${count} selected`;
   }
   if (fetchBtn) fetchBtn.disabled = fetchBatchRunning || count === 0;
+  if (runAiBtn) runAiBtn.disabled = fetchBatchRunning || count === 0;
   document.querySelectorAll('.batch-fetch-btn').forEach(btn => {
     btn.disabled = fetchBatchRunning;
   });
-  document.querySelectorAll('.card-select, .btn-fetch-details').forEach(el => {
-    if (el.id === 'fetchSelectedBtn') return;
+  document.querySelectorAll('.card-select, .btn-fetch-details, .btn-run-ai').forEach(el => {
+    if (el.id === 'fetchSelectedBtn' || el.id === 'runAiSelectedBtn') return;
     el.disabled = fetchBatchRunning;
   });
 }
@@ -4329,6 +4335,10 @@ function showBatchBanner(msg, type = 'ok') {
   el.innerHTML = `<span>${escHtml(msg)}</span><button type="button" onclick="hideBatchBanner()">Dismiss</button>`;
 }
 
+function batchModeLabel(mode) {
+  return mode === 'run_ai' ? 'Run AI' : 'Fetch details';
+}
+
 function renderBatchProgress(data) {
   const el = document.getElementById('batchFetchProgress');
   if (!el) return;
@@ -4337,63 +4347,91 @@ function renderBatchProgress(data) {
   const done = data.done_count || 0;
   const fail = data.fail_count || 0;
   const running = Boolean(data.running);
+  const mode = data.mode || fetchBatchMode || 'fetch';
   const rows = (data.results || []).map(r => {
     const cls = r.ok ? 'bf-ok' : 'bf-err';
     const mark = r.ok ? '✅' : '❌';
+    const score = r.match_score != null && r.match_score !== ''
+      ? ` · ${escHtml(String(r.match_score))}/10`
+      : '';
     const err = r.error ? ` — ${escHtml(r.error)}` : '';
-    return `<div class="${cls}">${mark} ${escHtml(r.title || r.id)}${err}</div>`;
+    return `<div class="${cls}">${mark} ${escHtml(r.title || r.id)}${score}${err}</div>`;
   }).join('');
+  const label = batchModeLabel(mode);
   const head = running
-    ? `Fetching details ${Math.min(current, total)}/${total}`
+    ? `${label} ${Math.min(current, total)}/${total}`
     : `Batch done — ${done} saved, ${fail} failed`;
   el.hidden = false;
   el.innerHTML = `<div class="bf-head"><span>${head}</span><span>${done} ok · ${fail} failed</span></div><div class="bf-list">${rows || 'Starting…'}</div>`;
 }
 
-function notifyFetchBatchDone(body, type) {
+function notifyFetchBatchDone(body, type, mode) {
   showToast(body, type, 8000);
   showBatchBanner(body, type);
   try {
     if ('Notification' in window && Notification.permission === 'granted') {
-      new Notification('Fetch job details', { body });
+      new Notification(batchModeLabel(mode || fetchBatchMode), { body });
     }
   } catch (_) {}
 }
 
-async function fetchDetailsForSelected() {
+async function startSelectedChromeBatch(mode) {
   if (fetchBatchRunning || selectedFetchIds.size === 0) return;
   const ids = Array.from(selectedFetchIds);
+  const isAi = mode === 'run_ai';
   hideBatchBanner();
+  fetchBatchMode = mode;
   fetchBatchRunning = true;
   updateBatchFetchUI();
-  showToast('📥 Fetching details for selected jobs — needs debug Chrome');
+  showToast(
+    isAi
+      ? '🤖 Run AI for selected jobs — scrape + match, needs debug Chrome'
+      : '📥 Fetching details for selected jobs — needs debug Chrome'
+  );
   try {
     if ('Notification' in window && Notification.permission === 'default') {
       Notification.requestPermission().catch(() => {});
     }
   } catch (_) {}
 
+  const url = isAi ? '/api/run-ai/batch' : '/api/fetch-details/batch';
   try {
-    const res = await fetch('/api/fetch-details/batch', {
+    const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ids }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || data.ok === false) {
-      const err = data.error || 'Failed to start batch Fetch details';
-      notifyFetchBatchDone(err, 'err');
+      const err = data.error || `Failed to start batch ${batchModeLabel(mode)}`;
+      notifyFetchBatchDone(err, 'err', mode);
       fetchBatchRunning = false;
       updateBatchFetchUI();
       return;
     }
-    renderBatchProgress({ running: true, total: data.total || ids.length, current: 0, done_count: 0, fail_count: 0, results: [] });
+    renderBatchProgress({
+      running: true,
+      mode,
+      total: data.total || ids.length,
+      current: 0,
+      done_count: 0,
+      fail_count: 0,
+      results: [],
+    });
     pollFetchBatchStatus();
   } catch (err) {
-    notifyFetchBatchDone(err.message || 'Network error', 'err');
+    notifyFetchBatchDone(err.message || 'Network error', 'err', mode);
     fetchBatchRunning = false;
     updateBatchFetchUI();
   }
+}
+
+async function fetchDetailsForSelected() {
+  return startSelectedChromeBatch('fetch');
+}
+
+async function runAiForSelected() {
+  return startSelectedChromeBatch('run_ai');
 }
 
 async function pollFetchBatchStatus() {
@@ -4401,6 +4439,7 @@ async function pollFetchBatchStatus() {
   try {
     const res = await fetch('/api/fetch-details/batch/status');
     const data = await res.json();
+    if (data.mode) fetchBatchMode = data.mode;
     renderBatchProgress(data);
     if (data.running) {
       fetchBatchPollTimer = setTimeout(pollFetchBatchStatus, 1200);
@@ -4415,7 +4454,8 @@ async function pollFetchBatchStatus() {
     if (skip) parts.push(`${skip} skipped`);
     const type = fail || data.error ? 'err' : 'ok';
     const extra = data.error ? ` — ${data.error}` : '';
-    notifyFetchBatchDone(`Fetch details finished — ${parts.join(', ')}${extra}`, type);
+    const label = batchModeLabel(data.mode || fetchBatchMode);
+    notifyFetchBatchDone(`${label} finished — ${parts.join(', ')}${extra}`, type, data.mode);
     selectedFetchIds.clear();
     updateBatchFetchUI();
     await loadJobs();
@@ -4427,7 +4467,7 @@ async function pollFetchBatchStatus() {
 async function fetchJobDetails(jobId, btn) {
   if (!jobId || !btn) return;
   if (fetchBatchRunning) {
-    showToast('Wait for the batch Fetch details to finish', 'err');
+    showToast('Wait for the batch Fetch details / Run AI to finish', 'err');
     return;
   }
   const originalLabel = btn.textContent;
@@ -4465,6 +4505,10 @@ async function fetchJobDetails(jobId, btn) {
 /* ── Run AI (scrape link + match on existing Tracker card) ───────── */
 async function runAiForJob(jobId, btn) {
   if (!jobId || !btn) return;
+  if (fetchBatchRunning) {
+    showToast('Wait for the batch Fetch details / Run AI to finish', 'err');
+    return;
+  }
   const originalLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = '⏳ Running…';

@@ -147,6 +147,7 @@ TITLE_EXCLUDE_KEYWORDS = [
 MATCH_BLOCKED_COMPANIES = [
     "instaffo",
     "jobgether",
+    "Alignerr",
 ]
 
 

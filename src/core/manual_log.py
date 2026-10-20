@@ -71,15 +71,20 @@ def job_missing_details(job: dict | None) -> bool:
     Does not require recommended_by — older Save Link Only stubs were
     stored before that field existed. Link-only titles, empty description,
     ai_pending, or no summary / details_fetched_at all count as missing.
+    A later Fetch that stored a real description wins over a leftover
+    "(Link only)" title.
     """
     job = job or {}
+    has_description = str(job.get("description") or "").strip()
+    if job.get("details_fetched_at") and has_description:
+        return False
     title = str(job.get("title") or "").strip()
     if title.startswith(LINK_ONLY_TITLE_PREFIX):
         return True
     if job.get("details_fetched_at"):
         return False
     if "description" in job:
-        return not str(job.get("description") or "").strip()
+        return not has_description
     if job.get("ai_pending"):
         return True
     return not str(job.get("summary") or "").strip()
@@ -88,6 +93,23 @@ def job_missing_details(job: dict | None) -> bool:
 def can_fetch_details(job: dict | None) -> bool:
     """Show Fetch details / batch checkbox: missing JD, or agent-tagged."""
     return job_missing_details(job) or is_agent_recommended(job)
+
+
+def tracker_needs_scrape(job: dict | None) -> bool:
+    """True when Scrape & Log / Run AI should refresh an existing Tracker row."""
+    job = job or {}
+    return bool(job.get("ai_pending")) or job_missing_details(job)
+
+
+def get_tracker_job(job_id: str, source: str) -> dict | None:
+    """Return the matched_jobs row for job_id + source, if any."""
+    col = get_collection("matched_jobs")
+    if source == "indeed":
+        variants = indeed_job_id_variants(job_id)
+        query = {"job_id": {"$in": variants} if variants else job_id, "source": source}
+    else:
+        query = {"job_id": job_id, "source": source}
+    return col.find_one(query)
 
 
 def _clean_identity_text(value, field: str) -> str:

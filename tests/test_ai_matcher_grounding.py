@@ -16,6 +16,7 @@ from matching import ai_matcher as am  # noqa: E402
 from matching.ai_matcher import (  # noqa: E402
     MATCH_AI_TEMPERATURE,
     _ground_analysis_in_description,
+    _reclassify_unknown_stack_matches,
     build_matching_prompt,
     description_skip_analysis,
     evaluate_job,
@@ -48,6 +49,8 @@ class PromptAndTemperatureTests(unittest.TestCase):
         self.assertIn("Never invent", prompt)
         self.assertIn("nice-to-have is **not** mandatory", prompt)
         self.assertIn("is a plus", prompt)
+        self.assertIn("if you want more", prompt)
+        self.assertIn("Rust", prompt)
 
     def test_default_temperature_is_zero(self):
         self.assertEqual(MATCH_AI_TEMPERATURE, 0.0)
@@ -120,6 +123,52 @@ class GroundingTests(unittest.TestCase):
         self.assertTrue(result["grounded_in_description"])
         self.assertTrue(
             any("not stated in the description" in str(f) for f in result["red_flags"])
+        )
+
+
+class UnknownStackMatchTests(unittest.TestCase):
+    def test_optional_rust_work_is_unmatched(self):
+        analysis = {
+            "what_youll_do": {
+                "matched": [
+                    "Build high-impact TypeScript features",
+                    "Work with Rust to extend our Simulation",
+                ],
+                "unmatched": [],
+            },
+            "what_theyre_looking_for": {
+                "matched": ["React and TypeScript", "Nice-to-have Rust"],
+                "unmatched": [],
+            },
+            "nice_to_have_matches": ["Rust", "TypeScript"],
+        }
+        result = _reclassify_unknown_stack_matches(analysis)
+        self.assertEqual(
+            result["what_youll_do"]["matched"],
+            ["Build high-impact TypeScript features"],
+        )
+        self.assertIn(
+            "Work with Rust to extend our Simulation",
+            result["what_youll_do"]["unmatched"],
+        )
+        self.assertEqual(
+            result["what_theyre_looking_for"]["matched"],
+            ["React and TypeScript"],
+        )
+        self.assertIn("Nice-to-have Rust", result["what_theyre_looking_for"]["unmatched"])
+        self.assertEqual(result["nice_to_have_matches"], ["TypeScript"])
+
+    def test_does_not_treat_english_go_as_golang(self):
+        analysis = {
+            "what_youll_do": {
+                "matched": ["See your code go to production within days"],
+                "unmatched": [],
+            }
+        }
+        result = _reclassify_unknown_stack_matches(analysis)
+        self.assertEqual(
+            result["what_youll_do"]["matched"],
+            ["See your code go to production within days"],
         )
 
 

@@ -49,6 +49,7 @@ from core.manual_log import (
     job_missing_details,
     normalize_manual_identity,
     normalize_recommended_by,
+    tracker_needs_scrape,
 )
 
 load_dotenv()
@@ -1527,6 +1528,9 @@ def api_manual_apply_lookup():
                 "job_id": hit["job_id"],
                 "match_score": hit.get("match_score"),
                 "open_path": open_path,
+                "ai_pending": bool(hit.get("ai_pending")),
+                "details_missing": job_missing_details(hit) if on_tracker else False,
+                "needs_scrape": tracker_needs_scrape(hit) if on_tracker else False,
             })
         else:
             results.append({
@@ -1728,6 +1732,7 @@ _run_ai_state: dict = {
 _fetch_batch_lock = threading.Lock()
 _fetch_batch_state: dict = {
     "running": False,
+    "mode": "fetch",
     "total": 0,
     "current": 0,
     "done_count": 0,
@@ -1736,12 +1741,13 @@ _fetch_batch_state: dict = {
     "results": [],
     "error": None,
 }
+BATCH_BUSY_MSG = "A batch Fetch details / Run AI is already running."
 
 
 def _chrome_busy_reason(*, ignore_run_ai: bool = False) -> Optional[str]:
     """Why a Chrome scrape cannot start now, or None if idle."""
     if _fetch_batch_state.get("running"):
-        return "A batch Fetch details is already running."
+        return BATCH_BUSY_MSG
     if not ignore_run_ai and _run_ai_state.get("running"):
         return "Run AI is already in progress. Please wait."
     if _manual_apply_state.get("running"):
@@ -1839,7 +1845,186 @@ def run_fetch_details_batch_jobs(docs: list, fetch_one=None) -> dict:
         "skip_count": skipped,
         "results": results,
         "error": None,
+        "mode": "fetch",
     }
+
+
+def run_ai_on_tracker_job(doc: dict) -> tuple:
+    """
+    Scrape JD (if needed) and run AI matching on one Tracker card.
+
+    Lazy-imports the scraper so Render never crashes at import time.
+    Returns (payload, http_status).
+    """
+    try:
+        from scrapers.manual_apply_scraper import run_ai_on_matched_job
+    except ImportError:
+        return {"ok": False, "error": PLAYWRIGHT_UNAVAILABLE_MSG}, 503
+    try:
+        result = run_ai_on_matched_job(doc)
+    except ImportError:
+        return {"ok": False, "error": PLAYWRIGHT_UNAVAILABLE_MSG}, 503
+    except Exception as e:
+        return {"ok": False, "error": str(e)}, 500
+    if result.get("ok"):
+        return result, 200
+    err = result.get("error") or "Run AI failed"
+    code = 503 if PLAYWRIGHT_UNAVAILABLE_MSG in err else 502
+    return {**result, "error": err}, code
+
+
+def run_ai_batch_jobs(docs: list, run_one=None) -> dict:
+    """
+    Sequentially Run AI (scrape + match) for Tracker docs. One failure
+    does not stop the rest. run_one(doc) -> (payload, http_status).
+    Updates _fetch_batch_state as it goes.
+    """
+    run_one = run_one or run_ai_on_tracker_job
+    results = []
+    done = 0
+    failed = 0
+    skipped = 0
+    total = len(docs)
+    _fetch_batch_state["mode"] = "run_ai"
+    _fetch_batch_state["total"] = total
+    _fetch_batch_state["results"] = results
+    _fetch_batch_state["done_count"] = 0
+    _fetch_batch_state["fail_count"] = 0
+    _fetch_batch_state["skip_count"] = 0
+    _fetch_batch_state["error"] = None
+
+    for i, doc in enumerate(docs, 1):
+        _fetch_batch_state["current"] = i
+        title = doc.get("title") or doc.get("job_id") or "job"
+        job_key = str(doc.get("_id") or doc.get("job_id") or i)
+        try:
+            out = run_one(doc)
+            if isinstance(out, tuple) and len(out) >= 1:
+                payload = out[0]
+            else:
+                payload = out
+            if not isinstance(payload, dict):
+                payload = {"ok": False, "error": str(payload)}
+        except Exception as e:
+            payload = {"ok": False, "error": str(e)}
+        ok = bool(payload.get("ok"))
+        err = None if ok else (payload.get("error") or "Run AI failed")
+        if ok:
+            done += 1
+            title = payload.get("title") or title
+        else:
+            failed += 1
+        results.append({
+            "id": job_key,
+            "title": title,
+            "ok": ok,
+            "error": err,
+            "match_score": payload.get("match_score"),
+        })
+        _fetch_batch_state["done_count"] = done
+        _fetch_batch_state["fail_count"] = failed
+        _fetch_batch_state["skip_count"] = skipped
+
+    return {
+        "ok": failed == 0,
+        "total": total,
+        "done_count": done,
+        "fail_count": failed,
+        "skip_count": skipped,
+        "results": results,
+        "error": None,
+        "mode": "run_ai",
+    }
+
+
+def parse_batch_job_oids(raw_ids) -> tuple:
+    """
+    Parse POST ids into ObjectIds.
+
+    Returns (oids, None) or (None, (error_payload, http_status)).
+    """
+    if not isinstance(raw_ids, list) or not raw_ids:
+        return None, ({"ok": False, "error": "Select at least one job"}, 400)
+    oids = []
+    seen = set()
+    for raw in raw_ids:
+        text = str(raw or "").strip()
+        if not text or text in seen:
+            continue
+        try:
+            oids.append(ObjectId(text))
+        except Exception:
+            return None, ({"ok": False, "error": f"Invalid id: {text}"}, 400)
+        seen.add(text)
+        if len(oids) >= FETCH_DETAILS_BATCH_MAX:
+            break
+    if not oids:
+        return None, ({"ok": False, "error": "Select at least one job"}, 400)
+    return oids, None
+
+
+def load_tracker_docs_in_order(oids: list) -> tuple:
+    """Return (docs, missing_id_strings) in the requested order."""
+    matched_col = get_collection("matched_jobs")
+    docs_by_id = {
+        doc["_id"]: doc
+        for doc in matched_col.find({"_id": {"$in": oids}})
+    }
+    docs = []
+    missing = []
+    for oid in oids:
+        doc = docs_by_id.get(oid)
+        if not doc:
+            missing.append(str(oid))
+            continue
+        docs.append(doc)
+    return docs, missing
+
+
+def start_chrome_batch(docs: list, *, runner, mode: str, missing: list, raw_count: int, oid_count: int):
+    """Start a sequential Chrome batch on the shared fetch/run-ai lock."""
+    if not _fetch_batch_lock.acquire(blocking=False):
+        return jsonify({"ok": False, "error": BATCH_BUSY_MSG}), 429
+
+    def run():
+        try:
+            _fetch_batch_state["running"] = True
+            _fetch_batch_state["mode"] = mode
+            _fetch_batch_state["current"] = 0
+            _fetch_batch_state["error"] = None
+            runner(docs)
+        except Exception as e:
+            _fetch_batch_state["error"] = str(e)
+            _fetch_batch_state["results"].append({
+                "id": "",
+                "title": "batch",
+                "ok": False,
+                "error": str(e),
+            })
+            _fetch_batch_state["fail_count"] = _fetch_batch_state.get("fail_count", 0) + 1
+        finally:
+            _fetch_batch_state["running"] = False
+            _fetch_batch_lock.release()
+
+    _fetch_batch_state["running"] = True
+    _fetch_batch_state["mode"] = mode
+    _fetch_batch_state["total"] = len(docs)
+    _fetch_batch_state["current"] = 0
+    _fetch_batch_state["done_count"] = 0
+    _fetch_batch_state["fail_count"] = 0
+    _fetch_batch_state["skip_count"] = 0
+    _fetch_batch_state["results"] = []
+    _fetch_batch_state["error"] = None
+    threading.Thread(target=run, daemon=True).start()
+    return jsonify({
+        "ok": True,
+        "status": "started",
+        "mode": mode,
+        "total": len(docs),
+        "skipped_missing": missing,
+        "truncated": raw_count > oid_count,
+        "limit": FETCH_DETAILS_BATCH_MAX,
+    })
 
 
 def _missing_details_mongo_clause() -> dict:
@@ -2042,7 +2227,7 @@ def api_fetch_details_ids():
 @login_required
 def api_fetch_details_batch():
     """
-    Fetch details for many agent-recommended cards, sequentially.
+    Fetch details for many Tracker cards, sequentially (no AI).
 
     Playwright is checked once up front so Render returns the friendly
     error immediately instead of failing per job. One scrape failure
@@ -2050,24 +2235,10 @@ def api_fetch_details_batch():
     """
     data = request.get_json(silent=True) or {}
     raw_ids = data.get("ids") or []
-    if not isinstance(raw_ids, list) or not raw_ids:
-        return jsonify({"ok": False, "error": "Select at least one job"}), 400
-
-    oids = []
-    seen = set()
-    for raw in raw_ids:
-        text = str(raw or "").strip()
-        if not text or text in seen:
-            continue
-        try:
-            oids.append(ObjectId(text))
-        except Exception:
-            return jsonify({"ok": False, "error": f"Invalid id: {text}"}), 400
-        seen.add(text)
-        if len(oids) >= FETCH_DETAILS_BATCH_MAX:
-            break
-    if not oids:
-        return jsonify({"ok": False, "error": "Select at least one job"}), 400
+    oids, err = parse_batch_job_oids(raw_ids)
+    if err:
+        payload, status = err
+        return jsonify(payload), status
 
     busy = _chrome_busy_reason()
     if busy:
@@ -2077,70 +2248,67 @@ def api_fetch_details_batch():
     if guard:
         return jsonify(guard), guard_status
 
-    matched_col = get_collection("matched_jobs")
-    docs_by_id = {
-        doc["_id"]: doc
-        for doc in matched_col.find({"_id": {"$in": oids}})
-    }
-    docs = []
-    missing = []
-    for oid in oids:
-        doc = docs_by_id.get(oid)
-        if not doc:
-            missing.append(str(oid))
-            continue
-        docs.append(doc)
+    docs, missing = load_tracker_docs_in_order(oids)
     if not docs:
         return jsonify({"ok": False, "error": "No matching Tracker jobs"}), 404
 
-    if not _fetch_batch_lock.acquire(blocking=False):
-        return jsonify({"ok": False, "error": "A batch Fetch details is already running."}), 429
+    return start_chrome_batch(
+        docs,
+        runner=run_fetch_details_batch_jobs,
+        mode="fetch",
+        missing=missing,
+        raw_count=len(raw_ids),
+        oid_count=len(oids),
+    )
 
-    def run():
-        try:
-            _fetch_batch_state["running"] = True
-            _fetch_batch_state["current"] = 0
-            _fetch_batch_state["error"] = None
-            run_fetch_details_batch_jobs(docs)
-        except Exception as e:
-            _fetch_batch_state["error"] = str(e)
-            _fetch_batch_state["results"].append({
-                "id": "",
-                "title": "batch",
-                "ok": False,
-                "error": str(e),
-            })
-            _fetch_batch_state["fail_count"] = _fetch_batch_state.get("fail_count", 0) + 1
-        finally:
-            _fetch_batch_state["running"] = False
-            _fetch_batch_lock.release()
 
-    _fetch_batch_state["running"] = True
-    _fetch_batch_state["total"] = len(docs)
-    _fetch_batch_state["current"] = 0
-    _fetch_batch_state["done_count"] = 0
-    _fetch_batch_state["fail_count"] = 0
-    _fetch_batch_state["skip_count"] = 0
-    _fetch_batch_state["results"] = []
-    _fetch_batch_state["error"] = None
-    threading.Thread(target=run, daemon=True).start()
-    return jsonify({
-        "ok": True,
-        "status": "started",
-        "total": len(docs),
-        "skipped_missing": missing,
-        "truncated": len(raw_ids) > len(oids),
-        "limit": FETCH_DETAILS_BATCH_MAX,
-    })
+@app.route("/api/run-ai/batch", methods=["POST"])
+@login_required
+def api_run_ai_batch():
+    """
+    Scrape + AI-match many Tracker cards, sequentially.
+
+    Same Chrome lock as batch Fetch details. Playwright is checked once
+    up front (Render-safe). One failure does not stop the rest.
+    Poll GET /api/fetch-details/batch/status (shared progress).
+    """
+    data = request.get_json(silent=True) or {}
+    raw_ids = data.get("ids") or []
+    oids, err = parse_batch_job_oids(raw_ids)
+    if err:
+        payload, status = err
+        return jsonify(payload), status
+
+    busy = _chrome_busy_reason()
+    if busy:
+        return jsonify({"ok": False, "error": busy}), 429
+
+    guard, guard_status = guard_fetch_details_playwright()
+    if guard:
+        return jsonify(guard), guard_status
+
+    docs, missing = load_tracker_docs_in_order(oids)
+    if not docs:
+        return jsonify({"ok": False, "error": "No matching Tracker jobs"}), 404
+
+    return start_chrome_batch(
+        docs,
+        runner=run_ai_batch_jobs,
+        mode="run_ai",
+        missing=missing,
+        raw_count=len(raw_ids),
+        oid_count=len(oids),
+    )
 
 
 @app.route("/api/fetch-details/batch/status")
 @login_required
 def api_fetch_details_batch_status():
-    """Poll progress for the current / last batch Fetch details run."""
+    """Poll progress for the current / last batch Fetch details or Run AI."""
     state = _fetch_batch_state
     return jsonify({
         "running": state["running"],
+        "mode": state.get("mode") or "fetch",
         "total": state.get("total") or 0,
         "current": state.get("current") or 0,
         "done_count": state.get("done_count") or 0,

@@ -140,6 +140,8 @@ class LinkedInExtractTests(unittest.TestCase):
         sels = linkedin_description_selectors("4478768694")
         self.assertEqual(sels[0], '[componentkey="JobDetails_AboutTheJob_4478768694"]')
         self.assertTrue(any("lazy-column" in s for s in sels) is False)
+        self.assertIn(".show-more-less-html__markup", sels)
+        self.assertIn(".description__text", sels)
 
     @patch("scrapers.linkedin_scraper.pause")
     def test_extract_uses_about_the_job_not_lazy_column(self, _pause):

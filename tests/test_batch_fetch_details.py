@@ -23,6 +23,8 @@ with patch.object(db_mongo, "ensure_indexes"):
         PLAYWRIGHT_UNAVAILABLE_MSG,
         _serialize,
         guard_fetch_details_playwright,
+        parse_batch_job_oids,
+        run_ai_batch_jobs,
         run_fetch_details_batch_jobs,
     )
 
@@ -88,6 +90,14 @@ class JobMissingDetailsTests(unittest.TestCase):
         )
         self.assertFalse(ml.job_missing_details(job))
 
+    def test_fetched_description_wins_over_link_only_title(self):
+        job = _save_link_only_stub(
+            description="A full JD after Fetch",
+            details_fetched_at=datetime(2026, 10, 19),
+            ai_pending=True,
+        )
+        self.assertFalse(ml.job_missing_details(job))
+
     def test_empty_description_is_missing(self):
         job = _agent_job(title="Staff Engineer", description="", ai_pending=False)
         self.assertTrue(ml.job_missing_details(job))
@@ -113,6 +123,19 @@ class JobMissingDetailsTests(unittest.TestCase):
         self.assertFalse(serialized["details_missing"])
         self.assertFalse(serialized["can_fetch_details"])
 
+    def test_link_only_stub_needs_scrape(self):
+        stub = _save_link_only_stub()
+        self.assertTrue(ml.tracker_needs_scrape(stub))
+        complete = _agent_job(
+            recommended_by="",
+            title="Normal match",
+            description="A full JD",
+            summary="hi",
+            ai_pending=False,
+            details_fetched_at=datetime(2026, 10, 19),
+        )
+        self.assertFalse(ml.tracker_needs_scrape(complete))
+
     def test_untagged_save_link_only_stub_is_fetchable(self):
         stub = _save_link_only_stub()
         self.assertTrue(ml.job_missing_details(stub))
@@ -134,9 +157,10 @@ class GuardPlaywrightTests(unittest.TestCase):
         self.assertEqual(payload["error"], PLAYWRIGHT_UNAVAILABLE_MSG)
 
     def test_load_playwright_import_error(self):
-        import scrapers.manual_apply_scraper as mas
+        import importlib
 
-        with patch.object(
+        mas = importlib.import_module("scrapers.manual_apply_scraper")
+        with patch.dict(sys.modules, {"scrapers.manual_apply_scraper": mas}), patch.object(
             mas, "_load_playwright", side_effect=ImportError("No module named 'playwright'")
         ):
             payload, code = guard_fetch_details_playwright()
@@ -197,20 +221,71 @@ class BatchRunTests(unittest.TestCase):
         self.assertEqual(summary["done_count"], 1)
 
 
+class BatchRunAiTests(unittest.TestCase):
+    def test_continues_after_one_failure_including_complete_cards(self):
+        calls = []
+
+        def fake_ai(doc):
+            calls.append(doc["job_id"])
+            if doc["job_id"] == "b":
+                return {"ok": False, "error": "Scraping failed"}, 502
+            return {
+                "ok": True,
+                "title": doc["title"],
+                "match_score": 8.0,
+                "error": None,
+            }, 200
+
+        complete = _agent_job(
+            _id="3",
+            job_id="c",
+            title="Complete match",
+            recommended_by="",
+            ai_pending=False,
+            summary="Has AI",
+            description="Full JD",
+            details_fetched_at=datetime(2026, 10, 1),
+        )
+        docs = [
+            _agent_job(_id="1", job_id="a", title="Job A"),
+            _agent_job(_id="2", job_id="b", title="Job B"),
+            complete,
+        ]
+        summary = run_ai_batch_jobs(docs, run_one=fake_ai)
+
+        self.assertEqual(calls, ["a", "b", "c"])
+        self.assertEqual(summary["done_count"], 2)
+        self.assertEqual(summary["fail_count"], 1)
+        self.assertEqual(summary["skip_count"], 0)
+        self.assertEqual(summary["mode"], "run_ai")
+        self.assertEqual(summary["results"][0]["match_score"], 8.0)
+
+    def test_parse_batch_ids_rejects_empty_and_bad(self):
+        oids, err = parse_batch_job_oids([])
+        self.assertIsNone(oids)
+        self.assertEqual(err[1], 400)
+        oids, err = parse_batch_job_oids(["not-an-oid"])
+        self.assertIsNone(oids)
+        self.assertIn("Invalid id", err[0]["error"])
+
+
 class TrackerUiContractTests(unittest.TestCase):
     def test_batch_controls_and_endpoints_exist(self):
         self.assertIn('id="selectVisibleBtn"', HTML)
         self.assertIn('id="selectMissingBtn"', HTML)
         self.assertIn('id="fetchSelectedBtn"', HTML)
+        self.assertIn('id="runAiSelectedBtn"', HTML)
         self.assertIn("function fetchDetailsForSelected()", HTML)
+        self.assertIn("function runAiForSelected()", HTML)
         self.assertIn("function selectMissingDetails()", HTML)
         self.assertIn("/api/fetch-details/batch", HTML)
+        self.assertIn("/api/run-ai/batch", HTML)
         self.assertIn("/api/fetch-details/ids", HTML)
         self.assertIn('class="card-select"', HTML)
         self.assertIn("function canFetchDetails(", HTML)
         self.assertIn("function isMissingDetails(", HTML)
         self.assertIn("(Link only)", HTML)
-        self.assertIn("Fetch details", HTML)
+        self.assertIn("Fetch details / Run AI", HTML)
         self.assertNotIn("Agent-recommended", HTML)
         self.assertIn("Notification.requestPermission", HTML)
         self.assertRegex(HTML, r"white-space:\s*nowrap")

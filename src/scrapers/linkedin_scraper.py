@@ -91,6 +91,7 @@ _LINKEDIN_SEE_MORE = (
     'button:has-text("See more")',
     'button:has-text("Show more")',
     'button:has-text("Mehr anzeigen")',
+    "button.show-more-less-html__button",
     'button[aria-label*="see more" i]',
     'button[aria-label*="Show more" i]',
     'button[aria-label*="Mehr anzeigen" i]',
@@ -123,6 +124,11 @@ def linkedin_description_selectors(job_id: str = "") -> list:
             ".jobs-description__content",
             ".jobs-box__html-content",
             "#job-details",
+            # Public / logged-out /jobs/view pages
+            ".show-more-less-html",
+            ".show-more-less-html__markup",
+            ".description__text",
+            "section.description",
         ]
     )
     return selectors

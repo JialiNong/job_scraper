@@ -363,6 +363,8 @@ def lookup_known_job(job_id, source="linkedin"):
     Returns:
         dict with keys collection, stage, on_tracker, _id, title, company,
         status, source, job_id, match_score — or None if not found.
+        Tracker hits also include ai_pending, details_fetched_at, summary,
+        and description (for Log Job refresh / details_missing).
 
         stage:
           - tracker: already on matched_jobs
@@ -387,6 +389,10 @@ def lookup_known_job(job_id, source="linkedin"):
         "review_status": 1,
         "matched_at": 1,
         "match_score": 1,
+        "ai_pending": 1,
+        "details_fetched_at": 1,
+        "summary": 1,
+        "description": 1,
     }
 
     matched = db["matched_jobs"].find_one(id_query, projection)
@@ -402,6 +408,10 @@ def lookup_known_job(job_id, source="linkedin"):
             "source": matched.get("source") or source,
             "job_id": matched.get("job_id") or job_id,
             "match_score": matched.get("match_score"),
+            "ai_pending": bool(matched.get("ai_pending")),
+            "details_fetched_at": matched.get("details_fetched_at"),
+            "summary": matched.get("summary") or "",
+            "description": matched.get("description") or "",
         }
 
     scraped = db[COLLECTION_NAME].find_one(id_query, projection)
