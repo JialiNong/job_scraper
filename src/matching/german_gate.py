@@ -3,11 +3,12 @@ Pre-AI gate: English JDs that explicitly require German as a job language.
 
 If this hits, matching should stop — no stack / years / domain scoring.
 Do not treat location, office, company, or market in Germany as a language requirement.
-Do not treat German-OR-English alternatives, nice-to-have, or basic German as mandatory.
+Do not treat German-OR-English alternatives, nice-to-have, plus, or basic German as mandatory.
+Do not treat "businesses speak German" / since-clause explanations as a candidate requirement.
 """
 import html as html_module
 import re
-from typing import Dict, Optional
+from typing import Dict, Optional, Tuple
 
 # Language skill "German" / "Deutsch" — not "Germany".
 _GERMAN_SKILL = re.compile(
@@ -91,11 +92,11 @@ _GERMAN_LEVEL_ATTACHED = re.compile(
 # Required / must-have attached to German, not to English in the same window.
 _GERMAN_REQUIRED_ATTACHED = re.compile(
     r"(?:"
-    r"(?:german|deutsch\w*)(?:kenntnisse)?(?:\s+(?:skills?|language|kenntnisse))?\s*"
-    r"(?:is\s+|are\s+)?(?<!not )(?:required|mandatory|essential|necessary|"
+    r"(?<!no )(?:german|deutsch\w*)(?:kenntnisse)?(?:\s+(?:skills?|language|kenntnisse|c1|c2|b2))?\s*"
+    r"(?:is\s+|are\s+)?(?<!not )(?:a\s+must|required|mandatory|essential|necessary|"
     r"erforderlich|zwingend|notwendig)"
     r"|"
-    r"(?:required|mandatory|essential|must[- ]have|erforderlich)\s*[:\-–]?\s*"
+    r"(?:required|mandatory|essential|must[- ]have|erforderlich|a\s+must)\s*[:\-–]?\s*"
     r"(?:[^.]{0,48}?)(?:german|deutsch\w*)"
     r"|"
     r"must\s+(?:speak|have|be)\s+(?:fluent(?:ly)?\s+)(?:german|deutsch)"
@@ -109,25 +110,28 @@ _GERMAN_REQUIRED_ATTACHED = re.compile(
 
 _AND_BOTH_REQUIRED = re.compile(
     r"\b(?:"
-    r"required|requirement|mandatory|must[- ]have|must have|"
+    r"required|requirement|mandatory|must[- ]have|must have|a\s+must|"
     r"essential|necessary|erforderlich|zwingend|notwendig|"
     r"skills?|kenntnisse|language|languages"
     r")\b",
     re.I,
 )
 
+# Nice-to-have / plus — qualifier may sit before or after the German mention.
 _OPTIONAL = re.compile(
-    r"\b(?:"
-    r"nice[- ]to[- ]have|advantage|preferred|preferably|"
-    r"beneficial|bonus|ideally|optional|welcome|"
+    r"(?:"
+    r"\b(?:nice[- ]to[- ]have|advantageous|advantage|preferred|preferably|"
+    r"beneficial|desirable|helpful|bonus|ideally|optional|welcome|"
     r"not required|not mandatory|"
-    r"(?:a|is a|would be a)\s+plus|"
-    r"plus|"
+    r"would be great|would be a plus|"
+    r"(?:is\s+)?a\s+plus|(?:is\s+)?a\s+bonus|"
     r"basic|basics|beginner|"
     r"grundkenntnisse|"
     r"von vorteil|vorteil|"
-    r"w[uü]nschenswert"
-    r")\b",
+    r"w[uü]nschenswert|idealerweise|"
+    r"ein plus|gerne)\b|"
+    r"\bno\s+(?:german|deutsch\w*)\s+required\b"
+    r")",
     re.I,
 )
 
@@ -137,6 +141,20 @@ _NOT_LANGUAGE = re.compile(
     r"customer|customers|client|clients|brand|brands|"
     r"company|companies|startup|team|engineering team|"
     r"public[- ]transport|gym|perk)\b",
+    re.I,
+)
+
+# Clients/businesses speaking German is context, not a candidate must-have.
+_OTHERS_SPEAK_GERMAN = re.compile(
+    r"\b(?:business(?:es)?|compan(?:y|ies)|customers?|clients?|"
+    r"stakeholders?|users?|partners?|teams?)\b"
+    r".{0,80}\bspeak(?:s|ing)?\s+(?:german|deutsch)",
+    re.I,
+)
+
+# Split a sentence into main clause vs since/because explanation.
+_CLAUSE_SPLIT = re.compile(
+    r"\s*(?:,\s*)?(?:\bsince\b|\bbecause\b|\bweil\b|\bdenn\b|\bda\b)\s+",
     re.I,
 )
 
@@ -155,6 +173,41 @@ def _plain_text(html_text: str) -> str:
     text = re.sub(r"<[^>]+>", " ", text)
     text = html_module.unescape(text)
     return " ".join(text.split())
+
+
+def _sentence_bounds(text: str, pos: int) -> Tuple[int, int]:
+    lo = 0
+    for match in re.finditer(r"[.!?]", text[:pos]):
+        lo = match.end()
+    hi = len(text)
+    match = re.search(r"[.!?]", text[pos:])
+    if match:
+        hi = pos + match.end()
+    return lo, hi
+
+
+def _clause_at(text: str, pos: int) -> Tuple[str, bool]:
+    """
+    Clause containing pos, and whether it is a since/because subordinate.
+
+    Qualifiers like 'is a plus' are judged on this clause so a later
+    'since businesses speak German' cannot turn a plus into a requirement,
+    and cannot hide 'fluent German required' in a previous sentence.
+    """
+    sent_lo, sent_hi = _sentence_bounds(text, pos)
+    sentence = text[sent_lo:sent_hi]
+    rel = pos - sent_lo
+    clause_lo = 0
+    clause_hi = len(sentence)
+    subordinate = False
+    for match in _CLAUSE_SPLIT.finditer(sentence):
+        if match.start() < rel:
+            clause_lo = match.end()
+            subordinate = True
+        else:
+            clause_hi = match.start()
+            break
+    return sentence[clause_lo:clause_hi].strip(), subordinate
 
 
 def _snippet(text: str, start: int, end: int, pad: int = 40) -> str:
@@ -181,9 +234,9 @@ def find_mandatory_german_requirement(job: Dict) -> Optional[str]:
     Return a short disqualification reason if the JD explicitly requires
     German as a job language (must-have / fluent / native / CEFR level).
 
-    Returns None when German is absent, nice-to-have, basic, an English
-    alternative (German or English), or only appears as location / office /
-    company / market.
+    Returns None when German is absent, nice-to-have, plus, basic, an English
+    alternative (German or English), only appears as location / office /
+    company / market, or is only mentioned as a language others speak.
     """
     raw = " ".join(
         str(part or "")
@@ -200,25 +253,37 @@ def find_mandatory_german_requirement(job: Dict) -> Optional[str]:
     for match in _GERMAN_SKILL.finditer(text):
         start, end = match.start(), match.end()
         window = text[max(0, start - _WINDOW) : min(len(text), end + _WINDOW)]
-        optional_window = text[max(0, start - 50) : min(len(text), end + 70)]
+        clause, subordinate = _clause_at(text, start)
 
         if _NOT_LANGUAGE.search(window):
             if not _LANGUAGE_CONTEXT.search(window):
                 continue
 
-        optional_hit = bool(_OPTIONAL.search(optional_window))
-        level_hit = bool(_GERMAN_LEVEL_ATTACHED.search(window))
-        required_hit = bool(_GERMAN_REQUIRED_ATTACHED.search(window))
-        # "English is a plus" in the same window must not hide "fluent German required".
-        if optional_hit and not (level_hit or required_hit):
+        if _OTHERS_SPEAK_GERMAN.search(clause) or _OTHERS_SPEAK_GERMAN.search(window):
             continue
 
-        # "German or English" / "Deutsch- oder Englischkenntnisse" — either language.
-        if _OR_ENGLISH.search(window):
+        optional_hit = bool(_OPTIONAL.search(clause))
+        required_hit = bool(_GERMAN_REQUIRED_ATTACHED.search(clause))
+        level_hit = bool(_GERMAN_LEVEL_ATTACHED.search(clause))
+
+        # Plus / nice-to-have in this clause wins even if the same clause
+        # says "working proficiency in German". "Fluent German required.
+        # English is a plus" still fails: plus is in a different sentence.
+        if optional_hit and not required_hit:
+            continue
+
+        # Explanatory since/because text is not a candidate must-have
+        # unless that clause itself uses required/must.
+        if subordinate and not required_hit:
+            continue
+
+        # "German or English" / "Deutsch- oder Englischkenntnisse".
+        if _OR_ENGLISH.search(clause) or _OR_ENGLISH.search(window):
             continue
 
         # "German and English required" — both languages, not an alternative.
-        if _AND_ENGLISH.search(window) and _AND_BOTH_REQUIRED.search(window):
+        and_scope = clause or window
+        if _AND_ENGLISH.search(and_scope) and _AND_BOTH_REQUIRED.search(and_scope):
             return _reason(text, start, end)
 
         if level_hit or required_hit:
@@ -234,7 +299,7 @@ def find_mandatory_german_requirement(job: Dict) -> Optional[str]:
             r"german\s+as\s+(?:a\s+)?(?:working\s+)?language|"
             r"deutsch(?:kenntnisse)?\s*[:\-–]?\s*(?:flie[sß]end|c1|c2|b2|muttersprach|erforderlich)"
             r")",
-            window,
+            clause or window,
             re.I,
         )
         if strong:

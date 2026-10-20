@@ -46,6 +46,8 @@ class PromptAndTemperatureTests(unittest.TestCase):
         self.assertIn("ONLY facts", prompt)
         self.assertIn("not stated in the description", prompt)
         self.assertIn("Never invent", prompt)
+        self.assertIn("nice-to-have is **not** mandatory", prompt)
+        self.assertIn("is a plus", prompt)
 
     def test_default_temperature_is_zero(self):
         self.assertEqual(MATCH_AI_TEMPERATURE, 0.0)
