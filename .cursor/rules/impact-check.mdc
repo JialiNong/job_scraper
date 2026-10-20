@@ -1,0 +1,16 @@
+---
+description: Finish features with an impact check of related UI, data, filters, and environments
+alwaysApply: true
+---
+
+# Impact check (same PR)
+
+Before finishing any feature or change, update existing related functionality **in this PR**. Do not leave neighbors (Clear/reset, filters, counts, old records, Render imports, …) for a follow-up request.
+
+Full checklist, examples, and grep requirement: [`.cursor/skills/job-scraper/SKILL.md`](../skills/job-scraper/SKILL.md) — section **Impact check (hard rule)**.
+
+Minimum:
+
+1. Grep every touched function, field, and component.
+2. Walk the skill checklist for form fields, new data fields, statuses/flags, UI, environments, and tests.
+3. List the related areas you checked in the PR body and the final report.
