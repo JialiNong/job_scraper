@@ -3,6 +3,7 @@ Pre-AI gate: English JDs that explicitly require German as a job language.
 
 If this hits, matching should stop — no stack / years / domain scoring.
 Do not treat location, office, company, or market in Germany as a language requirement.
+Do not treat German-OR-English alternatives, nice-to-have, or basic German as mandatory.
 """
 import html as html_module
 import re
@@ -13,6 +14,16 @@ _GERMAN_SKILL = re.compile(
     r"\b(?:german|deutsch\w*)\b",
     re.I,
 )
+
+_LANG_DE = r"(?:german|deutsch\w*)"
+_LANG_EN = r"(?:english|englisch\w*)"
+_LEVEL_WORD = (
+    r"(?:fluent(?:ly)?|flie[sß]end(?:e[sn]?)?|native|sehr\s+gute|"
+    r"very\s+good|excellent|good)"
+)
+# "and/or" is an alternative, not AND.
+_OR_CONN = r"(?:and/?\s*or|/|(?:-|\s)\s*oder\b|\bor\b)"
+_AND_CONN = r"(?:and(?!/?\s*or)|&|\bund\b)"
 
 # Nearby text that means German is being asked as a language skill.
 _LANGUAGE_CONTEXT = re.compile(
@@ -26,38 +37,96 @@ _LANGUAGE_CONTEXT = re.compile(
     re.I,
 )
 
-_MANDATORY = re.compile(
-    r"\b(?:"
-    r"required|requirement|mandatory|must[- ]have|must have|"
-    r"must be|must speak|need to|needs to|you must|we require|"
-    r"essential|necessary|minimum|at least|"
-    r"erforderlich|zwingend|notwendig|"
-    r"native|fluent|fluency|proficient|proficiency|"
-    r"business[- ]fluent|professional(?:\s+working)?\s+proficiency|"
-    r"c1|c2|b2|"
-    r"muttersprach|flie[sß]end|verhandlungssicher"
-    r")\b",
+# German as an alternative to English (either language is enough).
+_OR_ENGLISH = re.compile(
+    rf"(?:"
+    rf"{_LANG_DE}-?\s*{_OR_CONN}\s*(?:{_LEVEL_WORD}\s+)?{_LANG_EN}"
+    rf"|"
+    rf"{_LANG_EN}-?\s*{_OR_CONN}\s*(?:{_LEVEL_WORD}\s+)?{_LANG_DE}"
+    rf"|"
+    rf"{_LANG_DE}(?:kenntnisse)?(?:\s+(?:skills?|kenntnisse|language|languages))?\s+"
+    rf"{_OR_CONN}\s+(?:{_LEVEL_WORD}\s+)?{_LANG_EN}"
+    rf"|"
+    rf"{_LANG_EN}(?:kenntnisse)?(?:\s+(?:skills?|kenntnisse|language|languages))?\s+"
+    rf"{_OR_CONN}\s+(?:{_LEVEL_WORD}\s+)?{_LANG_DE}"
+    rf")",
     re.I,
 )
 
-# Explicit CEFR / fluency phrasing attached to German.
-_LEVEL_OR_FLUENT = re.compile(
+# Both German and English (AND, not OR).
+_AND_ENGLISH = re.compile(
+    rf"(?:"
+    rf"{_LANG_DE}(?:kenntnisse)?(?:\s+(?:skills?|kenntnisse|language|languages))?\s+"
+    rf"{_AND_CONN}\s+(?:{_LEVEL_WORD}\s+)?{_LANG_EN}"
+    rf"|"
+    rf"{_LANG_EN}(?:kenntnisse)?(?:\s+(?:skills?|kenntnisse|language|languages))?\s+"
+    rf"{_AND_CONN}\s+(?:{_LEVEL_WORD}\s+)?{_LANG_DE}"
+    rf")",
+    re.I,
+)
+
+# Fluency / CEFR attached to German itself — not "fluent English" in the same window.
+_GERMAN_LEVEL_ATTACHED = re.compile(
     r"(?:"
-    r"\b(?:c1|c2|b2|b1)\b|"
-    r"\b(?:fluent|fluency|native|proficient|proficiency)\b|"
-    r"\bbusiness[- ]fluent\b|"
-    r"\bvery good\b|\bexcellent\b|"
-    r"\bflie[sß]end\b|\bmuttersprach"
+    r"(?:fluent(?:ly)?|fluency|native|proficient|proficiency|"
+    r"business[- ]fluent|very good|excellent|"
+    r"c1|c2|b2|b1|"
+    r"flie[sß]end(?:e[sn]?)?|muttersprach\w*|verhandlungssicher|"
+    r"sehr gute|ausgezeichnete)\s+"
+    r"(?:in\s+)?(?:german|deutsch\w*)"
+    r"|"
+    r"(?:german|deutsch\w*)(?:kenntnisse)?(?:\s+(?:skills?|language))?\s*"
+    r"(?:level\s*)?(?:c1|c2|b2|b1)"
+    r"|"
+    r"(?:c1|c2|b2|b1)\s+(?:in\s+)?(?:german|deutsch\w*)"
+    r"|"
+    r"(?:german|deutsch\w*)\s*[:\-–]?\s*(?:c1|c2|b2)"
+    r"|"
+    r"deutsch(?:kenntnisse)?\s*[:\-–]?\s*"
+    r"(?:flie[sß]end|c1|c2|b2|muttersprach|erforderlich|verhandlungssicher)"
     r")",
+    re.I,
+)
+
+# Required / must-have attached to German, not to English in the same window.
+_GERMAN_REQUIRED_ATTACHED = re.compile(
+    r"(?:"
+    r"(?:german|deutsch\w*)(?:kenntnisse)?(?:\s+(?:skills?|language|kenntnisse))?\s*"
+    r"(?:is\s+|are\s+)?(?<!not )(?:required|mandatory|essential|necessary|"
+    r"erforderlich|zwingend|notwendig)"
+    r"|"
+    r"(?:required|mandatory|essential|must[- ]have|erforderlich)\s*[:\-–]?\s*"
+    r"(?:[^.]{0,48}?)(?:german|deutsch\w*)"
+    r"|"
+    r"must\s+(?:speak|have|be)\s+(?:fluent(?:ly)?\s+)(?:german|deutsch)"
+    r"|"
+    r"must\s+(?:speak|have|be)\s+(?:german|deutsch)"
+    r"|"
+    r"(?:we require|you must)\s+(?:[^.]{0,40}?)(?:german|deutsch)"
+    r")",
+    re.I,
+)
+
+_AND_BOTH_REQUIRED = re.compile(
+    r"\b(?:"
+    r"required|requirement|mandatory|must[- ]have|must have|"
+    r"essential|necessary|erforderlich|zwingend|notwendig|"
+    r"skills?|kenntnisse|language|languages"
+    r")\b",
     re.I,
 )
 
 _OPTIONAL = re.compile(
     r"\b(?:"
     r"nice[- ]to[- ]have|advantage|preferred|preferably|"
-    r"beneficial|bonus|ideally|optional|"
+    r"beneficial|bonus|ideally|optional|welcome|"
     r"not required|not mandatory|"
-    r"(?:a|is a|would be a)\s+plus"
+    r"(?:a|is a|would be a)\s+plus|"
+    r"plus|"
+    r"basic|basics|beginner|"
+    r"grundkenntnisse|"
+    r"von vorteil|vorteil|"
+    r"w[uü]nschenswert"
     r")\b",
     re.I,
 )
@@ -99,13 +168,22 @@ def _snippet(text: str, start: int, end: int, pad: int = 40) -> str:
     return chunk[:180]
 
 
+def _reason(text: str, start: int, end: int) -> str:
+    snippet = _snippet(text, start, end)
+    return (
+        "Mandatory German language requirement "
+        f"(candidate does not speak German): \"{snippet}\""
+    )
+
+
 def find_mandatory_german_requirement(job: Dict) -> Optional[str]:
     """
     Return a short disqualification reason if the JD explicitly requires
     German as a job language (must-have / fluent / native / CEFR level).
 
-    Returns None when German is absent, nice-to-have, or only appears as
-    location / office / company / market.
+    Returns None when German is absent, nice-to-have, basic, an English
+    alternative (German or English), or only appears as location / office /
+    company / market.
     """
     raw = " ".join(
         str(part or "")
@@ -120,32 +198,31 @@ def find_mandatory_german_requirement(job: Dict) -> Optional[str]:
         return None
 
     for match in _GERMAN_SKILL.finditer(text):
-        # "Germany" is a different token; \bgerman\b already excludes it.
         start, end = match.start(), match.end()
         window = text[max(0, start - _WINDOW) : min(len(text), end + _WINDOW)]
-        optional_window = text[max(0, start - 50) : min(len(text), end + 50)]
+        optional_window = text[max(0, start - 50) : min(len(text), end + 70)]
 
         if _NOT_LANGUAGE.search(window):
-            # Still a hit if the same window clearly asks for the language.
             if not _LANGUAGE_CONTEXT.search(window):
                 continue
 
-        if _OPTIONAL.search(optional_window):
+        optional_hit = bool(_OPTIONAL.search(optional_window))
+        level_hit = bool(_GERMAN_LEVEL_ATTACHED.search(window))
+        required_hit = bool(_GERMAN_REQUIRED_ATTACHED.search(window))
+        # "English is a plus" in the same window must not hide "fluent German required".
+        if optional_hit and not (level_hit or required_hit):
             continue
 
-        is_language = bool(_LANGUAGE_CONTEXT.search(window))
-        is_mandatory = bool(_MANDATORY.search(window))
-        has_level = bool(_LEVEL_OR_FLUENT.search(window))
-        listed_as_language = bool(
-            re.search(r"\blanguages?\s*[:\-–]", window, re.I)
-        )
+        # "German or English" / "Deutsch- oder Englischkenntnisse" — either language.
+        if _OR_ENGLISH.search(window):
+            continue
 
-        if (is_language or listed_as_language) and (is_mandatory or has_level):
-            snippet = _snippet(text, start, end)
-            return (
-                "Mandatory German language requirement "
-                f"(candidate does not speak German): \"{snippet}\""
-            )
+        # "German and English required" — both languages, not an alternative.
+        if _AND_ENGLISH.search(window) and _AND_BOTH_REQUIRED.search(window):
+            return _reason(text, start, end)
+
+        if level_hit or required_hit:
+            return _reason(text, start, end)
 
         # Strong collocations even without a separate "language" word.
         strong = re.search(
@@ -161,11 +238,7 @@ def find_mandatory_german_requirement(job: Dict) -> Optional[str]:
             re.I,
         )
         if strong:
-            snippet = _snippet(text, start, end)
-            return (
-                "Mandatory German language requirement "
-                f"(candidate does not speak German): \"{snippet}\""
-            )
+            return _reason(text, start, end)
 
     return None
 

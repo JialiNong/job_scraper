@@ -58,7 +58,7 @@ If the change is docs-only typography with no flow change, skip the architecture
 
 One-line funnel (must stay true in architecture + code):
 
-> Title gates (exclude → DEFAULT_KEYWORDS → AI title) → click detail → non-English JD discarded → English JD saved → matcher empty-desc skip → mandatory-German rule gate → stack extract + backend/AI-ML local gate → AI score → ≥ threshold and company not in `MATCH_BLOCKED_COMPANIES` (Instaffo / Jobgether) → `matched_jobs`.
+> Title gates (exclude → DEFAULT_KEYWORDS → AI title) → click detail → non-English JD discarded → English JD saved → matcher empty/incomplete-desc skip → mandatory-German rule gate → stack extract + backend/AI-ML local gate → AI score → ≥ threshold and company not in `MATCH_BLOCKED_COMPANIES` (Instaffo / Jobgether) → `matched_jobs`.
 
 ### Two German-related gates
 
@@ -67,7 +67,7 @@ One-line funnel (must stay true in architecture + code):
 | Scrape | `scraper_utils.is_non_english_job_detail` | Is the JD body non-English? | Do **not** save; count `german_filtered` |
 | Match | `matching.german_gate` | Does an **English** JD require German as a must-have language? | Local reject; skip full AI scoring |
 
-Location / German company / “nice to have German” must **not** fail the match gate.
+Location / German company / “nice to have German” / German-OR-English / basic German must **not** fail the match gate.
 
 ### Shared LinkedIn card path
 

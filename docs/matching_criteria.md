@@ -22,6 +22,12 @@ Non-English postings (mostly German; French etc. rare) are already filtered out 
 
 **Fail** only if the JD **explicitly** states that German is a mandatory job language (must-have / required / fluent / native / C1 / B2+ for the role). An English JD can still do this in writing — only then fail.
 
+**Fail examples** (mandatory German):
+
+- "fluent German required", "German C1 required", "C1 Deutsch erforderlich"
+- "German and English required" / "Deutsch und Englisch erforderlich" (both languages, not an alternative)
+- German-language postings are already dropped at scrape (Lingua), before this gate
+
 **Do not infer German from location or office.** These pass:
 
 - "Berlin, Germany (On-site)", "Germany (Hybrid)", "DACH"
@@ -29,7 +35,13 @@ Non-English postings (mostly German; French etc. rare) are already filtered out 
 - The company is German, European, or based in Berlin / Munich / Hamburg
 - The product serves a German/European market or German customers/brands
 
-**Also pass** if German is only "nice to have" / "plus" / "advantage" / "preferred", appears only in the company description, or is never mentioned as a language skill. Do **not** invent a German requirement the JD never wrote.
+**Also pass** if German is only optional, basic, or an alternative to English. Do **not** invent a German requirement the JD never wrote. Pass examples:
+
+- "German or English", "German and/or English", "English or German"
+- "very good German skills or fluent English" / "sehr gute Deutsch- oder Englischkenntnisse"
+- "German is a plus" / "nice to have" / "beneficial" / "von Vorteil"
+- "basic German" / "Grundkenntnisse Deutsch"
+- "Excellent English skills, German is a plus"
 
 ### 2. Backend language
 

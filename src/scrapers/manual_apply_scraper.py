@@ -109,7 +109,6 @@ def scrape_linkedin_job(page, url: str) -> Optional[dict]:
     su = _su()
     pause = su.pause
     safe_text = su.safe_text
-    strip_html = su.strip_html
 
     job_id = extract_linkedin_job_id(url)
     if not job_id:
@@ -166,45 +165,11 @@ def scrape_linkedin_job(page, url: str) -> Optional[dict]:
         page.locator(".job-details-jobs-unified-top-card__tertiary-description-container")
     )
 
-    # Description: new SDUI layout first (SemanticJobDetails > lazy-column),
-    # then classic fallbacks. Use inner_text() for the SDUI path so we get clean
-    # visible text directly; fall back to inner_html + strip_html for older layouts.
-    description = ""
+    from scrapers.linkedin_scraper import extract_linkedin_description
 
-    # ── Primary: new LinkedIn SDUI layout ────────────────────────────────────
-    try:
-        screen_loc = page.locator(
-            '[data-sdui-screen="com.linkedin.sdui.flagshipnav.jobs.SemanticJobDetails"]'
-        )
-        if screen_loc.count() > 0:
-            lazy_col = screen_loc.locator('[data-testid="lazy-column"]').first
-            if lazy_col.count() > 0:
-                desc_text = lazy_col.inner_text(timeout=8000) or ""
-                desc_text = desc_text.strip()
-                if desc_text:
-                    description = desc_text
-                    print('  🔍 Description found via: SemanticJobDetails > [data-testid="lazy-column"]')
-    except Exception:
-        pass
-
-    # ── Fallbacks: classic / older LinkedIn layouts ───────────────────────────
-    if not description:
-        for sel in [
-            f"#JobDetails_AboutTheJob_jobs_{job_id}",    # exact ID with job_id
-            "[id*='JobDetails_AboutTheJob']",             # partial ID match
-            ".jobs-box__html-content",                    # older layout
-        ]:
-            try:
-                loc = page.locator(sel).first
-                if loc.count() > 0:
-                    desc_html = loc.inner_html(timeout=5000) or ""
-                    if desc_html:
-                        description = strip_html(desc_html)
-                        if description:
-                            print(f"  🔍 Description found via: {sel}")
-                            break
-            except Exception:
-                pass
+    description = extract_linkedin_description(page, job_id)
+    if description:
+        print("  🔍 Description found via LinkedIn About-the-job extract")
 
     return {
         "title": title,

@@ -41,7 +41,7 @@ flowchart TB
     end
 
     subgraph Match["Match layer · ai_matcher.py"]
-        M0["Empty description → skip AI"]
+        M0["Empty / incomplete description → skip AI"]
         M1["German gate (rules)"]
         M1b["Stack extract + local gate<br/>hard backend / AI-ML-core"]
         M2["Full AI match<br/>matching_criteria.md"]
@@ -258,8 +258,8 @@ flowchart TD
     Click --> Detail{"JD panel loaded?"}
     Detail -->|timeout| TO["timeout_jobs<br/>(title + link, /timeouts)"]
     Detail -->|yes| Fetch["Fetch description (up to 3 retries)"]
-    Fetch --> Empty{"Usable description?<br/>≥ MIN_JOB_DESCRIPTION_CHARS"}
-    Empty -->|no| SaveEmpty["Still save<br/>description_empty=true<br/>matcher will skip AI"]
+    Fetch --> Empty{"Complete description?<br/>assess_job_description"}
+    Empty -->|empty / incomplete| SaveEmpty["Still save<br/>description_empty / description_incomplete<br/>matcher will skip AI"]
     Empty -->|yes| Lang{"5. Lingua language check<br/>is_non_english_job_detail"}
 
     Lang -->|non-English de/fr/…| SkipDE["Do not save<br/>count german_filtered"]
@@ -275,9 +275,11 @@ flowchart TD
 | 3. AI title screen | `is_title_relevant_by_ai()` | After blacklist + no keyword: cheap AI “is this a target role?” |
 | 4. Dedup | `is_job_id_exists()` | Do not re-open known jobs |
 | 4b. Detail timeout | `save_timeout_job()` | Title passed but JD panel missing → `timeout_jobs` for `/timeouts` |
+| 4c. LinkedIn JD body | `extract_linkedin_description()` | About-the-job region only (`JobDetails_AboutTheJob_*`). Expands See more / Mehr anzeigen. Never the whole SDUI `lazy-column` (top card + teaser + similar jobs). |
+| 4d. JD completeness | `assess_job_description()` | Too short, UI chrome, similar-jobs sidebar, or title/company mismatch → save with `description_incomplete` (or `description_empty`); matcher skips AI |
 | 5. JD language | `is_non_english_job_detail()` · Lingua | **JD body not English** (usually German posts) → **do not save**. UI: German Filtered |
 
-> Step 5 answers “what language is the JD written in?”, not “does an English JD require German skills?”. The latter is the match-stage German gate.
+> Step 5 answers “what language is the JD written in?”, not “does an English JD require German skills?”. The latter is the match-stage German gate. Incomplete English teasers are saved and skipped at match, not sent to the model.
 
 Unified title-gate entry point:
 
@@ -293,8 +295,8 @@ Unified title-gate entry point:
 flowchart TD
     New["get_new_jobs()<br/>no matched_at yet"]
 
-    New --> Empty{"Usable description?"}
-    Empty -->|no| FailEmpty["mark_job_as_matched<br/>score=0 · Missing description<br/>no AI call"]
+    New --> Empty{"Complete description?<br/>assess_job_description"}
+    Empty -->|empty / incomplete| FailEmpty["mark_job_as_matched<br/>score=0 · empty_desc / incomplete_desc<br/>needs_refetch · no AI call"]
 
     Empty -->|yes| Gate{"German gate (rules)<br/>find_mandatory_german_requirement()<br/>English JD requires mandatory German?"}
 
@@ -325,8 +327,8 @@ flowchart TD
 |--|-----------------------------|---------------------|
 | **Module** | `scraper_utils.is_non_english_job_detail` | `matching/german_gate.py` |
 | **Question** | What language is the JD **written in**? (Lingua) | Does an **English** JD require German as a must-have skill? |
-| **Typical hit** | Entire German posting | “German fluent required”, “C1 Deutsch”, “must speak German” |
-| **Does not hit** | — | “Berlin, Germany” alone, German company, German as nice-to-have |
+| **Typical hit** | Entire German posting | “fluent German required”, “German C1 required”, “German and English required”, “must speak German” |
+| **Does not hit** | — | “Berlin, Germany” alone, German company, German as plus/nice-to-have/basic, “German or English” / “Deutsch- oder Englischkenntnisse” |
 | **Outcome** | **Not saved**; count `german_filtered` | **Saved then rejected**; low score; **no full AI scoring** |
 | **Order** | Earlier (on detail fetch) | Later (matcher entry) |
 
@@ -354,6 +356,8 @@ Candidate production backends: Node.js / TypeScript-backend / JavaScript-backend
 3. Special Match A/B/C → 9–10 (Leipzig can add +0.5–1)
 4. `match_score ≥ threshold` → `matched_jobs` (unless scraped company is in `MATCH_BLOCKED_COMPANIES`: Instaffo / Jobgether — still scored on `jobs`, never Tracker)
 
+The scorer prompt may use **only facts in the provided description** (temperature 0). Listed skills that are not in the JD text are dropped after the call. Incomplete descriptions never reach this step.
+
 Details: [`matching_criteria.md`](./matching_criteria.md).
 
 ---
@@ -362,7 +366,7 @@ Details: [`matching_criteria.md`](./matching_criteria.md).
 
 | Collection | Written by | Contents |
 |------------|------------|----------|
-| `jobs` | scrapers; matcher writes analysis back | Jobs that passed the language gate (including empty-description placeholders). Matcher also stores `match_gate` (`german` / `stack` / `ai_ml` / `scored`) and `requirement_extract`. Stack-gate rejects clear `description` immediately (title + link stub for Unmatched review). |
+| `jobs` | scrapers; matcher writes analysis back | Jobs that passed the language gate (including empty/incomplete-description placeholders). Matcher also stores `match_gate` (`empty_desc` / `incomplete_desc` / `german` / `stack` / `ai_ml` / `scored`) and `requirement_extract`. Stack-gate rejects clear `description` immediately (title + link stub for Unmatched review). |
 | `matched_jobs` | matcher (≥ threshold, and company not in `MATCH_BLOCKED_COMPANIES`); manual job log (`/manual-apply`, default `pending`); unmatched **Can Apply** override; **timeout review Add as Not Applied**; Tracker **Run AI** updates analysis in place; **Fetch job details** patches scraped fields in place | High-score matches / manually logged jobs / user-promoted unmatched or timeout jobs. Link-only manual saves set `ai_pending=True` and `match_score=null` until Run AI. Manual log can store `recommended_by` (`claude` / `cursor` / `gemini` / `gpt`). UI can store manual `highlights` tags (separate from AI `special_match`). Aggregators Instaffo / Jobgether are blocked from automatic matcher inserts. |
 | `timeout_jobs` | scrapers, when the title passed but the JD panel timed out | Title + link for later review (`/timeouts`). Open → **Add as Not Applied** (`pending`) or Dismiss. |
 | `scraper_stats` | scrapers | Counters: `title_passed_clicked`, `german_filtered`, `ai_title_filtered`, `detail_timeout`, … |
@@ -433,6 +437,6 @@ job_scraper/
 
 ## 8. One-line funnel
 
-> **Title gates (blacklist → keywords → AI title) → open detail → discard non-English JD → save English JD → matcher skips empty desc → mandatory-German rule gate → stack extract + backend/AI-ML local gate → AI scores by criteria → ≥ 7 and company not Instaffo/Jobgether enters Tracker.**
+> **Title gates (blacklist → keywords → AI title) → open detail → discard non-English JD → save English JD → matcher skips empty/incomplete desc → mandatory-German rule gate → stack extract + backend/AI-ML local gate → AI scores by criteria (JD facts only) → ≥ 7 and company not Instaffo/Jobgether enters Tracker.**
 
 The two daily commands only change *how much* to scrape. Evening Full is 24h on both platforms, 3 pages per keyword (Indeed ~15 cards/page, LinkedIn 30). Morning Light runs both in parallel: Indeed the same 24h search for 2 pages per keyword, LinkedIn the 12h quick URL for 3 pages. Ad hoc `run_linkedin.sh` / `/linkedin` is LinkedIn-only with a flexible `--hours` window (default 24); when hours < 24 the default page budget drops to 2 per keyword (`linkedin_default_max_pages`). Each source starts AI matching as soon as its scrape finishes; job cards are pushed only after both lanes complete (or after the single LinkedIn lane for `run_linkedin.sh`). **Filter and match rules are the same.**

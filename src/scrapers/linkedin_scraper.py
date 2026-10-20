@@ -40,7 +40,9 @@ from core.scraper_utils import (
     goto_page,
     should_skip_title_before_click,
     is_non_english_job_detail,
-    is_usable_job_description,
+    is_complete_job_description,
+    assess_job_description,
+    description_save_flags,
     DESCRIPTION_FETCH_RETRIES,
 )
 
@@ -85,46 +87,113 @@ _LINKEDIN_DETAIL_WAIT = (
 )
 
 
-def extract_linkedin_description(page, job_id: str = "") -> str:
-    """
-    Pull JD text from the LinkedIn detail panel.
+_LINKEDIN_SEE_MORE = (
+    'button:has-text("See more")',
+    'button:has-text("Show more")',
+    'button:has-text("Mehr anzeigen")',
+    'button[aria-label*="see more" i]',
+    'button[aria-label*="Show more" i]',
+    'button[aria-label*="Mehr anzeigen" i]',
+    'button[aria-expanded="false"]',
+)
 
-    Tries the newer SemanticJobDetails SDUI layout first, then classic
-    About-the-job / jobs-box selectors. Returns "" if nothing usable is found.
-    """
-    # Primary: new LinkedIn SDUI layout
-    try:
-        screen_loc = page.locator(
-            '[data-sdui-screen="com.linkedin.sdui.flagshipnav.jobs.SemanticJobDetails"]'
-        )
-        if screen_loc.count() > 0:
-            lazy_col = screen_loc.locator('[data-testid="lazy-column"]').first
-            if lazy_col.count() > 0:
-                desc_text = (lazy_col.inner_text(timeout=8000) or "").strip()
-                if desc_text:
-                    return desc_text
-    except Exception:
-        pass
+_SIMILAR_JOBS_SPLIT = re.compile(
+    r"(?:^|\n)\s*(?:Similar jobs|People also viewed|"
+    r"Mehr ähnliche Jobs|Ähnliche Jobs)\s*(?:\n|$)",
+    re.I,
+)
 
+
+def linkedin_description_selectors(job_id: str = "") -> list:
+    """About-the-job selectors only — never the whole details column."""
     selectors = []
     if job_id:
-        selectors.append(f"#JobDetails_AboutTheJob_jobs_{job_id}")
+        selectors.extend(
+            [
+                f'[componentkey="JobDetails_AboutTheJob_{job_id}"]',
+                f"#JobDetails_AboutTheJob_jobs_{job_id}",
+                f'[id="JobDetails_AboutTheJob_jobs_{job_id}"]',
+            ]
+        )
     selectors.extend(
         [
+            '[componentkey*="JobDetails_AboutTheJob"]',
             "[id*='JobDetails_AboutTheJob']",
+            ".jobs-description-content__text",
+            ".jobs-description__content",
             ".jobs-box__html-content",
+            "#job-details",
         ]
     )
-    for sel in selectors:
+    return selectors
+
+
+def _trim_linkedin_sidebar(text: str) -> str:
+    """Drop similar-jobs / people-also-viewed blocks after the posting."""
+    if not text:
+        return ""
+    return _SIMILAR_JOBS_SPLIT.split(text, maxsplit=1)[0].strip()
+
+
+def _locator_description_text(loc) -> str:
+    text = (safe_text(loc, timeout=5000) or "").strip()
+    if text:
+        return _trim_linkedin_sidebar(text)
+    try:
+        html = loc.inner_html(timeout=5000) or ""
+    except Exception:
+        html = ""
+    return _trim_linkedin_sidebar(strip_html(html).strip())
+
+
+def expand_linkedin_see_more(page, job_id: str = "") -> bool:
+    """
+    Expand a collapsed About-the-job 'See more' / 'Mehr anzeigen' control.
+
+    Scoped to the posting body so similar-job cards are not clicked.
+    """
+    roots = linkedin_description_selectors(job_id)
+    roots.append(
+        '[data-sdui-screen="com.linkedin.sdui.flagshipnav.jobs.SemanticJobDetails"]'
+    )
+    for root_sel in roots:
+        try:
+            root = page.locator(root_sel).first
+            if root.count() == 0:
+                continue
+            for btn_sel in _LINKEDIN_SEE_MORE:
+                try:
+                    btn = root.locator(btn_sel).first
+                    if btn.count() == 0:
+                        continue
+                    if hasattr(btn, "is_visible") and not btn.is_visible():
+                        continue
+                    btn.click(timeout=2000)
+                    pause(0.3, 0.6)
+                    return True
+                except Exception:
+                    continue
+        except Exception:
+            continue
+    return False
+
+
+def extract_linkedin_description(page, job_id: str = "") -> str:
+    """
+    Pull JD text from the LinkedIn About-the-job region.
+
+    Prefers JobDetails_AboutTheJob_{id} (and classic jobs-box fallbacks).
+    Expands See more first. Does not return the whole SemanticJobDetails
+    lazy-column (top-card chrome + truncated teaser + similar jobs).
+    """
+    expand_linkedin_see_more(page, job_id)
+
+    for sel in linkedin_description_selectors(job_id):
         try:
             loc = page.locator(sel).first
             if loc.count() == 0:
                 continue
-            text = (safe_text(loc, timeout=5000) or "").strip()
-            if text:
-                return text
-            html = loc.inner_html(timeout=5000) or ""
-            text = strip_html(html).strip()
+            text = _locator_description_text(loc)
             if text:
                 return text
         except Exception:
@@ -292,11 +361,16 @@ def _save_open_linkedin_job(
     job_desc_text = ""
     for attempt in range(1, DESCRIPTION_FETCH_RETRIES + 1):
         job_desc_text = extract_linkedin_description(page, job_id)
-        if is_usable_job_description(job_desc_text):
+        if is_complete_job_description(
+            job_desc_text, title=title, company=company, source=SOURCE
+        ):
             break
         if attempt < DESCRIPTION_FETCH_RETRIES:
+            quality = assess_job_description(
+                job_desc_text, title=title, company=company, source=SOURCE
+            )
             print(
-                f"Job {index + 1}: empty description, "
+                f"Job {index + 1}: {quality['kind']} description, "
                 f"retry {attempt}/{DESCRIPTION_FETCH_RETRIES - 1}"
             )
             pause(1.5, 3.0)
@@ -305,12 +379,15 @@ def _save_open_linkedin_job(
             except PlaywrightTimeoutError:
                 pass
 
-    desc_empty = not is_usable_job_description(job_desc_text)
-    if desc_empty:
+    quality_flags = description_save_flags(
+        job_desc_text, title=title, company=company, source=SOURCE
+    )
+    if quality_flags["description_empty"] or quality_flags["description_incomplete"]:
+        kind = quality_flags["description_quality"]
         print(
-            f"Job {index + 1}: description still empty after "
+            f"Job {index + 1}: description still {kind} after "
             f"{DESCRIPTION_FETCH_RETRIES} attempts — save anyway "
-            f"(description_empty; AI will skip)"
+            f"(AI will skip)"
         )
         job_data = {
             "title": title,
@@ -321,12 +398,12 @@ def _save_open_linkedin_job(
             "job_id": job_id,
             "applicants": apply_number,
             "description": job_desc_text or "",
-            "description_empty": True,
             "source": SOURCE,
+            **quality_flags,
         }
         if save_job(job_data):
             jobs_data.append(job_data)
-            print(f"Job {index + 1}: saved job_id {job_id} (empty description)")
+            print(f"Job {index + 1}: saved job_id {job_id} ({kind} description)")
     else:
         should_skip, lang, german_share = is_non_english_job_detail(job_desc_text)
         print(
@@ -350,8 +427,8 @@ def _save_open_linkedin_job(
                 "job_id": job_id,
                 "applicants": apply_number,
                 "description": job_desc_text,
-                "description_empty": False,
                 "source": SOURCE,
+                **quality_flags,
             }
 
             if save_job(job_data):

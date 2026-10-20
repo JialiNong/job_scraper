@@ -37,7 +37,9 @@ from core.scraper_utils import (
     open_scraper_page,
     should_skip_title_before_click,
     is_non_english_job_detail,
-    is_usable_job_description,
+    is_complete_job_description,
+    assess_job_description,
+    description_save_flags,
     strip_html,
     normalize_indeed_job_id,
     extract_indeed_jk_from_url,
@@ -375,14 +377,20 @@ def scrape_jobs(page, max_jobs=INDEED_JOBS_PER_PAGE, keyword=""):
 
             detail = page.locator(DETAIL_SELECTOR).first
             description = ""
+            company = ""
             for attempt in range(1, DESCRIPTION_FETCH_RETRIES + 1):
                 detail = page.locator(DETAIL_SELECTOR).first
                 description = extract_indeed_description(page, detail)
-                if is_usable_job_description(description):
+                if is_complete_job_description(
+                    description, title=title, company=company, source=SOURCE
+                ):
                     break
                 if attempt < DESCRIPTION_FETCH_RETRIES:
+                    quality = assess_job_description(
+                        description, title=title, company=company, source=SOURCE
+                    )
                     print(
-                        f"Job {index + 1}: empty description, "
+                        f"Job {index + 1}: {quality['kind']} description, "
                         f"retry {attempt}/{DESCRIPTION_FETCH_RETRIES - 1}"
                     )
                     pause(1.5, 3.0)
@@ -392,12 +400,15 @@ def scrape_jobs(page, max_jobs=INDEED_JOBS_PER_PAGE, keyword=""):
                         pass
 
             company, location = extract_indeed_detail_meta(page)
-            desc_empty = not is_usable_job_description(description)
-            if desc_empty:
+            quality_flags = description_save_flags(
+                description, title=title, company=company, source=SOURCE
+            )
+            if quality_flags["description_empty"] or quality_flags["description_incomplete"]:
+                kind = quality_flags["description_quality"]
                 print(
-                    f"Job {index + 1}: description still empty after "
+                    f"Job {index + 1}: description still {kind} after "
                     f"{DESCRIPTION_FETCH_RETRIES} attempts — save anyway "
-                    f"(description_empty; AI will skip)"
+                    f"(AI will skip)"
                 )
                 job_data = {
                     "title": title,
@@ -408,12 +419,12 @@ def scrape_jobs(page, max_jobs=INDEED_JOBS_PER_PAGE, keyword=""):
                     "job_id": job_id,
                     "applicants": "",
                     "description": description or "",
-                    "description_empty": True,
                     "source": SOURCE,
+                    **quality_flags,
                 }
                 if save_job(job_data):
                     jobs_data.append(job_data)
-                    print(f"Job {index + 1}: saved job_id {job_id} (empty description)")
+                    print(f"Job {index + 1}: saved job_id {job_id} ({kind} description)")
             else:
                 should_skip, lang, german_share = is_non_english_job_detail(description)
                 print(
@@ -438,8 +449,8 @@ def scrape_jobs(page, max_jobs=INDEED_JOBS_PER_PAGE, keyword=""):
                         "job_id": job_id,
                         "applicants": "",
                         "description": description,
-                        "description_empty": False,
                         "source": SOURCE,
+                        **quality_flags,
                     }
 
                     if save_job(job_data):
