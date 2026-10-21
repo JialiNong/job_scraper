@@ -841,24 +841,45 @@ def resolve_applied_at(job) -> datetime | None:
     return None
 
 
+def reapplied_count(job) -> int:
+    """Reapplied steps on one job's timeline (each is one more application)."""
+    raw = job.get("application_timeline") if isinstance(job.get("application_timeline"), list) else []
+    return sum(1 for item in raw if isinstance(item, dict) and item.get("step") == "reapplied")
+
+
+def count_reapplied_events() -> int:
+    """Total Reapplied steps across all application records."""
+    rows = list(get_collection("matched_jobs").aggregate([
+        {"$match": {**APPLICATION_QUERY, "application_timeline.step": "reapplied"}},
+        {"$unwind": "$application_timeline"},
+        {"$match": {"application_timeline.step": "reapplied"}},
+        {"$count": "n"},
+    ]))
+    return int(rows[0]["n"]) if rows else 0
+
+
 def count_applied_applications() -> int:
     """
     Applications counted in funnel / Journey / Locations.
 
-    Includes current APPLIED_STATUSES and jobs later marked with a side
-    status (closed / unsuitable / repost / duplicate) that still have
-    applied_at or an application timeline. Pending (reset) is excluded.
+    One per application record — current APPLIED_STATUSES and jobs later
+    marked with a side status (closed / unsuitable / repost / duplicate)
+    that still have applied_at or an application timeline; pending (reset)
+    is excluded — plus one per Reapplied step (applying again to the same
+    job, e.g. a repost), matching the daily heatmap.
     """
-    return get_collection("matched_jobs").count_documents(APPLICATION_QUERY)
+    jobs = get_collection("matched_jobs").count_documents(APPLICATION_QUERY)
+    return jobs + count_reapplied_events()
 
 
 def get_applied_location_stats() -> dict:
     """
     Aggregate applications by normalized location.
 
-    Same job set as funnel Applied and Journey total_applied: APPLICATION_QUERY
-    (applied-like status, or a recorded apply date / timeline). Jobs later
-    marked closed / unsuitable / repost / duplicate still count.
+    Same count as funnel Applied and Journey total_applied: APPLICATION_QUERY
+    (applied-like status, or a recorded apply date / timeline) plus one per
+    Reapplied step. Jobs later marked closed / unsuitable / repost /
+    duplicate still count.
 
     Returns:
         {
@@ -873,10 +894,12 @@ def get_applied_location_stats() -> dict:
     total = 0
     for doc in collection.find(
         APPLICATION_QUERY,
-        {"location": 1},
+        {"location": 1, "application_timeline.step": 1},
     ):
-        total += 1
-        counter[normalize_applied_location(doc.get("location") or "")] += 1
+        # A reapply is another application at the same place.
+        n = 1 + reapplied_count(doc)
+        total += n
+        counter[normalize_applied_location(doc.get("location") or "")] += n
 
     locations = [
         {"name": name, "count": count}
@@ -897,7 +920,7 @@ def get_daily_activity_stats(days: int = 120) -> list:
           "title_clicked": int,    # detail pages opened
           "german_filtered": int,  # non-English JDs skipped (UI: German Filtered)
           "ai_matched": int,       # jobs copied to matched_jobs
-          "applied": int,          # applications dated by applied_at (incl. side statuses)
+          "applied": int,          # applications dated by applied_at + Reapplied steps
         }
 
     title_clicked / german_filtered come from daily scraper_stats docs.
@@ -973,6 +996,23 @@ def get_daily_activity_stats(days: int = 120) -> list:
     ]):
         if row["_id"]:
             buckets[row["_id"]]["applied"] = int(row["count"])
+
+    # 4b) Reapplied steps are a new application on their own day (the job's
+    #     applied_at keeps the first apply, so totals still count the job once).
+    for row in db["matched_jobs"].aggregate([
+        {"$match": {"application_timeline.step": "reapplied"}},
+        {"$unwind": "$application_timeline"},
+        {"$match": {
+            "application_timeline.step": "reapplied",
+            "application_timeline.at": {"$gte": start, "$lte": end},
+        }},
+        {"$group": {
+            "_id": {"$dateToString": {"format": "%Y-%m-%d", "date": "$application_timeline.at"}},
+            "count": {"$sum": 1},
+        }},
+    ]):
+        if row["_id"]:
+            buckets[row["_id"]]["applied"] += int(row["count"])
 
     # Fill every calendar day in range so the heatmap has no gaps
     out = []

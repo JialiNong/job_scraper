@@ -196,6 +196,29 @@ class StatsQueryTests(unittest.TestCase):
             self.assertEqual(count_applied_applications(), 7)
         mock_col.count_documents.assert_called_once_with(APPLICATION_QUERY)
 
+    def test_count_applied_applications_adds_reapplies(self):
+        mock_col = MagicMock()
+        mock_col.count_documents.return_value = 198
+        mock_col.aggregate.return_value = iter([{"n": 1}])
+        with patch.object(db_mongo, "get_collection", return_value=mock_col):
+            self.assertEqual(count_applied_applications(), 199)
+
+    def test_location_stats_count_reapplies(self):
+        mock_col = MagicMock()
+        mock_col.find.return_value = [
+            {"location": "Berlin, Germany"},
+            {
+                "location": "Munich, Germany",
+                "application_timeline": [
+                    {"step": "applied"}, {"step": "rejected"}, {"step": "reapplied"},
+                ],
+            },
+        ]
+        with patch.object(db_mongo, "get_collection", return_value=mock_col):
+            result = get_applied_location_stats()
+        self.assertEqual(result["total"], 3)
+        self.assertEqual(sum(row["count"] for row in result["locations"]), 3)
+
     def test_location_stats_use_application_query(self):
         mock_col = MagicMock()
         mock_col.find.return_value = [{"location": "Berlin, Germany"}]

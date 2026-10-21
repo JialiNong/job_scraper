@@ -281,3 +281,48 @@ class ProcessUrlsRecommendedByTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ExistingCardTagTests(unittest.TestCase):
+    """Re-logging a job must not rewrite who recommended an older card."""
+
+    def _col(self, job):
+        from unittest.mock import MagicMock
+        col = MagicMock()
+        col.find_one.return_value = job
+        col.update_one.return_value = MagicMock(matched_count=1)
+        return col
+
+    def test_no_stamp_on_already_applied_card(self):
+        job = {"_id": 1, "job_id": "4361502751", "source": "linkedin",
+               "status": "rejected", "applied_at": datetime(2026, 9, 29, 19, 44)}
+        col = self._col(job)
+        with patch.object(ml, "get_collection", return_value=col):
+            self.assertFalse(ml.stamp_recommended_by("4361502751", "linkedin", "cursor"))
+        col.update_one.assert_not_called()
+
+    def test_no_overwrite_of_existing_tag(self):
+        job = {"_id": 1, "job_id": "1", "source": "linkedin",
+               "status": "pending", "recommended_by": "claude"}
+        col = self._col(job)
+        with patch.object(ml, "get_collection", return_value=col):
+            self.assertFalse(ml.stamp_recommended_by("1", "linkedin", "cursor"))
+        col.update_one.assert_not_called()
+
+    def test_stamps_untagged_unapplied_card(self):
+        job = {"_id": 1, "job_id": "1", "source": "linkedin", "status": "pending"}
+        col = self._col(job)
+        with patch.object(ml, "get_collection", return_value=col):
+            self.assertTrue(ml.stamp_recommended_by("1", "linkedin", "cursor"))
+        self.assertEqual(col.update_one.call_args[0][1]["$set"]["recommended_by"], "cursor")
+
+    def test_mark_applied_already_does_not_tag(self):
+        job = {"_id": 1, "job_id": "1", "source": "linkedin",
+               "status": "applied", "applied_at": datetime(2026, 9, 29)}
+        col = self._col(job)
+        with patch.object(ml, "get_collection", return_value=col):
+            self.assertEqual(
+                ml.mark_tracker_job_applied("1", "linkedin", recommended_by="cursor"),
+                "already",
+            )
+        col.update_one.assert_not_called()

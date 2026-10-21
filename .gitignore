@@ -1,6 +1,7 @@
 __pycache__
 .DS_Store
 .env
+.flask_secret_key
 
 # Logs
 *.log

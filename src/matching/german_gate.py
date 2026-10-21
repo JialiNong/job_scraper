@@ -176,11 +176,13 @@ def _plain_text(html_text: str) -> str:
 
 
 def _sentence_bounds(text: str, pos: int) -> Tuple[int, int]:
+    # ";" ends a clause too: "Fluent English required; German is a plus"
+    # must not let "required" reach across to "German".
     lo = 0
-    for match in re.finditer(r"[.!?]", text[:pos]):
+    for match in re.finditer(r"[.!?;]", text[:pos]):
         lo = match.end()
     hi = len(text)
-    match = re.search(r"[.!?]", text[pos:])
+    match = re.search(r"[.!?;]", text[pos:])
     if match:
         hi = pos + match.end()
     return lo, hi
@@ -208,6 +210,15 @@ def _clause_at(text: str, pos: int) -> Tuple[str, bool]:
             clause_hi = match.start()
             break
     return sentence[clause_lo:clause_hi].strip(), subordinate
+
+
+def _segment_at(clause: str, rel: int) -> str:
+    """Comma-separated piece of clause around rel (German's own qualifier)."""
+    lo = clause.rfind(",", 0, rel) + 1
+    hi = clause.find(",", rel)
+    if hi < 0:
+        hi = len(clause)
+    return clause[lo:hi].strip()
 
 
 def _snippet(text: str, start: int, end: int, pad: int = 40) -> str:
@@ -265,6 +276,14 @@ def find_mandatory_german_requirement(job: Dict) -> Optional[str]:
         optional_hit = bool(_OPTIONAL.search(clause))
         required_hit = bool(_GERMAN_REQUIRED_ATTACHED.search(clause))
         level_hit = bool(_GERMAN_LEVEL_ATTACHED.search(clause))
+
+        # German's own comma piece says plus / nice-to-have: "Fluent English
+        # required, German is a plus". A "required" that belongs to English
+        # in an earlier piece must not override it.
+        rel = clause.lower().find(match.group(0).lower())
+        segment = _segment_at(clause, rel) if rel >= 0 else clause
+        if _OPTIONAL.search(segment) and not _GERMAN_REQUIRED_ATTACHED.search(segment):
+            continue
 
         # Plus / nice-to-have in this clause wins even if the same clause
         # says "working proficiency in German". "Fluent German required.

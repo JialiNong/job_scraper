@@ -220,13 +220,9 @@ def extract_job_id_from_url(url):
     """
     if not url:
         return None
-    match = re.search(r"/jobs/view/(\d+)", url)
-    if match:
-        return match.group(1)
-    match = re.search(r"[?&]currentJobId=(\d+)", url)
-    if match:
-        return match.group(1)
-    return None
+    # Same rules as Log Job (plain id, title-slug id, or currentJobId).
+    from core.job_url import extract_linkedin_job_id
+    return extract_linkedin_job_id(url)
 
 
 

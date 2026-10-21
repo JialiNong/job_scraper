@@ -39,6 +39,7 @@ from core.db_mongo import (
     APPLIED_STATUSES,
     APPLICATION_QUERY,
     resolve_applied_at,
+    reapplied_count,
 )
 from core.scraper_utils import indeed_job_id_variants
 from core.manual_log import (
@@ -64,7 +65,36 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.jinja_env.auto_reload = True
 
 # Session config (required for login)
-app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", os.urandom(24).hex())
+_LOCAL_SECRET_FILE = os.path.join(_PROJECT_ROOT, ".flask_secret_key")
+
+
+def _load_secret_key() -> str:
+    """
+    FLASK_SECRET_KEY from env (Render), else a key persisted in a gitignored
+    local file. A fresh random key per start would invalidate every session
+    and remember-me cookie, forcing a new login after each restart.
+    """
+    key = (os.getenv("FLASK_SECRET_KEY") or "").strip()
+    if key:
+        return key
+    try:
+        with open(_LOCAL_SECRET_FILE, "r", encoding="utf-8") as fh:
+            key = fh.read().strip()
+        if key:
+            return key
+    except OSError:
+        pass
+    key = os.urandom(32).hex()
+    try:
+        fd = os.open(_LOCAL_SECRET_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(key)
+    except OSError as exc:
+        print(f"[web] Could not persist secret key ({exc}); logins reset on restart")
+    return key
+
+
+app.config["SECRET_KEY"] = _load_secret_key()
 
 # Production proxy support (Render, Railway, etc. use X-Forwarded-* headers)
 # This ensures Flask sees the correct scheme (https) and host when behind a reverse proxy
@@ -125,6 +155,7 @@ JOURNEY_INTERVIEW_STEPS = frozenset({
 # All steps shown on a company track (including Applied / Rejected)
 JOURNEY_TRACK_STEPS = frozenset({
     "applied",
+    "reapplied",
     "interview_invite",
     "interview_1",
     "interview_2",
@@ -163,8 +194,11 @@ INTERVIEW_TIMELINE_STEPS = (
 )
 
 # Application progress timeline steps (ordered interview track)
+# "reapplied": same job (e.g. a repost with the same id/JD) applied again
+# later; the track restarts from it (Invite → Rounds / Rejected / Offer).
 TIMELINE_STEPS = {
     "applied":         "Applied",
+    "reapplied":       "Reapplied",
     "interview_invite": "Invite",
     "interview_1":     "Round 1",
     "interview_2":     "Round 2",
@@ -232,7 +266,7 @@ def _status_from_timeline(timeline: list, fallback: str = "pending") -> str:
     if not timeline:
         return fallback if fallback in (*SIDE_STATUSES, "pending") else "pending"
     last = timeline[-1].get("step", "")
-    if last == "applied":
+    if last in ("applied", "reapplied"):
         return "applied"
     if last.startswith("interview_"):
         return "interview"
@@ -289,6 +323,8 @@ def jobs_status_filter_query(status_filter: Optional[str]) -> dict:
     last_step = {"$arrayElemAt": ["$application_timeline.step", -1]}
     if status_filter == "interview":
         last_matches = {"$expr": {"$in": [last_step, list(INTERVIEW_TIMELINE_STEPS)]}}
+    elif status_filter == "applied":
+        last_matches = {"$expr": {"$in": [last_step, ["applied", "reapplied"]]}}
     else:
         last_matches = {"$expr": {"$eq": [last_step, status_filter]}}
 
@@ -808,7 +844,21 @@ def api_update_status(job_id: str):
 def api_update_timeline(job_id: str):
     """Replace the application progress timeline and sync status / applied_at."""
     data = request.get_json(silent=True) or {}
-    timeline = _normalize_timeline(data.get("timeline", []))
+    raw_timeline = data.get("timeline", [])
+    unknown = sorted({
+        str(item.get("step"))
+        for item in (raw_timeline if isinstance(raw_timeline, list) else [])
+        if isinstance(item, dict) and item.get("step") not in TIMELINE_STEPS
+    })
+    if unknown:
+        # Never drop a step silently and still report success.
+        return jsonify({
+            "error": (
+                f"Unknown progress step: {', '.join(unknown)}. "
+                "If you just updated the app, restart the web server."
+            ),
+        }), 400
+    timeline = _normalize_timeline(raw_timeline)
 
     try:
         oid = ObjectId(job_id)
@@ -1352,7 +1402,7 @@ def api_journey():
 
         # Same set as funnel / Locations: APPLICATION_QUERY (includes side
         # statuses that still have applied_at or a timeline)
-        total_applied += 1
+        total_applied += 1 + reapplied_count(job)
         if applied_at and (first_applied is None or applied_at < first_applied):
             first_applied = applied_at
 
@@ -1727,6 +1777,8 @@ _run_ai_state: dict = {
     "ok": False,
     "error": None,
     "match_score": None,
+    "match_gate": None,
+    "gate_reason": None,
 }
 
 _fetch_batch_lock = threading.Lock()
@@ -1920,6 +1972,8 @@ def run_ai_batch_jobs(docs: list, run_one=None) -> dict:
             "ok": ok,
             "error": err,
             "match_score": payload.get("match_score"),
+            "match_gate": payload.get("match_gate") or "",
+            "used_stored_jd": bool(payload.get("used_stored_jd")),
         })
         _fetch_batch_state["done_count"] = done
         _fetch_batch_state["fail_count"] = failed
@@ -2084,8 +2138,9 @@ def collect_fetch_detail_targets(query: dict, *, missing_only: bool = False, lim
 @login_required
 def api_job_run_ai(job_id: str):
     """
-    Scrape the Tracker card's link via CDP, run AI matching, and update analysis
-    fields (preserves notes / timeline / status). Requires debug Chrome.
+    Run AI matching on a Tracker card and update analysis fields (preserves
+    notes / timeline / status). A complete stored JD is used as-is; otherwise
+    the link is scraped via CDP first (requires debug Chrome).
     """
     try:
         oid = ObjectId(job_id)
@@ -2103,11 +2158,18 @@ def api_job_run_ai(job_id: str):
             "busy_job_id": _run_ai_state.get("job_id"),
         }), 429
 
-    # Also block if Log Job or batch Fetch details is using Chrome
-    busy = _chrome_busy_reason(ignore_run_ai=True)
-    if busy:
-        _run_ai_lock.release()
-        return jsonify({"error": busy}), 429
+    # A complete stored JD is matched without Chrome; only a scrape needs
+    # Chrome to be free of Log Job / batch Fetch details.
+    try:
+        from scrapers.manual_apply_scraper import stored_jd_usable
+        uses_stored_jd = stored_jd_usable(doc)
+    except ImportError:
+        uses_stored_jd = False
+    if not uses_stored_jd:
+        busy = _chrome_busy_reason(ignore_run_ai=True)
+        if busy:
+            _run_ai_lock.release()
+            return jsonify({"error": busy}), 429
 
     def run():
         try:
@@ -2117,6 +2179,8 @@ def api_job_run_ai(job_id: str):
             _run_ai_state["ok"] = False
             _run_ai_state["error"] = None
             _run_ai_state["match_score"] = None
+            _run_ai_state["match_gate"] = None
+            _run_ai_state["gate_reason"] = None
 
             from scrapers.manual_apply_scraper import run_ai_on_matched_job
 
@@ -2134,6 +2198,8 @@ def api_job_run_ai(job_id: str):
                 _run_ai_state["ok"] = bool(result.get("ok"))
                 _run_ai_state["error"] = result.get("error")
                 _run_ai_state["match_score"] = result.get("match_score")
+                _run_ai_state["match_gate"] = result.get("match_gate")
+                _run_ai_state["gate_reason"] = result.get("gate_reason")
             finally:
                 builtins.print = _original_print
         except Exception as e:
@@ -2146,7 +2212,11 @@ def api_job_run_ai(job_id: str):
 
     t = threading.Thread(target=run, daemon=True)
     t.start()
-    return jsonify({"status": "started", "job_id": job_id})
+    return jsonify({
+        "status": "started",
+        "job_id": job_id,
+        "uses_stored_jd": uses_stored_jd,
+    })
 
 
 def run_fetch_job_details(doc: dict) -> tuple:
@@ -2331,6 +2401,47 @@ def api_job_run_ai_status(job_id: str):
         "ok": state["ok"] if state.get("job_id") == job_id and not state["running"] else None,
         "error": state.get("error") if state.get("job_id") == job_id else None,
         "match_score": state.get("match_score") if state.get("job_id") == job_id else None,
+        "match_gate": state.get("match_gate") if state.get("job_id") == job_id else None,
+        "gate_reason": state.get("gate_reason") if state.get("job_id") == job_id else None,
+    })
+
+
+@app.route("/api/jobs/<job_id>/check-gates", methods=["POST"])
+@login_required
+def api_job_check_gates(job_id: str):
+    """
+    Dry-run the hard gates (JD completeness, German, AI/ML title, tech
+    stack) on the card's stored JD. No Chrome, no scoring, no DB writes —
+    use Re-run AI afterwards to actually update the card.
+    """
+    try:
+        oid = ObjectId(job_id)
+    except Exception:
+        return jsonify({"ok": False, "error": "Invalid id"}), 400
+
+    doc = get_collection("matched_jobs").find_one(
+        {"_id": oid},
+        {"title": 1, "company": 1, "location": 1, "description": 1,
+         "source": 1, "match_gate": 1},
+    )
+    if not doc:
+        return jsonify({"ok": False, "error": "Job not found"}), 404
+    if not str(doc.get("description") or "").strip():
+        return jsonify({
+            "ok": False,
+            "error": "No stored JD on this card — Fetch job details or Run AI first",
+        }), 400
+
+    try:
+        from matching.gate_check import check_hard_gates
+        result = check_hard_gates(doc)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Gate check failed: {e}"}), 500
+
+    return jsonify({
+        "ok": True,
+        "current_gate": doc.get("match_gate") or "",
+        **result,
     })
 
 

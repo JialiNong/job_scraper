@@ -168,6 +168,47 @@ class GermanOptionalPassTests(unittest.TestCase):
         )
 
 
+class GermanPlusAfterEnglishRequiredTests(unittest.TestCase):
+    """'required' attached to English must not reach a later 'German is a plus'."""
+
+    def test_semicolon_german_is_a_plus(self):
+        self.assertIsNone(
+            find_mandatory_german_requirement(
+                _job(
+                    "Fluent English required; German is a plus.",
+                    title="Senior Full-Stack Engineer (m/f/d)",
+                    location="Hamburg",
+                )
+            )
+        )
+
+    def test_comma_german_is_a_plus(self):
+        self.assertIsNone(
+            find_mandatory_german_requirement(
+                _job("Fluent English required, German is a plus.")
+            )
+        )
+
+    def test_german_required_english_plus_still_fails(self):
+        self.assertIsNotNone(
+            find_mandatory_german_requirement(
+                _job("Fluent German required; English is a plus.")
+            )
+        )
+        self.assertIsNotNone(
+            find_mandatory_german_requirement(
+                _job("Fluent German required, English is a plus.")
+            )
+        )
+
+    def test_required_list_with_fluent_german_still_fails(self):
+        self.assertIsNotNone(
+            find_mandatory_german_requirement(
+                _job("Required: Python, Docker, fluent German.")
+            )
+        )
+
+
 class GermanMandatoryFailTests(unittest.TestCase):
     def test_fluent_german_required(self):
         reason = find_mandatory_german_requirement(

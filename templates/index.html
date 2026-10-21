@@ -313,6 +313,7 @@
       box-shadow: 0 0 0 3px var(--node-color, var(--accent));
     }
     .jt-node.step-applied   { --node-color: var(--applied); }
+    .jt-node.step-reapplied { --node-color: var(--applied); }
     .jt-node.step-interview { --node-color: var(--interview); }
     .jt-node.step-rejected  { --node-color: var(--rejected); }
     .jt-node.step-offer     { --node-color: var(--offer); }
@@ -1069,6 +1070,7 @@
     }
     .status-pill.s-pending    { color: var(--pending);    border-color: var(--pending)55;    background: #3b82f618; }
     .status-pill.s-applied    { color: var(--applied);    border-color: var(--applied)55;    background: #22c55e18; }
+    .status-pill.s-reapplied  { color: var(--applied);    border-color: var(--applied);      background: #22c55e2e; }
     .status-pill.s-rejected   { color: var(--rejected);   border-color: var(--rejected)55;   background: #ef444418; }
     .status-pill.s-interview  { color: var(--interview);  border-color: var(--interview)55;  background: #f59e0b18; }
     .status-pill.s-offer      { color: var(--offer);      border-color: var(--offer)55;      background: #10b98118; }
@@ -1382,6 +1384,32 @@
       width: fit-content;
     }
     .btn-run-ai:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-check-gates {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: .82rem; font-weight: 600;
+      cursor: pointer;
+      width: fit-content;
+    }
+    .btn-check-gates:hover { border-color: var(--accent); color: var(--accent); }
+    .btn-check-gates:disabled { opacity: .45; pointer-events: none; }
+    .gate-check-result {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface2);
+      font-size: .8rem;
+      line-height: 1.5;
+    }
+    .gate-check-result ul { list-style: none; padding: 0; margin: 0 0 6px; }
+    .gate-check-result li { margin: 4px 0; overflow-wrap: anywhere; }
+    .gate-check-result .gc-detail { color: var(--muted); display: block; padding-left: 22px; }
+    .gate-check-result .gc-verdict { font-weight: 600; margin-top: 4px; }
     .btn-run-ai:disabled { opacity: .45; pointer-events: none; }
     .btn-run-ai.ai-pending-btn {
       border-color: #f59e0b66;
@@ -1591,6 +1619,8 @@
       font-variant-numeric: tabular-nums;
     }
     .progress-node.step-applied   { --node-color: var(--applied); }
+    .progress-node.step-reapplied { --node-color: var(--applied); }
+    .progress-node.step-reapplied .node-dot { box-shadow: 0 0 0 3px var(--surface), 0 0 0 4px var(--applied); }
     .progress-node.step-interview { --node-color: var(--interview); }
     .progress-node.step-rejected  { --node-color: var(--rejected); }
     .progress-node.step-offer     { --node-color: var(--offer); }
@@ -2638,6 +2668,7 @@ let fetchBatchMode = 'fetch';
 
 const TIMELINE_LABEL = {
   applied:          'Applied',
+  reapplied:        'Reapplied',
   interview_invite: 'Invite',
   interview_1:      'Round 1',
   interview_2:      'Round 2',
@@ -2731,6 +2762,7 @@ function formatJourneyDate(iso) {
 
 function journeyNodeClass(step) {
   if (step === 'applied') return 'step-applied';
+  if (step === 'reapplied') return 'step-reapplied';
   if (step === 'rejected') return 'step-rejected';
   if (step === 'offer') return 'step-offer';
   if (String(step).startsWith('interview_')) return 'step-interview';
@@ -3536,13 +3568,15 @@ function renderCard(job) {
   const recKey = String(job.recommended_by || '').toLowerCase();
   const missing = isMissingDetails(job);
   const canFetch = canFetchDetails(job);
+  // Batch checkbox only while AI has not run yet; Re-run AI stays per card.
+  const canSelect = canFetch && aiHint;
   const fetchBtn = canFetch ? `
         <button type="button" class="btn-fetch-details" data-id="${job._id}"
                 onclick="event.stopPropagation(); fetchJobDetails('${job._id}', this)"
                 title="Scrape title, company, location, and description (no AI matching)">
           📥 Fetch job details
         </button>` : '';
-  const selectBox = canFetch ? `
+  const selectBox = canSelect ? `
     <label class="card-select-wrap" onclick="event.stopPropagation()" title="Select for batch Fetch details / Run AI">
       <input type="checkbox" class="card-select" data-id="${job._id}"
              data-missing="${missing ? '1' : '0'}"
@@ -3554,8 +3588,8 @@ function renderCard(job) {
   const card = document.createElement('div');
   card.className = 'card'
     + (highlights.length ? ' has-highlights' : '')
-    + (canFetch ? ' has-fetch-select' : '')
-    + (canFetch && selectedFetchIds.has(job._id) ? ' fetch-selected' : '');
+    + (canSelect ? ' has-fetch-select' : '')
+    + (canSelect && selectedFetchIds.has(job._id) ? ' fetch-selected' : '');
   card.id = `card-${job._id}`;
 
   card.innerHTML = `
@@ -3572,7 +3606,7 @@ function renderCard(job) {
         ${recBadge}
         ${aiHint ? '<span class="meta-pill ai-pending-pill">AI pending</span>' : ''}
         <span class="row-highlights" data-row-highlights>${highlightBadges}</span>
-        <span class="status-pill s-${status}" data-status-pill>${STATUS_LABEL[status] || status}</span>
+        ${statusPillHtml(status, job.application_timeline)}
         <div class="score-badge ${scoreCls(hasAiScore(job) ? job.match_score : null)}">${score}</div>
       </div>
     </div>
@@ -3628,11 +3662,18 @@ function renderCard(job) {
         </a>
         <button type="button" class="${runAiCls}" data-id="${job._id}"
                 onclick="event.stopPropagation(); runAiForJob('${job._id}', this)"
-                title="Open the job page in Chrome, scrape JD, run AI matching">
+                title="Run AI matching — uses the stored JD when it is complete, otherwise scrapes the job page in Chrome first">
           ${runAiLabel}
         </button>
         ${fetchBtn}
+        ${missing ? '' : `
+        <button type="button" class="btn-check-gates" data-id="${job._id}"
+                onclick="event.stopPropagation(); checkGatesForJob('${job._id}', this)"
+                title="Re-test the stored JD against the German / AI-ML title / tech-stack gates (no Chrome, no scoring, nothing saved)">
+          🧪 Check gates
+        </button>`}
       </div>
+      <div class="gate-check-result" id="gate-check-${job._id}" hidden></div>
 
       <div class="card-split">
         <div class="card-split-match">
@@ -3693,6 +3734,7 @@ function renderApplicationQa(job) {
 
 function timelineStepClass(step) {
   if (step === 'applied') return 'step-applied';
+  if (step === 'reapplied') return 'step-reapplied';
   if (step === 'rejected') return 'step-rejected';
   if (step === 'offer') return 'step-offer';
   if (String(step).startsWith('interview_')) return 'step-interview';
@@ -3712,12 +3754,16 @@ function nextTimelineActions(timeline) {
     return [{ step: 'applied', label: '+ Applied', cls: 'btn-apply-step' }];
   }
   const last = timeline[timeline.length - 1].step;
+  const reapply = { step: 'reapplied', label: '+ Reapplied', cls: 'btn-apply-step' };
+  // Rejected / no reply → apply again (e.g. a repost); the track restarts.
+  if (last === 'rejected') return [reapply];
   if (TERMINAL_STEPS.has(last)) return [];
 
   const actions = [];
-  if (last === 'applied') {
+  if (last === 'applied' || last === 'reapplied') {
     actions.push({ step: 'interview_invite', label: '+ Invite', cls: 'btn-interview-step' });
     actions.push({ step: 'rejected', label: '+ Rejected', cls: 'btn-reject-step' });
+    actions.push(reapply);
     return actions;
   }
   if (last === 'interview_invite') {
@@ -3740,7 +3786,7 @@ function nextTimelineActions(timeline) {
 function statusFromTimeline(timeline) {
   if (!Array.isArray(timeline) || !timeline.length) return '';
   const last = timeline[timeline.length - 1].step;
-  if (last === 'applied') return 'applied';
+  if (last === 'applied' || last === 'reapplied') return 'applied';
   if (String(last).startsWith('interview_')) return 'interview';
   if (last === 'rejected') return 'rejected';
   if (last === 'offer') return 'offer';
@@ -3763,6 +3809,21 @@ function jobMatchesStatusFilter(job, filter) {
     return progressStage(job.status, job.application_timeline, job.applied_at) === filter;
   }
   return (job.status || 'pending') === filter;
+}
+
+/** Card pill: "Reapplied" while the latest progress step is a reapply. */
+function cardStatusView(status, timeline) {
+  const tl = Array.isArray(timeline) ? timeline : [];
+  const last = tl.length ? tl[tl.length - 1].step : '';
+  if (status === 'applied' && last === 'reapplied') {
+    return { cls: 'reapplied', label: 'Reapplied' };
+  }
+  return { cls: status, label: STATUS_LABEL[status] || status };
+}
+
+function statusPillHtml(status, timeline) {
+  const view = cardStatusView(status, timeline);
+  return `<span class="status-pill s-${escHtml(view.cls)}" data-status-pill>${escHtml(view.label)}</span>`;
 }
 
 function isAppliedLike(status, timeline) {
@@ -4102,8 +4163,9 @@ function refreshProgressUI(jobId, timeline, status) {
 
   const pill = card.querySelector('[data-status-pill]');
   if (pill) {
-    pill.className = `status-pill s-${status}`;
-    pill.textContent = STATUS_LABEL[status] || status;
+    const view = cardStatusView(status, timeline);
+    pill.className = `status-pill s-${view.cls}`;
+    pill.textContent = view.label;
   }
 
   const btn = card.querySelector('.btn-apply');
@@ -4120,8 +4182,15 @@ async function saveTimeline(jobId, timeline) {
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ timeline }),
   });
-  if (!res.ok) throw new Error('Request failed');
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || 'Request failed');
+  }
   const data = await res.json();
+  const saved = data.application_timeline || [];
+  if (saved.length < timeline.length) {
+    throw new Error('The server did not keep every step — restart the web server and try again');
+  }
   refreshProgressUI(jobId, data.application_timeline || timeline, data.status);
   if (!jobMatchesStatusFilter({
     status: data.status,
@@ -4143,6 +4212,8 @@ async function addTimelineStep(jobId, step) {
     title: `Record: ${label}`,
     hint: step === 'applied'
       ? 'When did you apply for this job?'
+      : step === 'reapplied'
+        ? 'When did you apply again (e.g. to the repost)?'
       : step === 'interview_invite'
         ? 'When did you receive the interview invitation?'
         : `When did you get the “${label}” update?`,
@@ -4156,7 +4227,7 @@ async function addTimelineStep(jobId, step) {
     await saveTimeline(jobId, timeline);
     showToast(`✅ Recorded ${label} · ${at}`);
   } catch (err) {
-    showToast('❌ Failed to update progress', 'err');
+    showToast('❌ Failed to update progress: ' + (err.message || 'unknown error'), 'err');
   }
 }
 
@@ -4355,7 +4426,11 @@ function renderBatchProgress(data) {
       ? ` · ${escHtml(String(r.match_score))}/10`
       : '';
     const err = r.error ? ` — ${escHtml(r.error)}` : '';
-    return `<div class="${cls}">${mark} ${escHtml(r.title || r.id)}${score}${err}</div>`;
+    const gate = r.ok && r.match_gate && r.match_gate !== 'scored'
+      ? ` — ⛔ stopped at ${escHtml(GATE_LABELS[r.match_gate] || r.match_gate)}, not scored`
+      : '';
+    const via = r.ok && r.used_stored_jd ? ' · stored JD' : '';
+    return `<div class="${cls}">${mark} ${escHtml(r.title || r.id)}${score}${via}${gate}${err}</div>`;
   }).join('');
   const label = batchModeLabel(mode);
   const head = running
@@ -4385,7 +4460,7 @@ async function startSelectedChromeBatch(mode) {
   updateBatchFetchUI();
   showToast(
     isAi
-      ? '🤖 Run AI for selected jobs — scrape + match, needs debug Chrome'
+      ? '🤖 Run AI for selected jobs — stored JDs go straight to AI; missing ones are scraped in debug Chrome'
       : '📥 Fetching details for selected jobs — needs debug Chrome'
   );
   try {
@@ -4503,6 +4578,57 @@ async function fetchJobDetails(jobId, btn) {
 }
 
 /* ── Run AI (scrape link + match on existing Tracker card) ───────── */
+const GATE_LABELS = {
+  german: 'German language gate',
+  stack: 'Tech stack gate',
+  ai_ml: 'AI/ML gate',
+  ai_ml_title: 'AI/ML title gate',
+  description: 'JD completeness',
+  empty_desc: 'JD completeness (empty)',
+  incomplete_desc: 'JD completeness (incomplete)',
+};
+
+async function checkGatesForJob(jobId, btn) {
+  const box = document.getElementById(`gate-check-${jobId}`);
+  if (!jobId || !btn || !box) return;
+  const originalLabel = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Checking…';
+  box.hidden = false;
+  box.innerHTML = '<span class="gc-detail" style="padding:0">Running gates on the stored JD (tech-stack gate calls the extractor, a few seconds)…</span>';
+  try {
+    const res = await fetch(`/api/jobs/${jobId}/check-gates`, { method: 'POST' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data.ok) {
+      box.innerHTML = `<div class="gc-verdict">❌ ${escHtml(data.error || 'Gate check failed')}</div>`;
+      return;
+    }
+    const icon = { pass: '✅', block: '⛔', skip: '⏭️', error: '⚠️' };
+    const rows = (data.steps || []).map(step => `
+      <li>${icon[step.status] || '•'} <strong>${escHtml(step.label)}</strong> — ${escHtml(step.status)}
+        ${step.detail ? `<span class="gc-detail">${escHtml(step.detail)}</span>` : ''}
+      </li>`).join('');
+    const current = data.current_gate || '';
+    const wasGated = current && current !== 'scored';
+    let verdict;
+    if (data.would_score) {
+      verdict = wasGated
+        ? `✅ All gates pass now (card was stopped at ${escHtml(GATE_LABELS[current] || current)}). Click Re-run AI to score it.`
+        : '✅ All gates pass — a Run AI would go on to scoring.';
+    } else {
+      const by = GATE_LABELS[data.blocked_by] || data.blocked_by;
+      verdict = `⛔ A Run AI would stop at ${escHtml(by)}.`;
+    }
+    box.innerHTML = `<ul>${rows}</ul><div class="gc-verdict">${verdict}</div>
+      <div class="gc-detail" style="padding:0">Dry run on the stored JD — nothing was saved.</div>`;
+  } catch (err) {
+    box.innerHTML = `<div class="gc-verdict">❌ ${escHtml(err.message || 'Network error')}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+
 async function runAiForJob(jobId, btn) {
   if (!jobId || !btn) return;
   if (fetchBatchRunning) {
@@ -4512,7 +4638,6 @@ async function runAiForJob(jobId, btn) {
   const originalLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = '⏳ Running…';
-  showToast('🤖 Run AI started — needs debug Chrome');
 
   try {
     const startRes = await fetch(`/api/jobs/${jobId}/run-ai`, { method: 'POST' });
@@ -4523,6 +4648,9 @@ async function runAiForJob(jobId, btn) {
       btn.textContent = originalLabel;
       return;
     }
+    showToast(startData.uses_stored_jd
+      ? '🤖 Run AI started — using the stored JD (no Chrome)'
+      : '🤖 Run AI started — scraping the JD, needs debug Chrome');
 
     const poll = async () => {
       try {
@@ -4533,8 +4661,13 @@ async function runAiForJob(jobId, btn) {
           return;
         }
         if (data.ok) {
-          const score = data.match_score != null ? ` score ${data.match_score}/10` : '';
-          showToast(`✅ AI done${score}`);
+          const gate = data.match_gate || '';
+          if (gate && gate !== 'scored') {
+            showToast(`⛔ Stopped at ${GATE_LABELS[gate] || gate} — AI scoring was not run. Use 🧪 Check gates to see why.`, 'err');
+          } else {
+            const score = data.match_score != null ? ` score ${data.match_score}/10` : '';
+            showToast(`✅ AI done${score}`);
+          }
           // Refresh this card from API so score / summary update in place
           try {
             const jobRes = await fetch(`/api/jobs/${jobId}`);

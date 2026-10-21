@@ -14,7 +14,9 @@ from core.scraper_utils import extract_indeed_jk_from_url
 
 _SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+.-]*://")
 _TRAILING_JUNK_RE = re.compile(r"[.,;:)\]\"']+$")
-_LINKEDIN_VIEW_RE = re.compile(r"/jobs/view/(\d+)")
+# /jobs/view/4361502751/ and the slug form agents share:
+# /jobs/view/frontend-engineer-all-genders-at-avelios-medical-4361502751/
+_LINKEDIN_VIEW_RE = re.compile(r"/jobs/view/(?:[^/?#]*-)?(\d+)(?=[/?#]|$)")
 _LINKEDIN_CURRENT_RE = re.compile(r"[?&]currentJobId=(\d+)")
 
 

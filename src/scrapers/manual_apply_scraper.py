@@ -64,6 +64,7 @@ from core.job_url import (
     resolve_job_id,
 )
 from core.manual_log import (
+    LINK_ONLY_TITLE_PREFIX,
     PLAYWRIGHT_UNAVAILABLE_MSG,
     analysis_fields,
     apply_identity_to_job,
@@ -997,12 +998,88 @@ def fetch_job_details_for_matched_job(matched_doc: dict) -> dict:
         }
 
 
+def stored_jd_usable(matched_doc: dict | None) -> bool:
+    """
+    True when the Tracker card already holds a complete JD, so Run AI can
+    skip Chrome and match the stored text. Same completeness check the
+    matcher uses (length + title/company sanity); link-only stubs never count.
+    """
+    doc = matched_doc or {}
+    title = str(doc.get("title") or "").strip()
+    if not title or title.startswith(LINK_ONLY_TITLE_PREFIX):
+        return False
+    description = str(doc.get("description") or "")
+    if not description.strip():
+        return False
+    from core.scraper_utils import assess_job_description
+    assessment = assess_job_description(
+        description,
+        title=title,
+        company=str(doc.get("company") or ""),
+        source=str(doc.get("source") or ""),
+    )
+    return bool(assessment.get("ok"))
+
+
+def _job_from_tracker_doc(matched_doc: dict, url: str) -> dict:
+    """Job dict for evaluate + apply_analysis_to_existing from a stored row."""
+    return {
+        "job_id": matched_doc.get("job_id"),
+        "source": matched_doc.get("source"),
+        "link": url,
+        "title": matched_doc.get("title") or "",
+        "company": matched_doc.get("company") or "",
+        "location": matched_doc.get("location") or "",
+        "description": matched_doc.get("description") or "",
+        "applicants": matched_doc.get("applicants") or "",
+    }
+
+
+def _evaluate_and_save(
+    job: dict,
+    matched_doc: dict,
+    user_profile: str,
+    criteria: str,
+    *,
+    used_stored_jd: bool,
+) -> dict:
+    keep_manual_identity(job, matched_doc)
+    analysis = enrich_job_and_evaluate(job, user_profile, criteria)
+    keep_manual_identity(job, matched_doc)
+    if not analysis:
+        print("  ❌ No description — cannot run AI")
+        return {"ok": False, "error": "Empty description after scrape", "match_score": None}
+
+    ok = apply_analysis_to_existing(job, analysis)
+    if not ok:
+        return {"ok": False, "error": "DB update failed", "match_score": None}
+
+    gate = analysis.get("match_gate") or ""
+    if gate and gate != "scored":
+        print(f"  ⛔ Stopped at {gate} gate — AI scoring was not run")
+    else:
+        print("  ✅ AI analysis saved to Tracker")
+    return {
+        "ok": True,
+        "error": None,
+        "match_score": analysis.get("match_score"),
+        "match_gate": gate,
+        "gate_reason": analysis.get("disqualification_reason") or "",
+        "used_stored_jd": used_stored_jd,
+        "title": job.get("title", ""),
+        "company": job.get("company", ""),
+    }
+
+
 def run_ai_on_matched_job(matched_doc: dict) -> dict:
     """
-    Open the job link in debug Chrome, scrape JD, run AI matching, and patch
-    the existing matched_jobs (+ jobs) row without wiping notes/timeline.
+    Run AI matching for an existing Tracker row and patch it (matched_jobs
+    + jobs) without wiping notes/timeline.
 
-    Returns {"ok": bool, "error": str|None, "match_score": ...}.
+    A complete stored JD is matched directly (no Chrome). Otherwise the job
+    link is opened in debug Chrome and the JD is scraped first.
+
+    Returns {"ok": bool, "error": str|None, "match_score": ..., "used_stored_jd": bool}.
     """
     url = _tracker_job_url(matched_doc)
     if not url:
@@ -1013,12 +1090,10 @@ def run_ai_on_matched_job(matched_doc: dict) -> dict:
     print(f"  → {url}")
 
     try:
-        sync_playwright, _ = _load_playwright()
-        from core.scraper_utils import connect_browser
         from matching.ai_matcher import load_user_profile, load_matching_criteria
     except ImportError as e:
-        print(f"  ❌ Scrape is unavailable ({e})")
-        return {"ok": False, "error": f"Scrape unavailable: {e}", "match_score": None}
+        print(f"  ❌ AI matching is unavailable ({e})")
+        return {"ok": False, "error": f"AI matching unavailable: {e}", "match_score": None}
 
     user_profile = load_user_profile()
     if not user_profile:
@@ -1026,6 +1101,21 @@ def run_ai_on_matched_job(matched_doc: dict) -> dict:
         return {"ok": False, "error": "Missing user profile", "match_score": None}
 
     criteria = load_matching_criteria()
+
+    if stored_jd_usable(matched_doc):
+        chars = len(str(matched_doc.get("description") or ""))
+        print(f"  📄 Using stored JD ({chars} chars) — skip Chrome")
+        job = _job_from_tracker_doc(matched_doc, url)
+        return _evaluate_and_save(
+            job, matched_doc, user_profile, criteria, used_stored_jd=True
+        )
+
+    try:
+        sync_playwright, _ = _load_playwright()
+        from core.scraper_utils import connect_browser
+    except ImportError as e:
+        print(f"  ❌ Scrape is unavailable ({e})")
+        return {"ok": False, "error": f"Scrape unavailable: {e}", "match_score": None}
 
     with sync_playwright() as playwright:
         try:
@@ -1042,25 +1132,9 @@ def run_ai_on_matched_job(matched_doc: dict) -> dict:
             print(f"  ❌ {warn}")
             return {"ok": False, "error": warn, "match_score": None}
 
-        keep_manual_identity(job, matched_doc)
-        analysis = enrich_job_and_evaluate(job, user_profile, criteria)
-        keep_manual_identity(job, matched_doc)
-        if not analysis:
-            print("  ❌ No description — cannot run AI")
-            return {"ok": False, "error": "Empty description after scrape", "match_score": None}
-
-        ok = apply_analysis_to_existing(job, analysis)
-        if not ok:
-            return {"ok": False, "error": "DB update failed", "match_score": None}
-
-        print("  ✅ AI analysis saved to Tracker")
-        return {
-            "ok": True,
-            "error": None,
-            "match_score": analysis.get("match_score"),
-            "title": job.get("title", ""),
-            "company": job.get("company", ""),
-        }
+        return _evaluate_and_save(
+            job, matched_doc, user_profile, criteria, used_stored_jd=False
+        )
 
 
 def main():

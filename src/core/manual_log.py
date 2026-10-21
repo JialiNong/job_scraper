@@ -255,8 +255,7 @@ def mark_tracker_job_applied(
     already_applied = bool(job.get("applied_at")) or job.get("status") in APPLIED_STATUSES
     rec = normalize_recommended_by(recommended_by)
     if already_applied and (job.get("status") or "") in APPLIED_STATUSES:
-        if rec:
-            stamp_recommended_by(job_id, source, rec)
+        # Applied before this Log Job: the agent tag would be misleading.
         return "already"
 
     fields = {
@@ -267,14 +266,29 @@ def mark_tracker_job_applied(
     }
     if not job.get("applied_at"):
         fields["applied_at"] = t
-    if rec:
+    if rec and not already_applied and not normalize_recommended_by(job.get("recommended_by")):
         fields["recommended_by"] = rec
     col.update_one({"_id": job["_id"]}, {"$set": fields})
     return "applied"
 
 
+def _has_application_record(job: dict) -> bool:
+    timeline = job.get("application_timeline")
+    return (
+        bool(job.get("applied_at"))
+        or (job.get("status") or "") in APPLIED_STATUSES
+        or (isinstance(timeline, list) and len(timeline) > 0)
+    )
+
+
 def stamp_recommended_by(job_id: str, source: str, recommended_by) -> bool:
-    """Set recommended_by on an existing Tracker row without touching progress."""
+    """
+    Tag an existing Tracker row with the Log Job agent, without touching progress.
+
+    Only for a card that has no tag yet and was never applied: re-logging a
+    job you already applied to (or one already tagged) must not rewrite who
+    recommended it. Returns True when the tag was written.
+    """
     rec = normalize_recommended_by(recommended_by)
     if not rec:
         return False
@@ -284,8 +298,13 @@ def stamp_recommended_by(job_id: str, source: str, recommended_by) -> bool:
         query = {"job_id": {"$in": variants} if variants else job_id, "source": source}
     else:
         query = {"job_id": job_id, "source": source}
+    job = col.find_one(query)
+    if not job:
+        return False
+    if normalize_recommended_by(job.get("recommended_by")) or _has_application_record(job):
+        return False
     result = col.update_one(
-        query,
+        {"_id": job["_id"]},
         {"$set": {"recommended_by": rec, "updated_at": datetime.now()}},
     )
     return result.matched_count > 0
