@@ -136,9 +136,15 @@ class CheckGatesUiTests(unittest.TestCase):
     def test_run_ai_toast_mentions_gate_stop(self):
         self.assertIn("AI scoring was not run", HTML)
 
-    def test_checkbox_hidden_after_ai(self):
-        self.assertIn("const canSelect = canFetch && aiHint;", HTML)
-        self.assertIn("const selectBox = canSelect ?", HTML)
+    def test_scored_card_checkbox_is_delete_only(self):
+        self.assertIn("const fetchable = canFetch && aiHint;", HTML)
+        self.assertIn('data-fetchable="${fetchable ? \'1\' : \'0\'}"', HTML)
+        self.assertIn(".card-select[data-fetchable=\"1\"]", HTML)
+
+    def test_checkboxes_hidden_until_select_mode(self):
+        self.assertIn(".job-grid:not(.select-mode) .card-select-wrap { display: none; }", HTML)
+        self.assertIn('id="selectModeBtn"', HTML)
+        self.assertIn("function toggleSelectMode()", HTML)
 
 
 if __name__ == "__main__":

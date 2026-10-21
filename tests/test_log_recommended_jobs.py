@@ -85,6 +85,16 @@ class LogAgentJobsTests(unittest.TestCase):
         save.assert_not_called()
         self.assertEqual(result["skipped"], [url])
 
+    def test_per_job_recommended_by_overrides_batch_default(self):
+        jobs = [{"url": URL_A, "recommended_by": "Cursor"}, {"url": URL_B}]
+        outcomes = iter([{"ok": [URL_A]}, {"ok": [URL_B]}])
+        with patch.object(ml, "lookup_known_job", return_value=None), \
+                patch.object(ml, "save_link_only_urls",
+                             side_effect=lambda *a, **k: next(outcomes)) as save:
+            ml.log_agent_jobs(jobs, recommended_by="claude")
+        recs = [c.kwargs["recommended_by"] for c in save.call_args_list]
+        self.assertEqual(recs, ["cursor", "claude"])
+
     def test_unknown_save_outcome_counts_as_failed(self):
         with patch.object(ml, "lookup_known_job", return_value=None), \
                 patch.object(ml, "save_link_only_urls", return_value=None):
@@ -116,6 +126,19 @@ class AgentJobsApiTests(unittest.TestCase):
             self.assertEqual(
                 self._post({"jobs": [URL_A], "recommended_by": "bard"}).status_code, 400
             )
+            self.assertEqual(
+                self._post({"jobs": [{"url": URL_A, "recommended_by": "bard"}]}).status_code,
+                400,
+            )
+
+    def test_top_level_recommended_by_is_passed_and_echoed(self):
+        result = {"ok": [URL_A], "skipped": [], "failed": [], "existing": []}
+        with patch.dict(os.environ, {"AGENT_API_TOKEN": TOKEN}), \
+                patch.object(web_app, "log_agent_jobs", return_value=result) as log:
+            resp = self._post({"jobs": [URL_A], "recommended_by": "Cursor"})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(log.call_args.kwargs["recommended_by"], "cursor")
+        self.assertEqual(resp.get_json()["recommended_by"], "cursor")
 
     def test_saves_and_reports_counts(self):
         result = {"ok": [URL_A], "skipped": [URL_B], "failed": [], "existing": []}
@@ -126,6 +149,37 @@ class AgentJobsApiTests(unittest.TestCase):
         body = resp.get_json()
         self.assertEqual((body["saved"], body["skipped"], body["failed"]), (1, 1, 0))
         self.assertEqual(log.call_args.kwargs["recommended_by"], "claude")
+
+
+class BatchDeleteApiTests(unittest.TestCase):
+    def setUp(self):
+        web_app.app.config["LOGIN_DISABLED"] = True
+        self.client = web_app.app.test_client()
+
+    def tearDown(self):
+        web_app.app.config["LOGIN_DISABLED"] = False
+
+    def test_deletes_each_id_and_counts_missing(self):
+        ids = ["a" * 24, "b" * 24]
+        hits = iter([{"deleted_jobs": 1, "title": "", "company": ""}, None])
+        with patch.object(web_app, "delete_tracker_job",
+                          side_effect=lambda oid: next(hits)) as delete:
+            resp = self.client.post("/api/jobs/batch-delete", json={"ids": ids})
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(delete.call_count, 2)
+        body = resp.get_json()
+        self.assertEqual((body["deleted"], body["missing"], body["ids"]), (1, 1, [ids[0]]))
+
+    def test_refused_while_chrome_batch_runs(self):
+        with patch.dict(web_app._fetch_batch_state, {"running": True}), \
+                patch.object(web_app, "delete_tracker_job") as delete:
+            resp = self.client.post("/api/jobs/batch-delete", json={"ids": ["a" * 24]})
+        self.assertEqual(resp.status_code, 409)
+        delete.assert_not_called()
+
+    def test_rejects_empty_or_bad_ids(self):
+        self.assertEqual(self.client.post("/api/jobs/batch-delete", json={"ids": []}).status_code, 400)
+        self.assertEqual(self.client.post("/api/jobs/batch-delete", json={"ids": ["x"]}).status_code, 400)
 
 
 if __name__ == "__main__":

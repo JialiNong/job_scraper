@@ -1483,6 +1483,7 @@
       font-size: .78rem;
       flex-shrink: 0;
     }
+    .batch-delete-btn:hover { border-color: #ef4444; color: #ef4444; }
     .batch-fetch-meta {
       color: var(--muted);
       font-size: .78rem;
@@ -1539,14 +1540,19 @@
       cursor: pointer;
       flex-shrink: 0;
     }
-    .card.has-fetch-select { padding-left: 44px; }
+    /* Checkboxes only while "Select jobs" mode is on */
+    .job-grid:not(.select-mode) .card-select-wrap { display: none; }
+    .job-grid.select-mode .card.has-fetch-select { padding-left: 44px; }
     .card.fetch-selected { border-color: #8b5cf6; }
-    .job-grid.layout-compact .card.has-fetch-select {
+    .job-grid.select-mode.layout-compact .card.has-fetch-select {
       padding-left: 0;
       overflow: visible;
     }
     .job-grid.layout-compact .card-select-wrap { top: 12px; left: 6px; }
-    .job-grid.layout-compact .card.has-fetch-select .card-row { padding-left: 36px; }
+    .job-grid.select-mode.layout-compact .card.has-fetch-select .card-row { padding-left: 36px; }
+    .batch-fetch-bar .select-mode-only { display: none; }
+    .batch-fetch-bar.select-mode .select-mode-only { display: inline-flex; }
+    #selectModeBtn.active { border-color: #8b5cf6; color: #c4b5fd; background: #8b5cf622; }
 
     /* Application progress timeline */
     .progress-wrap {
@@ -2597,12 +2603,15 @@
 </div>
 
 <div class="batch-fetch-bar" id="batchFetchBar">
-  <span class="batch-fetch-label">Fetch details / Run AI</span>
+  <span class="batch-fetch-label">Selected jobs</span>
+  <button type="button" class="batch-fetch-btn" id="selectModeBtn" onclick="toggleSelectMode()" title="Show checkboxes to pick jobs for Delete / Fetch details / Run AI">☑ Select jobs</button>
+  <button type="button" class="batch-fetch-btn select-mode-only" id="selectAllVisibleBtn" onclick="selectAllVisible()" title="Select every card on this page (for Delete selected)">Select all on page</button>
   <button type="button" class="batch-fetch-btn" id="selectVisibleBtn" onclick="selectVisibleRecommended()" title="Select missing-detail / fetchable cards on this page">Select visible</button>
   <button type="button" class="batch-fetch-btn" id="selectMissingBtn" onclick="selectMissingDetails()" title="Select jobs that still need details (all pages, current filters — including Applied)">Select missing details</button>
   <button type="button" class="batch-fetch-btn" id="clearFetchSelectBtn" onclick="clearFetchSelection()">Clear selection</button>
   <button type="button" class="btn-fetch-details" id="fetchSelectedBtn" onclick="fetchDetailsForSelected()" disabled title="Scrape title, company, location, and description only (no AI)">📥 Fetch details for selected</button>
   <button type="button" class="btn-run-ai" id="runAiSelectedBtn" onclick="runAiForSelected()" disabled title="Scrape details if missing, then run AI matching">🤖 Run AI for selected</button>
+  <button type="button" class="batch-fetch-btn batch-delete-btn select-mode-only" id="deleteSelectedBtn" onclick="deleteSelectedJobs()" disabled title="Permanently delete every selected job">🗑 Delete selected</button>
   <span class="batch-fetch-meta" id="batchFetchMeta">0 selected</span>
 </div>
 <div class="batch-fetch-banner" id="batchFetchBanner" hidden></div>
@@ -2662,6 +2671,11 @@ const RECOMMENDED_BY_LABEL = {
   gpt: 'GPT',
 };
 const selectedFetchIds = new Set();
+// Selected cards that are not eligible for batch Fetch / Run AI (already
+// scored) — only Delete selected acts on them.
+const selectedDeleteOnlyIds = new Set();
+// "Select jobs" mode: card checkboxes are hidden until it is turned on.
+let selectMode = false;
 let fetchBatchPollTimer = null;
 let fetchBatchRunning = false;
 let fetchBatchMode = 'fetch';
@@ -3568,28 +3582,31 @@ function renderCard(job) {
   const recKey = String(job.recommended_by || '').toLowerCase();
   const missing = isMissingDetails(job);
   const canFetch = canFetchDetails(job);
-  // Batch checkbox only while AI has not run yet; Re-run AI stays per card.
-  const canSelect = canFetch && aiHint;
+  // Every card can be selected for Delete selected; batch Fetch / Run AI
+  // only take cards where AI has not run yet (Re-run AI stays per card).
+  const fetchable = canFetch && aiHint;
+  const isSelected = selectedFetchIds.has(job._id) || selectedDeleteOnlyIds.has(job._id);
   const fetchBtn = canFetch ? `
         <button type="button" class="btn-fetch-details" data-id="${job._id}"
                 onclick="event.stopPropagation(); fetchJobDetails('${job._id}', this)"
                 title="Scrape title, company, location, and description (no AI matching)">
           📥 Fetch job details
         </button>` : '';
-  const selectBox = canSelect ? `
-    <label class="card-select-wrap" onclick="event.stopPropagation()" title="Select for batch Fetch details / Run AI">
+  const selectBox = `
+    <label class="card-select-wrap" onclick="event.stopPropagation()" title="${fetchable ? 'Select for batch Fetch details / Run AI / Delete' : 'Select for batch Delete'}">
       <input type="checkbox" class="card-select" data-id="${job._id}"
              data-missing="${missing ? '1' : '0'}"
-             ${selectedFetchIds.has(job._id) ? 'checked' : ''}
+             data-fetchable="${fetchable ? '1' : '0'}"
+             ${isSelected ? 'checked' : ''}
              ${fetchBatchRunning ? 'disabled' : ''}
              onchange="onCardFetchSelect(this)" />
-    </label>` : '';
+    </label>`;
 
   const card = document.createElement('div');
   card.className = 'card'
     + (highlights.length ? ' has-highlights' : '')
-    + (canSelect ? ' has-fetch-select' : '')
-    + (canSelect && selectedFetchIds.has(job._id) ? ' fetch-selected' : '');
+    + ' has-fetch-select'
+    + (isSelected ? ' fetch-selected' : '');
   card.id = `card-${job._id}`;
 
   card.innerHTML = `
@@ -4312,8 +4329,9 @@ async function updateSideStatus(select) {
 function onCardFetchSelect(input) {
   const id = input.dataset.id;
   if (!id) return;
-  if (input.checked) selectedFetchIds.add(id);
-  else selectedFetchIds.delete(id);
+  const target = input.dataset.fetchable === '1' ? selectedFetchIds : selectedDeleteOnlyIds;
+  if (input.checked) target.add(id);
+  else target.delete(id);
   const card = document.getElementById(`card-${id}`);
   if (card) card.classList.toggle('fetch-selected', input.checked);
   updateBatchFetchUI();
@@ -4323,15 +4341,19 @@ function updateBatchFetchUI() {
   const meta = document.getElementById('batchFetchMeta');
   const fetchBtn = document.getElementById('fetchSelectedBtn');
   const runAiBtn = document.getElementById('runAiSelectedBtn');
+  const deleteBtn = document.getElementById('deleteSelectedBtn');
   const count = selectedFetchIds.size;
+  const total = count + selectedDeleteOnlyIds.size;
   const verb = fetchBatchMode === 'run_ai' ? 'running AI…' : 'fetching…';
   if (meta) {
-    meta.textContent = fetchBatchRunning
-      ? `${count} selected · ${verb}`
-      : `${count} selected`;
+    const label = selectedDeleteOnlyIds.size
+      ? `${total} selected (${count} for Fetch / AI)`
+      : `${total} selected`;
+    meta.textContent = fetchBatchRunning ? `${label} · ${verb}` : label;
   }
   if (fetchBtn) fetchBtn.disabled = fetchBatchRunning || count === 0;
   if (runAiBtn) runAiBtn.disabled = fetchBatchRunning || count === 0;
+  if (deleteBtn) deleteBtn.disabled = fetchBatchRunning || total === 0;
   document.querySelectorAll('.batch-fetch-btn').forEach(btn => {
     btn.disabled = fetchBatchRunning;
   });
@@ -4341,8 +4363,32 @@ function updateBatchFetchUI() {
   });
 }
 
-function selectVisibleRecommended() {
+function setSelectMode(on) {
+  selectMode = on;
+  document.getElementById('jobGrid')?.classList.toggle('select-mode', on);
+  document.getElementById('batchFetchBar')?.classList.toggle('select-mode', on);
+  const btn = document.getElementById('selectModeBtn');
+  if (btn) {
+    btn.classList.toggle('active', on);
+    btn.textContent = on ? '✕ Done selecting' : '☑ Select jobs';
+  }
+  if (!on) clearFetchSelection();
+}
+
+function toggleSelectMode() {
+  setSelectMode(!selectMode);
+}
+
+function selectAllVisible() {
   document.querySelectorAll('.card-select').forEach(input => {
+    input.checked = true;
+    onCardFetchSelect(input);
+  });
+}
+
+function selectVisibleRecommended() {
+  setSelectMode(true);
+  document.querySelectorAll('.card-select[data-fetchable="1"]').forEach(input => {
     input.checked = true;
     selectedFetchIds.add(input.dataset.id);
     const card = document.getElementById(`card-${input.dataset.id}`);
@@ -4352,7 +4398,8 @@ function selectVisibleRecommended() {
 }
 
 async function selectMissingDetails() {
-  document.querySelectorAll('.card-select[data-missing="1"]').forEach(input => {
+  setSelectMode(true);
+  document.querySelectorAll('.card-select[data-missing="1"][data-fetchable="1"]').forEach(input => {
     input.checked = true;
     selectedFetchIds.add(input.dataset.id);
     const card = document.getElementById(`card-${input.dataset.id}`);
@@ -4388,6 +4435,7 @@ async function selectMissingDetails() {
 
 function clearFetchSelection() {
   selectedFetchIds.clear();
+  selectedDeleteOnlyIds.clear();
   document.querySelectorAll('.card-select').forEach(input => { input.checked = false; });
   document.querySelectorAll('.card.fetch-selected').forEach(c => c.classList.remove('fetch-selected'));
   updateBatchFetchUI();
@@ -4867,6 +4915,53 @@ function openEditInfo(btn) {
   const edit = block.querySelector('.info-edit');
   edit.classList.add('active');
   edit.querySelector('[data-field="title"]').select();
+}
+
+async function deleteSelectedJobs() {
+  if (fetchBatchRunning) return;
+  const ids = [...selectedFetchIds, ...selectedDeleteOnlyIds];
+  if (!ids.length) return;
+
+  const ok = await askConfirm({
+    title: `Delete ${ids.length} selected job(s)?`,
+    hint: 'Removes them from matched_jobs and jobs. They will not come back unless scraped or pushed again.',
+    detail: ids.length > 1 ? `${ids.length} jobs` : 'this job',
+    confirmLabel: 'Delete',
+    danger: true,
+  });
+  if (!ok) return;
+
+  const btn = document.getElementById('deleteSelectedBtn');
+  if (btn) btn.disabled = true;
+  let deleted = 0;
+  try {
+    // Server caps one request at FETCH_DETAILS_BATCH_MAX (80) ids.
+    for (let i = 0; i < ids.length; i += 80) {
+      const res = await fetch('/api/jobs/batch-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: ids.slice(i, i + 80) }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.ok === false) {
+        throw new Error(data.error || `Delete failed (HTTP ${res.status}) — restart the web server if it was started before this update`);
+      }
+      deleted += data.deleted || 0;
+      (data.ids || []).forEach(id => {
+        delete jobHighlights[id];
+        delete jobTimelines[id];
+      });
+    }
+    showToast(`🗑 ${deleted} job(s) deleted`);
+  } catch (err) {
+    showToast(`❌ ${err.message || 'Delete failed'}${deleted ? ` (${deleted} deleted before the error)` : ''}`, 'err');
+  }
+  clearFetchSelection();
+  await loadJobs();
+  loadStats();
+  loadJourney();
+  loadLocationStats();
+  loadDailyStats();
 }
 
 async function deleteMatchedJob(jobId, btn) {

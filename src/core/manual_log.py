@@ -654,8 +654,9 @@ def log_agent_jobs(jobs: list, recommended_by="claude") -> dict:
     """
     Batch-log agent-recommended jobs as link-only Tracker stubs (pending).
 
-    Each item is {"url", "title"?, "company"?, "location"?} or a bare URL
-    string, saved separately so it keeps its own identity fields.
+    Each item is {"url", "title"?, "company"?, "location"?, "recommended_by"?}
+    or a bare URL string, saved separately so it keeps its own identity
+    fields. A per-item recommended_by overrides the batch default.
 
     A job_id already known anywhere (matched_jobs, jobs, or timeout_jobs;
     Indeed: all jk variants) is skipped with no write at all — unlike Log
@@ -693,10 +694,11 @@ def log_agent_jobs(jobs: list, recommended_by="claude") -> dict:
         identity = normalize_manual_identity(
             item.get("title"), item.get("company"), item.get("location")
         )
+        rec = normalize_recommended_by(item.get("recommended_by")) or recommended_by
         result = save_link_only_urls(
             [url],
             status="pending",
-            recommended_by=recommended_by,
+            recommended_by=rec,
             identity=identity,
         ) or {}
         if url in result.get("ok", []):

@@ -1045,10 +1045,28 @@ def api_delete_job(job_id: str):
     except Exception:
         return jsonify({"error": "Invalid job ID"}), 400
 
-    matched_col = get_collection("matched_jobs")
-    job = matched_col.find_one({"_id": oid})
-    if not job:
+    deleted = delete_tracker_job(oid)
+    if not deleted:
         return jsonify({"error": "Job not found"}), 404
+
+    return jsonify({
+        "ok": True,
+        "deleted_matched": 1,
+        "deleted_jobs": deleted["deleted_jobs"],
+        "title": deleted["title"],
+        "company": deleted["company"],
+    })
+
+
+def delete_tracker_job(oid) -> dict | None:
+    """
+    Delete one matched_jobs doc plus its jobs doc(s) (same job_id + source;
+    Indeed: all jk variants). Returns None when the card does not exist.
+    """
+    matched_col = get_collection("matched_jobs")
+    job = matched_col.find_one({"_id": oid}, {"job_id": 1, "source": 1, "title": 1, "company": 1})
+    if not job:
+        return None
 
     jid = job.get("job_id") or ""
     source = job.get("source") or ""
@@ -1065,12 +1083,46 @@ def api_delete_job(job_id: str):
             result = jobs_col.delete_many({"job_id": jid, "source": source})
         jobs_deleted = int(result.deleted_count)
 
-    return jsonify({
-        "ok": True,
-        "deleted_matched": 1,
+    return {
         "deleted_jobs": jobs_deleted,
         "title": job.get("title") or "",
         "company": job.get("company") or "",
+    }
+
+
+@app.route("/api/jobs/batch-delete", methods=["POST"])
+@login_required
+def api_batch_delete_jobs():
+    """
+    Permanently delete many Tracker cards (same as per-card Delete).
+
+    Body: {"ids": [matched_jobs _id, ...]}. Refused while a batch Fetch
+    details / Run AI is running so it cannot delete a card mid-scrape.
+    """
+    data = request.get_json(silent=True) or {}
+    oids, err = parse_batch_job_oids(data.get("ids") or [])
+    if err:
+        payload, status = err
+        return jsonify(payload), status
+    if _fetch_batch_state.get("running"):
+        return jsonify({
+            "ok": False,
+            "error": "Wait for the batch Fetch details / Run AI to finish",
+        }), 409
+
+    deleted_ids = []
+    missing = 0
+    for oid in oids:
+        if delete_tracker_job(oid):
+            deleted_ids.append(str(oid))
+        else:
+            missing += 1
+
+    return jsonify({
+        "ok": True,
+        "deleted": len(deleted_ids),
+        "missing": missing,
+        "ids": deleted_ids,
     })
 
 
@@ -1762,8 +1814,11 @@ def api_agent_jobs():
     Token-authenticated Log Job for scheduled agents (Claude daily job push).
 
     Header: Authorization: Bearer <AGENT_API_TOKEN>
-    Body:   {"jobs": [{"url", "title"?, "company"?, "location"?}, ...],
+    Body:   {"jobs": [{"url", "title"?, "company"?, "location"?,
+                       "recommended_by"?}, ...],
              "recommended_by": "claude"}   # optional, default claude
+    recommended_by is claude / cursor / gemini / gpt; a per-job value
+    overrides the top-level one (each agent should send its own name).
     Saves link-only Tracker stubs (pending, ai_pending) synchronously — no
     Chrome / no AI, so it runs on Render. A job_id already in matched_jobs /
     jobs / timeout_jobs is skipped with no write.
@@ -1784,14 +1839,20 @@ def api_agent_jobs():
     if len(jobs) > AGENT_JOBS_MAX:
         return jsonify({"error": f"At most {AGENT_JOBS_MAX} jobs per request"}), 400
 
+    rec_error = jsonify({
+        "error": "recommended_by must be claude, cursor, gemini, or gpt",
+    }), 400
     raw_rec = str(data.get("recommended_by") or "claude").strip().lower()
     if raw_rec not in RECOMMENDED_BY_AGENTS:
-        return jsonify({
-            "error": "recommended_by must be claude, cursor, gemini, or gpt",
-        }), 400
+        return rec_error
+    for item in jobs:
+        if isinstance(item, dict) and item.get("recommended_by") \
+                and not normalize_recommended_by(item["recommended_by"]):
+            return rec_error
 
     result = log_agent_jobs(jobs, recommended_by=raw_rec)
     return jsonify({
+        "recommended_by": raw_rec,
         "saved": len(result["ok"]),
         "skipped": len(result["skipped"]),
         "failed": len(result["failed"]),
