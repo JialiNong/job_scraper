@@ -47,6 +47,10 @@ services:
       - key: MATCH_THRESHOLD
         value: "7.0"
       
+      # Bearer token for POST /api/agent/jobs (Claude daily job push)
+      - key: AGENT_API_TOKEN
+        sync: false  # Secret - generate with: python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+      
       # Render environment indicator (used to enable ProxyFix)
       - key: RENDER
         value: "true"

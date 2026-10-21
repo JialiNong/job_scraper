@@ -16,6 +16,7 @@ _PROJECT_ROOT = os.path.dirname(_SRC_ROOT)
 if _SRC_ROOT not in sys.path:
     sys.path.insert(0, _SRC_ROOT)
 
+import hmac
 import threading
 from flask import Flask, render_template, request, jsonify, redirect, url_for, session, flash
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
@@ -43,11 +44,13 @@ from core.db_mongo import (
 )
 from core.scraper_utils import indeed_job_id_variants
 from core.manual_log import (
+    AGENT_JOBS_MAX,
     IDENTITY_FIELDS,
     PLAYWRIGHT_UNAVAILABLE_MSG,
     RECOMMENDED_BY_AGENTS,
     can_fetch_details,
     job_missing_details,
+    log_agent_jobs,
     normalize_manual_identity,
     normalize_recommended_by,
     tracker_needs_scrape,
@@ -1751,6 +1754,49 @@ def api_manual_apply():
         "job_status": job_status,
         "mode": mode,
     })
+
+
+@app.route("/api/agent/jobs", methods=["POST"])
+def api_agent_jobs():
+    """
+    Token-authenticated Log Job for scheduled agents (Claude daily job push).
+
+    Header: Authorization: Bearer <AGENT_API_TOKEN>
+    Body:   {"jobs": [{"url", "title"?, "company"?, "location"?}, ...],
+             "recommended_by": "claude"}   # optional, default claude
+    Saves link-only Tracker stubs (pending, ai_pending) synchronously — no
+    Chrome / no AI, so it runs on Render. A job_id already in matched_jobs /
+    jobs / timeout_jobs is skipped with no write.
+    Disabled (503) when AGENT_API_TOKEN is not set.
+    """
+    expected = os.getenv("AGENT_API_TOKEN", "").strip()
+    if not expected:
+        return jsonify({"error": "Agent API is disabled (AGENT_API_TOKEN not set)"}), 503
+    auth = request.headers.get("Authorization", "")
+    token = auth[7:].strip() if auth.lower().startswith("bearer ") else ""
+    if not token or not hmac.compare_digest(token, expected):
+        return jsonify({"error": "Unauthorized"}), 401
+
+    data = request.get_json(silent=True) or {}
+    jobs = data.get("jobs")
+    if not isinstance(jobs, list) or not jobs:
+        return jsonify({"error": "jobs must be a non-empty list"}), 400
+    if len(jobs) > AGENT_JOBS_MAX:
+        return jsonify({"error": f"At most {AGENT_JOBS_MAX} jobs per request"}), 400
+
+    raw_rec = str(data.get("recommended_by") or "claude").strip().lower()
+    if raw_rec not in RECOMMENDED_BY_AGENTS:
+        return jsonify({
+            "error": "recommended_by must be claude, cursor, gemini, or gpt",
+        }), 400
+
+    result = log_agent_jobs(jobs, recommended_by=raw_rec)
+    return jsonify({
+        "saved": len(result["ok"]),
+        "skipped": len(result["skipped"]),
+        "failed": len(result["failed"]),
+        "urls": result,
+    }), 200
 
 
 @app.route("/api/manual-apply/status")
