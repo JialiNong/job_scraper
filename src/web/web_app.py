@@ -178,13 +178,23 @@ STATUS_MAP = {
     "offer":      "Offer",
     "unsuitable": "Unsuitable",
     "closed":     "Closed",
+    "closed_no_reply": "Closed · No Reply",
+    "prev_rejected": "Prev. Rejected",
+    "too_many_questions": "Skipped · Long Form",
     "repost":     "Repost",
     "duplicate":  "Duplicate",
 }
 
 # Other-dropdown overlay statuses. They do not wipe an existing application
 # record (applied_at / timeline); only Reset Not Applied (pending) does.
-SIDE_STATUSES = ("unsuitable", "closed", "repost", "duplicate")
+# "closed": closed before I applied; "closed_no_reply": closed after I applied
+# with no response; "prev_rejected": same role (new job id) already rejected
+# me earlier, so skip it this time; "too_many_questions": JD fits but the
+# application has too many required questions, so skipped.
+SIDE_STATUSES = (
+    "unsuitable", "closed", "closed_no_reply", "prev_rejected",
+    "too_many_questions", "repost", "duplicate",
+)
 
 # Tracker chips for application progress (derived from timeline / applied_at).
 PROGRESS_STAGES = APPLIED_STATUSES

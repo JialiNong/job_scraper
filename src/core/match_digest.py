@@ -24,6 +24,9 @@ STATUS_LABELS = {
     "offer": "Offer",
     "unsuitable": "Unsuitable",
     "closed": "Closed",
+    "closed_no_reply": "Closed · No Reply",
+    "prev_rejected": "Prev. Rejected",
+    "too_many_questions": "Skipped · Long Form",
     "repost": "Repost",
     "duplicate": "Duplicate",
 }

@@ -23,6 +23,9 @@
       --offer:      #10b981;
       --unsuitable: #8b5cf6;
       --closed:     #71717a;
+      --closed_no_reply: #a1a1aa;
+      --prev_rejected: #e11d48;
+      --too_many_questions: #eab308;
       --repost:     #06b6d4;
       --duplicate:  #f97316;
     }
@@ -109,6 +112,9 @@
     .dot-offer      { background: var(--offer); }
     .dot-unsuitable { background: var(--unsuitable); }
     .dot-closed     { background: var(--closed); }
+    .dot-closed_no_reply { background: var(--closed_no_reply); }
+    .dot-prev_rejected { background: var(--prev_rejected); }
+    .dot-too_many_questions { background: var(--too_many_questions); }
     .dot-repost     { background: var(--repost); }
     .dot-duplicate  { background: var(--duplicate); }
 
@@ -1076,6 +1082,9 @@
     .status-pill.s-offer      { color: var(--offer);      border-color: var(--offer)55;      background: #10b98118; }
     .status-pill.s-unsuitable { color: var(--unsuitable); border-color: var(--unsuitable)55; background: #8b5cf618; }
     .status-pill.s-closed     { color: var(--closed);     border-color: var(--closed)55;     background: #71717a18; }
+    .status-pill.s-closed_no_reply { color: var(--closed_no_reply); border-color: var(--closed_no_reply)55; background: #a1a1aa18; }
+    .status-pill.s-prev_rejected { color: var(--prev_rejected); border-color: var(--prev_rejected)55; background: #e11d4818; }
+    .status-pill.s-too_many_questions { color: var(--too_many_questions); border-color: var(--too_many_questions)55; background: #eab30818; }
     .status-pill.s-repost     { color: var(--repost);     border-color: var(--repost)55;     background: #06b6d418; }
     .status-pill.s-duplicate  { color: var(--duplicate);  border-color: var(--duplicate)55;  background: #f9731618; }
 
@@ -2563,6 +2572,18 @@
     <span class="dot dot-closed"></span>
     <span>Closed <b id="cnt-closed">–</b></span>
   </div>
+  <div class="stat-chip" data-status="closed_no_reply" onclick="setStatusFilter('closed_no_reply')">
+    <span class="dot dot-closed_no_reply"></span>
+    <span>Closed · No Reply <b id="cnt-closed_no_reply">–</b></span>
+  </div>
+  <div class="stat-chip" data-status="prev_rejected" onclick="setStatusFilter('prev_rejected')">
+    <span class="dot dot-prev_rejected"></span>
+    <span>Prev. Rejected <b id="cnt-prev_rejected">–</b></span>
+  </div>
+  <div class="stat-chip" data-status="too_many_questions" onclick="setStatusFilter('too_many_questions')">
+    <span class="dot dot-too_many_questions"></span>
+    <span>Skipped · Long Form <b id="cnt-too_many_questions">–</b></span>
+  </div>
   <div class="stat-chip" data-status="repost" onclick="setStatusFilter('repost')">
     <span class="dot dot-repost"></span>
     <span>Repost <b id="cnt-repost">–</b></span>
@@ -2659,10 +2680,13 @@ const STATUS_LABEL = {
   offer:      'Offer',
   unsuitable: 'Unsuitable',
   closed:     'Closed',
+  closed_no_reply: 'Closed · No Reply',
+  prev_rejected: 'Prev. Rejected',
+  too_many_questions: 'Skipped · Long Form',
   repost:     'Repost',
   duplicate:  'Duplicate',
 };
-const SIDE_STATUSES = ['unsuitable', 'closed', 'repost', 'duplicate'];
+const SIDE_STATUSES = ['unsuitable', 'closed', 'closed_no_reply', 'prev_rejected', 'too_many_questions', 'repost', 'duplicate'];
 const PROGRESS_STAGES = ['applied', 'rejected', 'interview', 'offer'];
 const RECOMMENDED_BY_LABEL = {
   claude: 'Claude',
@@ -2748,7 +2772,7 @@ async function loadStats() {
       const el = document.getElementById(`cnt-${status}`);
       if (el) el.textContent = cnt;
     }
-    ['pending','applied','rejected','interview','offer','unsuitable','closed','repost','duplicate'].forEach(s => {
+    ['pending','applied','rejected','interview','offer','unsuitable','closed','closed_no_reply','prev_rejected','too_many_questions','repost','duplicate'].forEach(s => {
       if (!data.by_status[s]) {
         const el = document.getElementById(`cnt-${s}`);
         if (el) el.textContent = 0;
@@ -3898,7 +3922,10 @@ function renderProgressBlock(job) {
         <select class="status-side-select" data-id="${id}" onchange="updateSideStatus(this)">
           <option value="" ${!sideVal ? 'selected' : ''}>—</option>
           <option value="unsuitable" ${sideVal==='unsuitable' ? 'selected':''}>🚫 Unsuitable</option>
-          <option value="closed" ${sideVal==='closed' ? 'selected':''}>🔒 Closed</option>
+          <option value="closed" ${sideVal==='closed' ? 'selected':''}>🔒 Closed (before applying)</option>
+          <option value="closed_no_reply" ${sideVal==='closed_no_reply' ? 'selected':''}>📭 Closed after applying · no reply</option>
+          <option value="prev_rejected" ${sideVal==='prev_rejected' ? 'selected':''}>⛔ Rejected before · skip this time</option>
+          <option value="too_many_questions" ${sideVal==='too_many_questions' ? 'selected':''}>📝 Good fit · too many required questions, skipped</option>
           <option value="repost" ${sideVal==='repost' ? 'selected':''}>🔁 Repost</option>
           <option value="duplicate" ${sideVal==='duplicate' ? 'selected':''}>📎 Duplicate</option>
           <option value="pending">📋 Reset Not Applied</option>
