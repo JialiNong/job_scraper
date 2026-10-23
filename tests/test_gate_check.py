@@ -44,11 +44,12 @@ def _job(lang_line: str, title: str = "Senior Full-Stack Engineer (m/f/d)") -> d
     }
 
 
-def _fake_stack(extract=None, gate=None, title_reason=None):
+def _fake_stack(extract=None, gate=None, title_reason=None, automation_reason=None):
     mod = types.ModuleType("matching.stack_gate")
     mod.extract_jd_requirements = lambda job, temperature=0.0: extract
     mod.evaluate_requirement_gate = lambda ex: gate
     mod.find_ai_ml_title_requirement = lambda job: title_reason
+    mod.find_automation_title_requirement = lambda job: automation_reason
     return patch.dict(sys.modules, {"matching.stack_gate": mod})
 
 
@@ -94,6 +95,16 @@ class CheckHardGatesTests(unittest.TestCase):
         statuses = {s["key"]: s["status"] for s in out["steps"]}
         self.assertEqual(statuses["stack"], "skip")
         self.assertEqual(statuses["ai_ml_title"], "skip")
+        self.assertEqual(statuses["automation_title"], "skip")
+
+    def test_automation_title_blocks(self):
+        reason = 'Title is a business/process-automation role: "Business Automation Developer"'
+        with _fake_stack(extract=NODE_EXTRACT, automation_reason=reason):
+            out = check_hard_gates(
+                _job("Fluent English required.", title="Business Automation Developer")
+            )
+        self.assertEqual(out["blocked_by"], "automation_title")
+        self.assertFalse(out["would_score"])
 
 
 class CheckGatesEndpointTests(unittest.TestCase):

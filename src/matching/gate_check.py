@@ -2,9 +2,10 @@
 Dry-run the pre-AI hard gates on a stored Tracker JD.
 
 Same order as ai_matcher.evaluate_job: description quality → German →
-AI/ML title → stack extract + requirement gate. Every gate runs (so the
-user sees each verdict), but `blocked_by` is the first one that would
-stop the real pipeline. No DB writes, no Chrome, no scoring call.
+AI/ML title → automation title → stack extract + requirement gate. Every
+gate runs (so the user sees each verdict), but `blocked_by` is the first
+one that would stop the real pipeline. No DB writes, no Chrome, no
+scoring call.
 
 stack_gate imports openai, which the Render web image does not ship, so
 it is imported lazily and reported as skipped when unavailable.
@@ -32,11 +33,13 @@ def _stack_steps(job: Dict) -> List[Dict]:
             evaluate_requirement_gate,
             extract_jd_requirements,
             find_ai_ml_title_requirement,
+            find_automation_title_requirement,
         )
     except ImportError as e:
         why = f"Not available on this server ({e})"
         return [
             _step("ai_ml_title", "AI/ML title gate", SKIP, why),
+            _step("automation_title", "Automation title gate", SKIP, why),
             _step("stack", "Tech stack gate", SKIP, why),
         ]
 
@@ -50,6 +53,22 @@ def _stack_steps(job: Dict) -> List[Dict]:
             _step("ai_ml_title", "AI/ML title gate", BLOCK, title_reason)
             if title_reason
             else _step("ai_ml_title", "AI/ML title gate", PASS, "Title is not an AI/ML-core role")
+        )
+
+    try:
+        automation_reason = find_automation_title_requirement(job)
+    except Exception as e:
+        steps.append(_step("automation_title", "Automation title gate", ERROR, str(e)))
+    else:
+        steps.append(
+            _step("automation_title", "Automation title gate", BLOCK, automation_reason)
+            if automation_reason
+            else _step(
+                "automation_title",
+                "Automation title gate",
+                PASS,
+                "Title is not a business/process-automation role",
+            )
         )
 
     try:

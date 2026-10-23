@@ -39,6 +39,7 @@ from matching.stack_gate import (
     extract_jd_requirements,
     evaluate_requirement_gate,
     find_ai_ml_title_requirement,
+    find_automation_title_requirement,
     format_extract_for_prompt,
     requirement_disqualification_analysis,
 )
@@ -495,6 +496,17 @@ def evaluate_job(
             "kind": "ai_ml",
             "reason": ai_ml_title,
             "missing": ["AI/ML engineering experience (training/models/LLM stack)"],
+        }
+        return requirement_disqualification_analysis(gate)
+
+    automation_title = find_automation_title_requirement(job)
+    if automation_title:
+        print("🚫 Business/process-automation title — skip remaining matching")
+        print(f"   {automation_title}")
+        gate = {
+            "kind": "automation_title",
+            "reason": automation_title,
+            "missing": ["Frontend/product engineering work"],
         }
         return requirement_disqualification_analysis(gate)
 

@@ -13,6 +13,7 @@ if str(SRC) not in sys.path:
 from matching.stack_gate import (  # noqa: E402
     apply_soft_wording_heuristics,
     evaluate_requirement_gate,
+    find_automation_title_requirement,
 )
 
 
@@ -114,6 +115,37 @@ class SoftWordingTests(unittest.TestCase):
         text = "Backend experience, for example Java or Kotlin with Spring."
         out = apply_soft_wording_heuristics(text, _extract(("java", "required")))
         self.assertEqual(_label(out, "java"), "required")
+
+
+class AutomationTitleGateTests(unittest.TestCase):
+    def test_business_automation_developer_blocks(self):
+        reason = find_automation_title_requirement(
+            {"title": "Business Automation Developer (all genders) with verification"}
+        )
+        self.assertIsNotNone(reason)
+        self.assertIn("Business Automation Developer", reason)
+
+    def test_process_and_workflow_automation_titles_block(self):
+        for title in (
+            "Process Automation Engineer",
+            "Workflow Automation Specialist",
+            "Senior Automation Developer",
+            "RPA Developer",
+        ):
+            with self.subTest(title=title):
+                self.assertIsNotNone(find_automation_title_requirement({"title": title}))
+
+    def test_ordinary_engineering_titles_pass(self):
+        for title in (
+            "Senior Frontend Engineer (React)",
+            "Fullstack Developer (Node.js/React)",
+            "Test Automation is not in this title",
+        ):
+            with self.subTest(title=title):
+                self.assertIsNone(find_automation_title_requirement({"title": title}))
+
+    def test_missing_title_passes(self):
+        self.assertIsNone(find_automation_title_requirement({}))
 
 
 if __name__ == "__main__":

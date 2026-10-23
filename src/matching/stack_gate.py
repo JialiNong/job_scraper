@@ -109,6 +109,18 @@ _AI_ML_TITLE = re.compile(
     re.I,
 )
 
+# Ops / low-code automation titles (Apps Script, Make, Zapier, RPA tools) —
+# not frontend/fullstack product engineering, even when the JD name-drops
+# JavaScript or GitHub Actions along the way.
+_AUTOMATION_TITLE = re.compile(
+    r"\b(?:"
+    r"business\s+automation|process\s+automation|workflow\s+automation|"
+    r"robotic\s+process\s+automation|rpa|"
+    r"automation\s+(?:developer|engineer|specialist)"
+    r")\b",
+    re.I,
+)
+
 # Tokens used to detect explicit OR language lists in the raw JD text.
 # next.js counts as a Node server option in phrases like
 # "Next.js, FastAPI, or comparable server frameworks".
@@ -470,6 +482,14 @@ def find_ai_ml_title_requirement(job: Dict) -> Optional[str]:
     return f"Title is an AI/ML engineering role: \"{title}\""
 
 
+def find_automation_title_requirement(job: Dict) -> Optional[str]:
+    """Reject business/process-automation and RPA titles without an extract call."""
+    title = str(job.get("title") or "").strip()
+    if not title or not _AUTOMATION_TITLE.search(title):
+        return None
+    return f"Title is a business/process-automation role: \"{title}\""
+
+
 def extract_jd_requirements(
     job: Dict,
     temperature: float = 0.0,
@@ -746,6 +766,9 @@ def requirement_disqualification_analysis(gate: Dict, extract: Optional[Dict] = 
     if kind == "ai_ml":
         summary = "Stopped at AI/ML-core gate; other requirements were not evaluated."
         red_flag = "AI/ML engineering role — skipped remaining matching"
+    elif kind == "automation_title":
+        summary = "Stopped at automation-title gate; other requirements were not evaluated."
+        red_flag = "Business/process-automation role — skipped remaining matching"
     else:
         summary = "Stopped at backend-stack gate; other requirements were not evaluated."
         red_flag = "Unknown or non-production required backend — skipped remaining matching"

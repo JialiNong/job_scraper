@@ -126,6 +126,12 @@ Typical fails: AI Engineer, Machine Learning Engineer, LLM Engineer, MLOps, Appl
 - Frontend/fullstack at an AI company (UI on top of existing models)
 - Shipping practical LLM product loops (prompt → structured output → human review) as one feature of a web product
 
+### 6. Business / process automation role
+
+**Fail** if the title is a business/process/workflow-automation or RPA role — e.g. "Business Automation Developer", "Process Automation Engineer", "Workflow Automation Specialist", "Automation Developer", "RPA Developer". These are ops/low-code roles (Google Apps Script, Make, Zapier, UiPath, GitHub Actions configs) that automate internal spreadsheets/processes, not frontend/product engineering — even when the JD name-drops JavaScript, GitHub, or AI coding assistants along the way, those are surface overlaps, not evidence of a frontend/product-engineering role.
+
+**Pass** if the title is an ordinary engineering title (Frontend/Fullstack/Backend/Software Engineer, …) even if the JD also mentions internal tooling or workflow automation as one responsibility among others.
+
 ## Step 2 — Ordinary score
 
 Skip this step if a hard gate failed. The base score uses **only** skills marked required / mandatory / must-have. Missing nice-to-have skills never reduce it.
