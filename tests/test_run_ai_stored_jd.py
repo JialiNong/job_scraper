@@ -66,6 +66,27 @@ class StoredJdUsableTests(unittest.TestCase):
         self.assertFalse(mas.stored_jd_usable(_doc(description="")))
 
 
+class TrackerJobUrlTests(unittest.TestCase):
+    def test_relative_linkedin_link_uses_canonical_url(self):
+        doc = {
+            "source": "linkedin",
+            "job_id": "4480031306",
+            "link": "/jobs/view/4480031306/?eBP=NOT_ELIGIBLE_FOR_CHARGING&trk=x",
+        }
+        self.assertEqual(
+            mas._tracker_job_url(doc),
+            "https://www.linkedin.com/jobs/view/4480031306/",
+        )
+
+    def test_relative_link_without_job_id_gets_host(self):
+        doc = {"source": "indeed", "link": "/rc/clk?jk=abc"}
+        self.assertEqual(mas._tracker_job_url(doc), "https://de.indeed.com/rc/clk?jk=abc")
+
+    def test_absolute_link_kept(self):
+        doc = {"source": "linkedin", "job_id": "1", "link": "https://example.com/job"}
+        self.assertEqual(mas._tracker_job_url(doc), "https://example.com/job")
+
+
 class RunAiStoredJdTests(unittest.TestCase):
     def test_complete_jd_skips_chrome_and_saves(self):
         analysis = {"match_score": 8.0, "match_gate": "scored"}

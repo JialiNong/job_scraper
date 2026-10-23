@@ -919,12 +919,19 @@ def process_urls(
 def _tracker_job_url(matched_doc: dict) -> str:
     """Canonical page URL for a Tracker row (link, or Indeed/LinkedIn from job_id)."""
     url = (matched_doc.get("link") or "").strip()
-    if url:
-        return url
     job_id = matched_doc.get("job_id") or ""
     source = matched_doc.get("source") or ""
+    if url.startswith("http"):
+        return url
+    # LinkedIn cards store relative hrefs ("/jobs/view/123/?eBP=…"); Chrome
+    # cannot open those, so use the canonical URL.
     if source == "linkedin" and job_id:
         return f"https://www.linkedin.com/jobs/view/{job_id}/"
+    if url.startswith("/"):
+        host = "https://de.indeed.com" if source == "indeed" else "https://www.linkedin.com"
+        return host + url
+    if url:
+        return url
     if source == "indeed" and job_id:
         return f"https://de.indeed.com/viewjob?jk={job_id}"
     return ""
