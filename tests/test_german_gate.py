@@ -265,6 +265,81 @@ class GermanMandatoryFailTests(unittest.TestCase):
             )
         )
 
+    def test_bullet_before_nice_to_have_heading(self):
+        # LinkedIn bullets have no full stop; the next line's heading must not
+        # make the German bullet optional.
+        description = (
+            "Product mindset with a focus on user value\n\n\n"
+            "Fluent in German & English\n\n\n\n\n\n"
+            "Nice to have:\n\n\n"
+            "Experience in B2B SaaS environments\n\n\n"
+        )
+        self.assertIsNotNone(find_mandatory_german_requirement(_job(description)))
+
+    def test_html_bullet_before_nice_to_have_heading(self):
+        description = (
+            "<ul><li>Product mindset</li><li>Fluent in German &amp; English</li></ul>"
+            "<p><strong>Nice to have:</strong></p><ul><li>B2B SaaS</li></ul>"
+        )
+        self.assertIsNotNone(find_mandatory_german_requirement(_job(description)))
+
+    def test_comfortable_communicating_in_english_and_german_bullet(self):
+        self.assertIsNotNone(
+            find_mandatory_german_requirement(
+                _job(
+                    "You are comfortable communicating in English and German\n"
+                    "You are eager to dive into the field of printing\n"
+                )
+            )
+        )
+
+
+class GermanBulletOptionalPassTests(unittest.TestCase):
+    def test_bullet_under_nice_to_have_heading_on_same_line(self):
+        self.assertIsNone(
+            find_mandatory_german_requirement(
+                _job("Requirements:\nFluent English\nNice to have: German skills\n")
+            )
+        )
+
+    def test_bullet_under_nice_to_have_heading_line(self):
+        self.assertIsNone(
+            find_mandatory_german_requirement(
+                _job(
+                    "Good communication skills\n"
+                    "Fluent language proficiency in English\n"
+                    "Nice to have:\n"
+                    "Fluent language proficiency in German\n"
+                    "Experience in the entire software development lifecycle\n"
+                )
+            )
+        )
+
+    def test_required_under_requirements_heading_after_plus_section(self):
+        self.assertIsNotNone(
+            find_mandatory_german_requirement(
+                _job(
+                    "Nice to have:\nDocker\n"
+                    "Requirements:\nFluent in German & English\n"
+                )
+            )
+        )
+
+    def test_language_courses_perk(self):
+        self.assertIsNone(
+            find_mandatory_german_requirement(
+                _job(
+                    "Benefits: open exchange, and language courses in German & English. "
+                    "Feel good, stay healthy."
+                )
+            )
+        )
+
+    def test_german_classes_perk(self):
+        self.assertIsNone(
+            find_mandatory_german_requirement(_job("We offer free German classes."))
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

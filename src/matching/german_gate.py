@@ -112,7 +112,8 @@ _AND_BOTH_REQUIRED = re.compile(
     r"\b(?:"
     r"required|requirement|mandatory|must[- ]have|must have|a\s+must|"
     r"essential|necessary|erforderlich|zwingend|notwendig|"
-    r"skills?|kenntnisse|language|languages"
+    r"skills?|kenntnisse|language|languages|"
+    r"communicat\w*"
     r")\b",
     re.I,
 )
@@ -120,7 +121,7 @@ _AND_BOTH_REQUIRED = re.compile(
 # Nice-to-have / plus — qualifier may sit before or after the German mention.
 _OPTIONAL = re.compile(
     r"(?:"
-    r"\b(?:nice[- ]to[- ]have|advantageous|advantage|preferred|preferably|"
+    r"\b(?:nice[- ]to[- ]have|good[- ]to[- ]have|advantageous|advantage|preferred|preferably|"
     r"beneficial|desirable|helpful|bonus|ideally|optional|welcome|"
     r"not required|not mandatory|"
     r"would be great|would be a plus|"
@@ -152,6 +153,25 @@ _OTHERS_SPEAK_GERMAN = re.compile(
     re.I,
 )
 
+# Language classes offered as a perk: "language courses in German & English".
+_LANGUAGE_PERK = re.compile(
+    r"(?:"
+    r"\b(?:courses?|classes|lessons|tutoring|training)\s+(?:in\s+)?(?:german|deutsch)\b"
+    r"|"
+    r"\b(?:german|deutsch)\s+(?:language\s+)?(?:courses?|classes|lessons|tutoring|training)\b"
+    r"|"
+    r"\bdeutschkurs\w*"
+    r")",
+    re.I,
+)
+
+# A line that opens a section: "Nice to have:", "Your profile:", "Bonus points".
+_HEADING_LINE = re.compile(
+    r"^(?:.{1,60}:|(?:nice[- ]to[- ]have|good[- ]to[- ]have|bonus(?:\s+points)?|"
+    r"pluses|plus|von vorteil|w[uü]nschenswert)\W*)$",
+    re.I,
+)
+
 # Split a sentence into main clause vs since/because explanation.
 _CLAUSE_SPLIT = re.compile(
     r"\s*(?:,\s*)?(?:\bsince\b|\bbecause\b|\bweil\b|\bdenn\b|\bda\b)\s+",
@@ -170,19 +190,31 @@ def _plain_text(html_text: str) -> str:
         html_text,
         flags=re.DOTALL | re.IGNORECASE,
     )
+    # Block tags end a bullet / line, like a newline does.
+    text = re.sub(
+        r"<\s*(?:br|/?(?:p|li|ul|ol|div|h[1-6]|tr))\b[^>]*>",
+        "\n",
+        text,
+        flags=re.IGNORECASE,
+    )
     text = re.sub(r"<[^>]+>", " ", text)
     text = html_module.unescape(text)
-    return " ".join(text.split())
+    # Keep line breaks: LinkedIn bullets have no full stop, so the newline is
+    # the only thing separating "Fluent in German & English" from a following
+    # "Nice to have:" heading.
+    lines = (" ".join(line.split()) for line in text.splitlines())
+    return "\n".join(line for line in lines if line)
 
 
 def _sentence_bounds(text: str, pos: int) -> Tuple[int, int]:
     # ";" ends a clause too: "Fluent English required; German is a plus"
-    # must not let "required" reach across to "German".
+    # must not let "required" reach across to "German". A newline ends a
+    # bullet, so a "Nice to have:" heading on the next line stays out.
     lo = 0
-    for match in re.finditer(r"[.!?;]", text[:pos]):
+    for match in re.finditer(r"[.!?;\n]", text[:pos]):
         lo = match.end()
     hi = len(text)
-    match = re.search(r"[.!?;]", text[pos:])
+    match = re.search(r"[.!?;\n]", text[pos:])
     if match:
         hi = pos + match.end()
     return lo, hi
@@ -219,6 +251,16 @@ def _segment_at(clause: str, rel: int) -> str:
     if hi < 0:
         hi = len(clause)
     return clause[lo:hi].strip()
+
+
+def _section_heading(text: str, pos: int) -> str:
+    """Nearest heading line above pos ("Nice to have:"), or ""."""
+    line_start = text.rfind("\n", 0, pos) + 1
+    for line in reversed(text[:line_start].splitlines()):
+        line = line.strip()
+        if _HEADING_LINE.match(line):
+            return line
+    return ""
 
 
 def _snippet(text: str, start: int, end: int, pad: int = 40) -> str:
@@ -277,6 +319,10 @@ def find_mandatory_german_requirement(job: Dict) -> Optional[str]:
         required_hit = bool(_GERMAN_REQUIRED_ATTACHED.search(clause))
         level_hit = bool(_GERMAN_LEVEL_ATTACHED.search(clause))
 
+        # Employer offers German classes — a benefit, not a requirement.
+        if _LANGUAGE_PERK.search(clause) and not (required_hit or level_hit):
+            continue
+
         # German's own comma piece says plus / nice-to-have: "Fluent English
         # required, German is a plus". A "required" that belongs to English
         # in an earlier piece must not override it.
@@ -289,6 +335,10 @@ def find_mandatory_german_requirement(job: Dict) -> Optional[str]:
         # says "working proficiency in German". "Fluent German required.
         # English is a plus" still fails: plus is in a different sentence.
         if optional_hit and not required_hit:
+            continue
+
+        # German bullet listed under a "Nice to have:" section heading.
+        if _OPTIONAL.search(_section_heading(text, start)) and not required_hit:
             continue
 
         # Explanatory since/because text is not a candidate must-have
