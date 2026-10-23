@@ -2,6 +2,15 @@
 # run_task.sh - Daily job scraping and AI matching pipeline
 # Two parallel lanes (Indeed / LinkedIn): scrape → match that source.
 # Job-card digest is sent only after both lanes finish.
+#
+# Usage:
+#   caffeinate -i ./run_task.sh                     # default: both last 24h
+#   caffeinate -i ./run_task.sh --days 7            # Indeed 7d, LinkedIn 168h
+#   caffeinate -i ./run_task.sh --days 3 --hours 120  # Indeed 3d, LinkedIn 120h
+#
+# Options:
+#   --days N    Indeed posted-within days: 1, 3, 7 or 14 (default: config 1)
+#   --hours N   LinkedIn posted-within hours (default: --days × 24, else config 24h)
 
 # Configuration
 PROJECT_DIR="/Users/carrienon/Desktop/code-project/job_scraper"
@@ -18,6 +27,42 @@ log() {
 
 # Log errors but don't stop the pipeline on failure
 trap 'log "ERROR: Script failed at line $LINENO"' ERR
+
+DAYS=""
+HOURS=""
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --days)    DAYS="$2"; shift 2 ;;
+        --days=*)  DAYS="${1#*=}"; shift ;;
+        --hours)   HOURS="$2"; shift 2 ;;
+        --hours=*) HOURS="${1#*=}"; shift ;;
+        *)
+            log "Unknown argument: $1"
+            exit 1
+            ;;
+    esac
+done
+
+if [ -n "$DAYS" ]; then
+    case "$DAYS" in
+        1|3|7|14) ;;
+        *)
+            log "Invalid --days value: $DAYS (Indeed only offers 1, 3, 7 or 14)"
+            exit 1
+            ;;
+    esac
+    # LinkedIn follows the Indeed window unless --hours is given
+    [ -z "$HOURS" ] && HOURS=$((DAYS * 24))
+fi
+if [ -n "$HOURS" ] && ! "$PYTHON" -c "h=float('$HOURS'); raise SystemExit(0 if h > 0 else 1)" 2>/dev/null; then
+    log "Invalid --hours value: $HOURS (need a positive number)"
+    exit 1
+fi
+
+INDEED_WINDOW_ARGS=()
+LINKEDIN_WINDOW_ARGS=()
+[ -n "$DAYS" ] && INDEED_WINDOW_ARGS=(--days "$DAYS")
+[ -n "$HOURS" ] && LINKEDIN_WINDOW_ARGS=(--hours "$HOURS")
 
 release_pipeline_lock() {
     "$PYTHON" -c "
@@ -85,16 +130,18 @@ INDEED_JOBS="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.conf
 LINKEDIN_JOBS="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.config import LINKEDIN_JOBS_PER_PAGE; print(LINKEDIN_JOBS_PER_PAGE)")"
 STAMP="$(date +%Y%m%d_%H%M%S)"
 
-log "Step 1/3: Full lanes — ${FULL_PAGES} pages/keyword, Indeed ${INDEED_JOBS}/page, LinkedIn ${LINKEDIN_JOBS}/page"
+log "Step 1/3: Full lanes — ${FULL_PAGES} pages/keyword, Indeed ${INDEED_JOBS}/page (${DAYS:-1}d), LinkedIn ${LINKEDIN_JOBS}/page (${HOURS:-24}h)"
 run_source_lane "Indeed" "indeed" \
   "$LOG_DIR/indeed_${STAMP}.log" "$LOG_DIR/matcher_indeed_${STAMP}.log" \
   $PYTHON src/scrapers/indeed_scraper.py \
+  "${INDEED_WINDOW_ARGS[@]}" \
   --max-pages "$FULL_PAGES" \
   --max-jobs "$INDEED_JOBS" &
 INDEED_LANE=$!
 run_source_lane "LinkedIn" "linkedin" \
   "$LOG_DIR/linkedin_${STAMP}.log" "$LOG_DIR/matcher_linkedin_${STAMP}.log" \
   $PYTHON src/scrapers/linkedin_scraper.py \
+  "${LINKEDIN_WINDOW_ARGS[@]}" \
   --max-pages "$FULL_PAGES" \
   --max-jobs "$LINKEDIN_JOBS" &
 LINKEDIN_LANE=$!

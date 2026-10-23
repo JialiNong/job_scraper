@@ -24,6 +24,7 @@ except ImportError:
 
 from core.config import (
     DEFAULT_KEYWORDS,
+    INDEED_CONFIG,
     CDP_HOST,
     CDP_PORT,
     CDP_URL,
@@ -819,6 +820,13 @@ def parse_args():
             "LinkedIn only: posted-within window in hours "
             "(maps to f_TPR=r<seconds>). Default: config 24h."
         ),
+    )
+    parser.add_argument(
+        "--days",
+        type=int,
+        choices=INDEED_CONFIG["fromage_choices"],
+        default=None,
+        help="Indeed only: posted-within window in days (fromage). Default: config 1.",
     )
     return parser.parse_args()
 

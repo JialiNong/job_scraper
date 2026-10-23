@@ -156,6 +156,7 @@ INDEED_CONFIG = {
     "source": "indeed",
     "base_url": "https://de.indeed.com/jobs",
     "fromage": "1",  # Posted within: last 1 day (Indeed minimum)
+    "fromage_choices": (1, 3, 7, 14),  # Only windows Indeed's date filter offers
     "location": "",  # empty — same as a desktop SERP with no city typed
     "sort": "",  # Indeed default (relevance); add "date" only if we want newest-first
     "results_per_page": INDEED_JOBS_PER_PAGE,

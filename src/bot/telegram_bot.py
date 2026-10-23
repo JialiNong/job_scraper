@@ -24,6 +24,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from core.challenge_wait import signal_indeed_resume  # noqa: E402
+from core.config import INDEED_CONFIG  # noqa: E402
 from core.pipeline_lock import pipeline_is_running  # noqa: E402
 from core.match_digest import (  # noqa: E402
     build_match_messages,
@@ -138,7 +139,7 @@ async def _run_pipeline(
     Run a scrape pipeline in the background; notify when done.
 
     Match cards are pushed by the shell script itself (run_task.sh /
-    run_quick.sh / run_linkedin.sh) so cron / launchd / Telegram all get
+    run_quick.sh / run_linkedin.sh / run_indeed.sh) so cron / launchd / Telegram all get
     the same digest. The bot only sends Started / Done status here.
     """
     global _pipeline_running
@@ -202,25 +203,76 @@ async def _start_pipeline(
     await _reply(update, started_text)
 
 
+def _parse_jobs_window(
+    args: list[str] | None,
+) -> tuple[int | None, float | None, str | None]:
+    """
+    Parse optional /jobs [days] [hours].
+
+    days  → Indeed window (1, 3, 7 or 14); LinkedIn follows as days × 24h.
+    hours → optional LinkedIn override (number only, e.g. 120).
+
+    Returns (days, hours, error_message). Both None → script default (24h).
+    """
+    usage = (
+        "Usage: /jobs [days] [linkedin_hours]\n"
+        f"Days (Indeed) must be one of: {', '.join(str(d) for d in INDEED_DAY_CHOICES)}\n"
+        "Examples: /jobs · /jobs 7 · /jobs 3 120"
+    )
+    if not args:
+        return None, None, None
+    if len(args) > 2:
+        return None, None, usage
+    days, err = _parse_indeed_days(args[:1])
+    if err:
+        return None, None, usage
+    if len(args) == 1:
+        return days, None, None
+    hours, err = _parse_linkedin_hours(args[1:])
+    if err:
+        return None, None, usage
+    return days, hours, None
+
+
 async def jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
-    /jobs — full scrape + AI match (Indeed + LinkedIn, ~24h window).
+    /jobs [days] [hours] — full scrape + AI match (Indeed + LinkedIn in parallel).
+
+      /jobs          → both last 24h (default)
+      /jobs 7        → Indeed 7 days, LinkedIn 168h
+      /jobs 3 120    → Indeed 3 days, LinkedIn 120h
 
     Flow:
-      /jobs → "Started" → caffeinate -i ./run_task.sh
+      /jobs → "Started" → caffeinate -i ./run_task.sh [--days N] [--hours H]
             → per-source scrape/match pings → match cards after both lanes
             → "Done"
     """
+    days, hours, err = _parse_jobs_window(context.args)
+    if err:
+        await _reply(update, err)
+        return
+
+    script_args: list[str] = []
+    if days is None:
+        window = "24h (default)"
+    else:
+        script_args += ["--days", str(days)]
+        linkedin_hours = hours if hours is not None else days * 24
+        if hours is not None:
+            script_args += ["--hours", f"{hours:g}"]
+        window = f"Indeed {days}d, LinkedIn {linkedin_hours:g}h"
+
     await _start_pipeline(
         update,
         context,
         script="./run_task.sh",
+        script_args=script_args,
         started_text=(
-            "🚀 Started — Indeed and LinkedIn are scraping in parallel "
-            "(~40–60 min). You'll get a ping when each source finishes "
+            f"🚀 Started — Indeed and LinkedIn are scraping in parallel, "
+            f"{window}. You'll get a ping when each source finishes "
             "scrape and match. Job cards arrive after both lanes are done."
         ),
-        done_text="✅ Done — both platforms finished.",
+        done_text=f"✅ Done — both platforms finished ({window}).",
     )
 
 
@@ -310,6 +362,69 @@ async def linkedin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+INDEED_DAY_CHOICES = INDEED_CONFIG["fromage_choices"]
+
+
+def _parse_indeed_days(args: list[str] | None) -> tuple[int | None, str | None]:
+    """
+    Parse optional days from /indeed [N] (1, 3, 7 or 14 — Indeed's date filter).
+
+    Returns (days, error_message). days is None → use script default (1).
+    """
+    usage = (
+        "Usage: /indeed [days]\n"
+        f"Days must be one of: {', '.join(str(d) for d in INDEED_DAY_CHOICES)}\n"
+        "Examples: /indeed · /indeed 3 · /indeed 7"
+    )
+    if not args:
+        return None, None
+    try:
+        days = int(args[0].strip())
+    except ValueError:
+        return None, usage
+    if days not in INDEED_DAY_CHOICES:
+        return None, usage
+    return days, None
+
+
+async def indeed(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    /indeed [days] — Indeed-only scrape + AI match.
+
+    Default window is 1 day (same as run_indeed.sh). Indeed only offers
+    1, 3, 7 or 14 days:
+      /indeed      → last 1 day
+      /indeed 7    → last 7 days
+
+    Flow:
+      /indeed → "Started" → caffeinate -i ./run_indeed.sh [--days N]
+              → scrape/match pings → match cards → "Done"
+    """
+    days, err = _parse_indeed_days(context.args)
+    if err:
+        await _reply(update, err)
+        return
+
+    if days is None:
+        script_args: list[str] = []
+        window = "1 day (default)"
+    else:
+        script_args = ["--days", str(days)]
+        window = f"{days} day" + ("" if days == 1 else "s")
+
+    await _start_pipeline(
+        update,
+        context,
+        script="./run_indeed.sh",
+        script_args=script_args,
+        started_text=(
+            f"🔎 Started — Indeed-only scrape + match, last {window}. "
+            "You'll get scrape/match pings, then today's job cards."
+        ),
+        done_text=f"✅ Done — Indeed {window} finished.",
+    )
+
+
 async def matches(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """/matches — push today's matched job cards without running a scrape."""
     if not is_allowed(update):
@@ -378,9 +493,10 @@ async def _post_init(app: Application) -> None:
         [
             BotCommand("start", "Check bot is online"),
             BotCommand("test", "Check Mac is ready"),
-            BotCommand("jobs", "Full scrape + AI match (~40–60 min)"),
+            BotCommand("jobs", "Indeed + LinkedIn + match (/jobs [days] [li_hours], default 24h)"),
             BotCommand("quick_jobs", "Light scrape + AI match (~20–40 min)"),
             BotCommand("linkedin", "LinkedIn only + match (/linkedin [hours], default 24h)"),
+            BotCommand("indeed", "Indeed only + match (/indeed [1|3|7|14 days], default 1)"),
             BotCommand("matches", "Push today's matched job cards"),
             BotCommand("indeed_ok", "Resume Indeed after human verification"),
         ]
@@ -402,13 +518,14 @@ def main():
     app.add_handler(CommandHandler("jobs", jobs))
     app.add_handler(CommandHandler("quick_jobs", quick_jobs))
     app.add_handler(CommandHandler("linkedin", linkedin))
+    app.add_handler(CommandHandler("indeed", indeed))
     app.add_handler(CommandHandler("matches", matches))
     app.add_handler(CommandHandler("indeed_ok", indeed_ok))
     app.add_handler(CallbackQueryHandler(indeed_resume_callback, pattern=r"^indeed_resume$"))
     app.add_error_handler(_on_error)
 
     print(f"Telegram bot is running... (cwd={PROJECT_DIR})")
-    print("Commands: /start /test /jobs /quick_jobs /linkedin /matches /indeed_ok")
+    print("Commands: /start /test /jobs /quick_jobs /linkedin /indeed /matches /indeed_ok")
 
     # Drop queued commands from the flood so restart does not replay /jobs.
     app.run_polling(drop_pending_updates=True, timeout=20)

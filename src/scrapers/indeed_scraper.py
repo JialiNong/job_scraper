@@ -144,7 +144,7 @@ def extract_indeed_description(page, detail) -> str:
         return description
 
 
-def jobs_search_url(keyword, start=0):
+def jobs_search_url(keyword, start=0, fromage=None):
     """
     Build Indeed search URL for a given keyword and pagination offset.
 
@@ -154,7 +154,8 @@ def jobs_search_url(keyword, start=0):
     query = (keyword or "").replace("-", " ").strip()
     encoded = quote_plus(query)
     loc = quote_plus(LOCATION) if LOCATION else ""
-    url = f"{BASE_URL}?q={encoded}&l={loc}&fromage={FROMAGE}&from=searchOnDesktopSerp"
+    days = fromage if fromage is not None else FROMAGE
+    url = f"{BASE_URL}?q={encoded}&l={loc}&fromage={days}&from=searchOnDesktopSerp"
     if SORT:
         url += f"&sort={quote_plus(SORT)}"
     if start > 0:
@@ -506,6 +507,7 @@ def scrape_keyword(
     keyword,
     max_pages,
     max_jobs_per_page=INDEED_JOBS_PER_PAGE,
+    fromage=None,
 ):
     """
     Scrape multiple pages of Indeed results for a single keyword.
@@ -515,6 +517,7 @@ def scrape_keyword(
         keyword: Search keyword
         max_pages: Maximum number of pages to scrape
         max_jobs_per_page: Maximum jobs to process per page
+        fromage: Posted-within days (1/3/7/14). Default: config fromage.
 
     Returns:
         List of all job data dictionaries saved for this keyword
@@ -526,7 +529,7 @@ def scrape_keyword(
     for page_index in range(max_pages):
         start = page_index * RESULTS_PER_PAGE
         print(f"\n--- {keyword}: page {page_index + 1}/{max_pages} (start={start}) ---")
-        url = jobs_search_url(keyword, start=start)
+        url = jobs_search_url(keyword, start=start, fromage=fromage)
         print(f"URL: {url}")
         cards_ready = False
         try:
@@ -619,9 +622,10 @@ def main():
     keywords = args.keywords
     max_pages = args.max_pages if args.max_pages is not None else DEFAULT_MAX_PAGES
     max_jobs = args.max_jobs if args.max_jobs is not None else INDEED_JOBS_PER_PAGE
+    fromage = args.days if args.days is not None else FROMAGE
     print(f"Source: {SOURCE}")
     print(f"Keywords: {keywords}")
-    print(f"Location: {LOCATION or '(empty)'}  sort={SORT or 'relevance'}  fromage={FROMAGE}")
+    print(f"Location: {LOCATION or '(empty)'}  sort={SORT or 'relevance'}  fromage={fromage}")
     print(f"Max pages per keyword: {max_pages}")
     print(f"Max jobs per page: {max_jobs}")
 
@@ -633,7 +637,11 @@ def main():
 
         for i, keyword in enumerate(keywords):
             jobs = scrape_keyword(
-                session, keyword, max_pages, max_jobs_per_page=max_jobs
+                session,
+                keyword,
+                max_pages,
+                max_jobs_per_page=max_jobs,
+                fromage=fromage,
             )
             all_jobs.extend(jobs)
             if i < len(keywords) - 1:

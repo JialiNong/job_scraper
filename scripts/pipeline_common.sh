@@ -1,4 +1,4 @@
-# Shared helpers for run_task.sh / run_quick.sh / run_linkedin.sh.
+# Shared helpers for run_task.sh / run_quick.sh / run_linkedin.sh / run_indeed.sh.
 # Expects PROJECT_DIR, PYTHON, LOG_DIR, and log() to be set; cwd = PROJECT_DIR.
 
 telegram_status() {
