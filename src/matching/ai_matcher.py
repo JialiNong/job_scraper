@@ -166,7 +166,9 @@ Use ONLY facts present in the Job Description text below (plus Title / Company /
 
 ## Task Process
 
-Code already ran the German gate, backend-stack gate, and AI/ML-core gate. This job passed them (or extract failed open). Do **not** fail again for mandatory German, a hard unknown backend, or an AI/ML-engineering title unless the extract block is missing and Matching Criteria clearly require it.
+Code already ran the German gate, backend-stack gate, and AI/ML-core gate. This job passed them (or extract failed open). Do **not** fail again for a hard unknown backend or an AI/ML-engineering title unless the extract block is missing and Matching Criteria clearly require it. A backend language the JD lists without must / required / strong wording is a minor gap (at most −1), never a disqualification.
+
+The German gate is regex-based and can miss a requirement. If the JD itself lists German as a requirement (e.g. "Fluent in German & English", "fluent German", "German C1", "German required") **and** that line is not marked as a plus / nice-to-have, treat it as mandatory: recommendation "No", match_score ≤ 3, and set disqualification_reason to "Mandatory German language requirement". Never list German as unmatched while still recommending the job.
 
 German as nice-to-have is **not** mandatory. Grounded only in the JD text: "is a plus", "a plus", "is a bonus", "nice to have", "beneficial", "advantageous", "preferred", "desirable", "helpful", "would be great", "ideally", "optional", "not required", "no German required", "welcome", "von Vorteil", "wünschenswert", "ein Plus", "gerne", "idealerweise" — and the same idea with a `since …` explanation that businesses speak German — must **not** be scored as a German language requirement or listed as unmatched/missing. Fail German only when the JD itself says it is required / a must / fluent-required / C1-required.
 
@@ -376,7 +378,9 @@ def analyze_job_with_ai(
                         "Use ONLY facts present in the provided job description. Never invent "
                         "requirements, responsibilities, tech stack, languages, years, or company "
                         "details. If information is missing, say 'not stated in the description'. "
-                        "German, backend-stack, and AI/ML-core gates already ran in code for this job. "
+                        "German, backend-stack, and AI/ML-core gates already ran in code for this job, "
+                        "but the German gate can miss: if the JD itself requires German (fluent / C1 / "
+                        "required, not a plus), recommend No with a German disqualification_reason. "
                         "German listed as a plus / nice-to-have / von Vorteil is not mandatory — "
                         "use only the job description, never invent a German requirement. "
                         "Parse each JD into 'what you'll do' and 'what they're looking for', then "

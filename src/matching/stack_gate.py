@@ -25,6 +25,10 @@ AI_MODEL = os.getenv("AI_MODEL", "gpt-4.1-mini")
 AI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 HARD_REQUIREDNESS = frozenset({"required", "implied"})
+# Only an explicit hard ask stops matching. `implied` (listed for the role but
+# never must / required / strong) goes to the full scorer as a gap: HR wording
+# is often looser than what the team needs.
+BLOCKING_REQUIREDNESS = frozenset({"required"})
 SOFT_REQUIREDNESS = frozenset({
     "or_list",
     "nice_to_have",
@@ -87,6 +91,10 @@ _BACKEND_ALIASES = {
     "c++": "cpp",
     "cpp": "cpp",
 }
+
+# Real backend languages. Anything else the extract returns (postgresql, sql,
+# a stray "backend_languages" key) never blocks.
+KNOWN_BACKENDS = frozenset(_BACKEND_ALIASES.values()) | {"c"}
 
 # Obvious AI/ML engineering titles that slipped the scrape blacklist.
 _AI_ML_TITLE = re.compile(
@@ -367,6 +375,93 @@ def apply_duty_dump_heuristics(description: str, extract: Dict) -> Dict:
     return extract
 
 
+_SOFT_QUALIFIER = (
+    r"(?:ideally|preferably|preferred|bonus|nice[- ]to[- ]have|"
+    r"(?:is\s+)?(?:a\s+)?plus|advantage(?:ous)?|beneficial)"
+)
+# Same sentence: a "." only ends it when not inside a token like Node.js / .NET.
+_IN_SENTENCE = r"(?:[^.\n]|\.(?=\w))"
+_EXAMPLE_INTRO = r"(?:for\s+example|for\s+instance|e\.\s?g\.?|such\s+as|including)"
+_PRODUCTION_TOKEN = r"(?:node(?:\.?js)?|typescript|javascript)"
+_COMPANY_SYSTEM = (
+    r"\bour\s+(?:core\s+|main\s+|existing\s+)?"
+    r"(?:api|apis|backend|platform|stack|services?|system|codebase|identity\s+layer)\s+"
+    r"(?:is|are|runs\s+on|is\s+(?:built|written)\s+(?:with|on|in))\b"
+)
+
+
+def _lang_pattern(lang: str) -> str:
+    """Alternation of every JD spelling for `lang`, bounded so .NET / C# work."""
+    surfaces = {re.escape(lang)}
+    for alias, canonical in _BACKEND_ALIASES.items():
+        if canonical == lang:
+            surfaces.add(re.escape(alias))
+    alt = "|".join(sorted(surfaces, key=len, reverse=True))
+    return rf"(?<![\w.])(?:{alt})(?![\w#+])"
+
+
+def _soft_label_from_wording(lang: str, text: str) -> Optional[tuple]:
+    """
+    (requiredness, evidence) when the JD's own wording makes `lang` soft:
+    "ideally using Go" → nice_to_have, "for example TypeScript/Node.js, .NET"
+    → or_list, "our core API is Java" → company_uses.
+    """
+    lang_re = _lang_pattern(lang)
+    checks = (
+        ("nice_to_have", rf"\b{_SOFT_QUALIFIER}\b{_IN_SENTENCE}{{0,40}}{lang_re}"),
+        # Qualifier right after this language only: "Go is a plus", "Go
+        # (preferred)" — not "Java / Python (Rust is a plus)".
+        (
+            "nice_to_have",
+            rf"{lang_re}(?:\s+(?:experience|knowledge|skills))?\s*"
+            rf"(?:(?:is|are|would\s+be)\s+(?:a\s+(?:big\s+)?)?|\(\s*)"
+            rf"(?:plus|bonus|preferred|advantage(?:ous)?|beneficial|nice[- ]to[- ]have)\b",
+        ),
+        ("company_uses", rf"{_COMPANY_SYSTEM}{_IN_SENTENCE}{{0,60}}{lang_re}"),
+    )
+    for label, pattern in checks:
+        match = re.search(pattern, text, re.I)
+        if match:
+            return label, match.group(0).strip()[:240]
+
+    # Example list that also offers Node / TypeScript.
+    for match in re.finditer(rf"\b{_EXAMPLE_INTRO}{_IN_SENTENCE}{{0,100}}", text, re.I):
+        chunk = match.group(0)
+        if re.search(lang_re, chunk, re.I) and re.search(
+            rf"\b{_PRODUCTION_TOKEN}\b", chunk, re.I
+        ):
+            return "or_list", chunk.strip()[:240]
+    return None
+
+
+def apply_soft_wording_heuristics(description: str, extract: Dict) -> Dict:
+    """
+    Demote hard gap backends whose own JD wording is soft (ideally / for
+    example / our core API is …), unless the JD hard-asks them elsewhere
+    ("Strong Go skills", "Java is required").
+    """
+    languages = list(extract.get("backend_languages") or [])
+    changed = False
+    for item in languages:
+        name = item.get("name") or ""
+        if item.get("requiredness") not in HARD_REQUIREDNESS:
+            continue
+        if name in PRODUCTION_BACKENDS or name not in KNOWN_BACKENDS:
+            continue
+        if _independently_hard_required(name, description, []):
+            continue
+        soft = _soft_label_from_wording(name, description)
+        if not soft:
+            continue
+        item["requiredness"], item["evidence"] = soft
+        changed = True
+    if not changed:
+        return extract
+    extract = dict(extract)
+    extract["backend_languages"] = languages
+    return extract
+
+
 def find_ai_ml_title_requirement(job: Dict) -> Optional[str]:
     """Reject obvious AI/ML engineering titles without an extract call."""
     title = str(job.get("title") or "").strip()
@@ -410,12 +505,17 @@ List only **backend** languages / backend frameworks (Python, Java, Go, Node, Ko
 Do NOT list frontend frameworks (React, Vue, Angular, Next.js as UI, CSS).
 
 For each item set `requiredness` to exactly one of:
-- required — explicit must / required / mandatory, or the primary backend of the role
-- implied — listed under Requirements / What you'll bring / Our stack **for this job**, even without the word must-have
+- required — the JD makes it a must for the candidate: "X is required" / must / mandatory / "strong X" / "production experience with X" / "X is our primary language"
+- implied — listed under Requirements / What you'll bring / duties **for this job** without must / required / strong wording
 - or_list — one option in an OR ("Node.js or Python", "Python and/or TypeScript backend")
 - nice_to_have — plus / preferred / advantage / bonus
 - company_uses — another team or the existing system uses it; this role does not have to write it (e.g. frontend owns React, "our backend is Go"; or a company tech dump like "our platform is built with Go, Python, Scala")
 - willingness — junior/learn-on-the-job / "basic knowledge, exposure, or willingness to develop"
+
+Soft wording beats a duties mention of the same language:
+- "Experience building APIs and backend services, ideally using Go" → go `nice_to_have`, even if duties say "implement Go and React/TypeScript services"
+- "for example TypeScript/Node.js, .NET and React" / "e.g." / "such as" → examples, label each backend `or_list`
+- "our core API is Java and Spring" → java `company_uses` (describes the system, not a candidate must)
 
 AND is the default when Requirements list languages without or / and/or / either.
 Two separate bullets both asking for production Python and production Node are AND, not OR.
@@ -481,7 +581,8 @@ TypeScript/JavaScript: include them when they are a backend ask (Node/Express/Ne
         parsed = json.loads(raw)
         normalized = _normalize_extract(parsed)
         with_or = apply_or_list_heuristics(description, normalized)
-        return apply_duty_dump_heuristics(description, with_or)
+        with_duty = apply_duty_dump_heuristics(description, with_or)
+        return apply_soft_wording_heuristics(description, with_duty)
     except Exception as e:
         print(f"Warning: stack extract failed ({e}) — fail-open to full scorer")
         return None
@@ -588,9 +689,9 @@ def evaluate_requirement_gate(extract: Dict) -> Optional[Dict]:
     reasons: List[str] = []
 
     for name, requiredness in labels.items():
-        if requiredness not in HARD_REQUIREDNESS:
+        if requiredness not in BLOCKING_REQUIREDNESS:
             continue
-        if name in PRODUCTION_BACKENDS:
+        if name in PRODUCTION_BACKENDS or name not in KNOWN_BACKENDS:
             continue
         evidence = evidence_by_name.get(name) or ""
         snippet = f" — \"{evidence}\"" if evidence else ""
@@ -612,6 +713,8 @@ def evaluate_requirement_gate(extract: Dict) -> Optional[Dict]:
             continue
         if any(member in PRODUCTION_BACKENDS for member in group):
             continue
+        if not all(member in KNOWN_BACKENDS for member in group):
+            continue
         label = " or ".join(group)
         missing.append(
             f"{label} (OR-list; none is a production backend the candidate has)"
@@ -626,7 +729,7 @@ def evaluate_requirement_gate(extract: Dict) -> Optional[Dict]:
     return {
         "kind": "stack",
         "reason": (
-            "Required/implied backend is not in the candidate's production stack "
+            "Required backend is not in the candidate's production stack "
             "(Node.js / TypeScript / JavaScript). " + "; ".join(reasons)
         ),
         "missing": missing,
@@ -698,13 +801,19 @@ def format_extract_for_prompt(extract: Optional[Dict]) -> str:
             "- Backend OR-lists: "
             + "; ".join(" or ".join(group) for group in or_groups)
         )
-    lines.append("- Hard backend (required/implied): " + "; ".join(hard) if hard else "- Hard backend: none")
+    lines.append(
+        "- Backend asked for this role (required/implied): " + "; ".join(hard)
+        if hard
+        else "- Backend asked for this role: none"
+    )
     if soft:
         lines.append("- Other backend labels: " + "; ".join(soft))
 
     lines.append(
         "This job already passed the backend-stack and AI/ML-core gates. "
-        "Do not fail it again for those reasons. `company_uses` is not a hard backend. "
+        "Do not fail it again for those reasons. `implied` gap languages are a minor "
+        "gap: list them in missing_requirements and take at most 1 point off; never "
+        "disqualify for them. `company_uses` is not a hard backend. "
         "OR-lists that include Node/TypeScript/JavaScript already passed."
     )
     return "\n".join(lines)

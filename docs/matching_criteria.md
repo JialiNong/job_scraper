@@ -33,12 +33,14 @@ Non-English postings (mostly German; French etc. rare) are already filtered out 
 - "fluent German required", "German C1 required", "German C1 is a must", "C1 Deutsch erforderlich"
 - "Sehr gute Deutschkenntnisse erforderlich", "you must speak German"
 - "German and English required" / "Deutsch und Englisch erforderlich" (both languages, not an alternative)
+- A bullet "Fluent in German & English" in the requirements list — still mandatory even when a "Nice to have:" heading follows on the next line
 - German-language postings are already dropped at scrape (Lingua), before this gate
 
 **Do not infer German from location or office.** These pass:
 
 - "Berlin, Germany (On-site)", "Germany (Hybrid)", "DACH"
 - "Berlin office", "in-person culture in Berlin", "office in Germany", public-transport / gym perks
+- "language courses in German & English" (classes offered as a benefit)
 - The company is German, European, or based in Berlin / Munich / Hamburg
 - The product serves a German/European market or German customers/brands
 
@@ -53,17 +55,26 @@ Non-English postings (mostly German; French etc. rare) are already filtered out 
 
 ### 2. Backend language
 
-In code this is a pre-AI extract + local gate (`stack_gate.py`). The extract labels each backend language as `required`, `implied`, `or_list`, `nice_to_have`, `company_uses`, or `willingness`. Do **not** wait for the words must-have / required. A language in Requirements / What you'll bring / Our stack for **this role** is hard even without that wording.
+In code this is a pre-AI extract + local gate (`stack_gate.py`). The extract labels each backend language as `required`, `implied`, `or_list`, `nice_to_have`, `company_uses`, or `willingness`. Only an **explicit** hard ask stops matching: "X is required", must / mandatory, "strong X", "production experience with X", "X is our primary language". A language that is only listed for the role (`implied`) is a **minor gap**, not a fail — HR wording is often looser than what the team needs, and the candidate still wants to apply.
 
 **Production backends the candidate has:** Node.js / TypeScript-backend / JavaScript-backend (Express, Nest, Fastify, Koa, and similar).
 
 **Not production (treat as a gap):** Python, Django, Flask, FastAPI, Java, Go, PHP, Ruby, C#, .NET, Scala, Rust, Kotlin, Spring.
 
-**Fail** if any **hard** backend ask (`required` or `implied`) is a language the candidate cannot do in production. AND means fail even when a known language is listed next to an unknown one:
+**Fail** if any `required` backend ask is a language the candidate cannot do in production. AND means fail even when a known language is listed next to an unknown one:
 
-- "Python, TypeScript, and modern web technologies" (Python is a hard backend ask)
-- "Working experience in a JVM backend — Kotlin or Java with Spring"
+- "Familiarity with Java and Spring Boot is required"
 - "Strong Python skills, it's the primary language"
+- "You must have production experience with Go"
+
+**Gap, not a fail** (`implied`): the language is listed for the role without must / required / strong — e.g. "Python, TypeScript, and modern web technologies", "Working experience in a JVM backend — Kotlin or Java with Spring". List it in missing_requirements and take at most 1 point off.
+
+**Soft wording — pass:**
+
+- "Experience building APIs and backend services, **ideally** using Go" → nice-to-have, even when duties say "implement Go and React/TypeScript services"
+- "Strong proficiency in modern full-stack development, **for example** TypeScript/Node.js, .NET and React" → examples that include Node, OR-list
+- "**our core API is** Java and Spring" → describes the existing system (`company_uses`)
+- Databases (PostgreSQL, MySQL, SQL) are not backend languages
 
 **OR-list is different.** **Pass** when at least one option is a production backend the candidate has:
 
