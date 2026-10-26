@@ -3706,7 +3706,7 @@ function renderCard(job) {
         ${job.applicants ? `<span class="meta-pill">👥 ${escHtml(job.applicants)}</span>` : ''}
       </div>
 
-      ${job.recommend_reason ? `<div class="recommend-reason"><span class="recommend-reason-label">✦ AI 精准推荐的理由</span>${escHtml(job.recommend_reason)}</div>` : ''}
+      ${job.recommend_reason ? `<div class="recommend-reason"><span class="recommend-reason-label">✦ Why AI recommends this</span>${escHtml(job.recommend_reason)}</div>` : ''}
       ${job.summary ? `<div class="card-summary">${escHtml(job.summary)}</div>` : ''}
 
       <details class="job-description" data-job-id="${job._id}" ontoggle="loadJobDescription(this)">

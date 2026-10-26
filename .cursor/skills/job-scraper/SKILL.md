@@ -18,6 +18,7 @@ Read this skill before changing scrape, filter, match, pipeline, or docs behavio
 
 All of the following must be **English only**:
 
+- All user-facing UI text (templates, labels, buttons, tooltips, Telegram messages)
 - Markdown under `docs/` (architecture, criteria, profile notes, READMEs you add)
 - Code comments and docstrings
 - Commit messages and PR bodies for this repo
