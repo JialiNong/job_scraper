@@ -1273,6 +1273,21 @@
     .source-pill { text-transform: capitalize; }
 
     /* Summary */
+    .recommend-reason {
+      background: #1e1b4b55;
+      border: 1px solid #8b5cf644;
+      border-left: 3px solid #8b5cf6;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: .82rem; line-height: 1.55;
+      white-space: pre-wrap; overflow-wrap: anywhere;
+    }
+    .recommend-reason-label {
+      display: block;
+      font-size: .72rem; font-weight: 600;
+      color: #c4b5fd;
+      margin-bottom: 2px;
+    }
     .card-summary {
       font-size: .82rem; color: var(--muted); line-height: 1.55;
       display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
@@ -3551,7 +3566,9 @@ function recommendedByBadge(job) {
   const key = String(job.recommended_by || '').toLowerCase();
   const label = RECOMMENDED_BY_LABEL[key];
   if (!label) return '';
-  return `<span class="meta-pill recommended-pill" title="Recommended by ${escHtml(label)}">✦ ${escHtml(label)}</span>`;
+  const reason = String(job.recommend_reason || '').trim();
+  const title = `Recommended by ${label}` + (reason ? ` — ${reason}` : '');
+  return `<span class="meta-pill recommended-pill" title="${escHtml(title)}">✦ ${escHtml(label)}</span>`;
 }
 
 function renderHighlightChips(highlights) {
@@ -3689,6 +3706,7 @@ function renderCard(job) {
         ${job.applicants ? `<span class="meta-pill">👥 ${escHtml(job.applicants)}</span>` : ''}
       </div>
 
+      ${job.recommend_reason ? `<div class="recommend-reason"><span class="recommend-reason-label">✦ AI 精准推荐的理由</span>${escHtml(job.recommend_reason)}</div>` : ''}
       ${job.summary ? `<div class="card-summary">${escHtml(job.summary)}</div>` : ''}
 
       <details class="job-description" data-job-id="${job._id}" ontoggle="loadJobDescription(this)">

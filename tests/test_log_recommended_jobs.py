@@ -95,6 +95,31 @@ class LogAgentJobsTests(unittest.TestCase):
         recs = [c.kwargs["recommended_by"] for c in save.call_args_list]
         self.assertEqual(recs, ["cursor", "claude"])
 
+    def test_reason_is_passed_to_save(self):
+        jobs = [{"url": URL_A, "reason": "  Python backend, English team  "}, {"url": URL_B}]
+        outcomes = iter([{"ok": [URL_A]}, {"ok": [URL_B]}])
+        with patch.object(ml, "lookup_known_job", return_value=None), \
+                patch.object(ml, "save_link_only_urls",
+                             side_effect=lambda *a, **k: next(outcomes)) as save:
+            ml.log_agent_jobs(jobs)
+        reasons = [c.kwargs["recommend_reason"] for c in save.call_args_list]
+        self.assertEqual(reasons, ["  Python backend, English team  ", None])
+
+    def test_link_only_stub_stores_trimmed_capped_reason(self):
+        saved = {}
+
+        def fake_save(job, *a, **k):
+            saved.update(job)
+            return True
+
+        long_reason = "  " + "x" * (ml.RECOMMEND_REASON_MAX_LEN + 50)
+        with patch.object(ml, "is_job_on_tracker", return_value=False), \
+                patch.object(ml, "save_job_record", side_effect=fake_save):
+            ml.save_link_only_urls([URL_A], recommended_by="claude",
+                                   recommend_reason=long_reason)
+        self.assertEqual(saved["recommend_reason"], "x" * ml.RECOMMEND_REASON_MAX_LEN)
+        self.assertIn("recommend_reason", ml.DETAILS_PRESERVE_FIELDS)
+
     def test_unknown_save_outcome_counts_as_failed(self):
         with patch.object(ml, "lookup_known_job", return_value=None), \
                 patch.object(ml, "save_link_only_urls", return_value=None):

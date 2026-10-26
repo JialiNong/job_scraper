@@ -11,7 +11,8 @@ Input (file path or "-" for stdin):
 
     [
       {"url": "https://www.linkedin.com/jobs/view/4123456789/",
-       "title": "Backend Engineer", "company": "Acme", "location": "Berlin"},
+       "title": "Backend Engineer", "company": "Acme", "location": "Berlin",
+       "reason": "Python + FastAPI backend, English-only team"},
       ...
     ]
 

@@ -573,6 +573,7 @@ def _serialize(job: dict) -> dict:
     job.setdefault("status", "pending")
     rec = normalize_recommended_by(job.get("recommended_by"))
     job["recommended_by"] = rec
+    job["recommend_reason"] = str(job.get("recommend_reason") or "")
     job["details_missing"] = job_missing_details(job)
     job["can_fetch_details"] = can_fetch_details(job)
     raw_manual = job.get("manual_fields")
@@ -1825,10 +1826,12 @@ def api_agent_jobs():
 
     Header: Authorization: Bearer <AGENT_API_TOKEN>
     Body:   {"jobs": [{"url", "title"?, "company"?, "location"?,
-                       "recommended_by"?}, ...],
+                       "recommended_by"?, "reason"?}, ...],
              "recommended_by": "claude"}   # optional, default claude
     recommended_by is claude / cursor / gemini / gpt; a per-job value
     overrides the top-level one (each agent should send its own name).
+    reason is the agent's one-line "why this job fits" (stored as
+    recommend_reason, shown on the Tracker card).
     Saves link-only Tracker stubs (pending, ai_pending) synchronously — no
     Chrome / no AI, so it runs on Render. A job_id already in matched_jobs /
     jobs / timeout_jobs is skipped with no write.

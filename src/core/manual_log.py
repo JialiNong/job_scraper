@@ -43,6 +43,7 @@ DETAILS_PRESERVE_FIELDS = (
     "highlights",
     "application_qa",
     "recommended_by",
+    "recommend_reason",
     "match_score",
     "manual_fields",
 )
@@ -50,6 +51,7 @@ DETAILS_PRESERVE_FIELDS = (
 IDENTITY_FIELDS = ("title", "company", "location")
 _IDENTITY_MAX_LEN = {"title": 200, "company": 160, "location": 200}
 LINK_ONLY_TITLE_PREFIX = "(Link only)"
+RECOMMEND_REASON_MAX_LEN = 1000
 
 
 def normalize_recommended_by(value) -> str:
@@ -58,6 +60,14 @@ def normalize_recommended_by(value) -> str:
     if key in ("", "none", "null"):
         return ""
     return key if key in RECOMMENDED_BY_AGENTS else ""
+
+
+def normalize_recommend_reason(value) -> str:
+    """Agent's "why this job fits" blurb: trimmed, capped, '' when absent."""
+    text = str(value or "").strip()
+    if len(text) > RECOMMEND_REASON_MAX_LEN:
+        text = text[:RECOMMEND_REASON_MAX_LEN].rstrip()
+    return text
 
 
 def is_agent_recommended(job: dict | None) -> bool:
@@ -432,6 +442,9 @@ def force_save_manual_job(
         matched_data["manually_applied"] = True
     if rec:
         matched_data["recommended_by"] = rec
+    reason = normalize_recommend_reason(job.get("recommend_reason"))
+    if reason:
+        matched_data["recommend_reason"] = reason
     if manual:
         matched_data["manual_fields"] = manual
 
@@ -568,6 +581,7 @@ def save_link_only_urls(
     status: str = "pending",
     recommended_by=None,
     identity=None,
+    recommend_reason=None,
     title=None,
     company=None,
     location=None,
@@ -581,6 +595,7 @@ def save_link_only_urls(
     if status not in ("pending", "applied"):
         status = "pending"
     rec = normalize_recommended_by(recommended_by)
+    reason = normalize_recommend_reason(recommend_reason)
     identity = identity or normalize_manual_identity(title, company, location)
     results = {"ok": [], "failed": [], "skipped": []}
 
@@ -625,6 +640,8 @@ def save_link_only_urls(
             continue
         if rec:
             job["recommended_by"] = rec
+        if reason:
+            job["recommend_reason"] = reason
         apply_identity_to_job(job, identity)
         ok = save_job_record(
             job, analysis, status, applied_date, ai_pending=True, extra="link-only"
@@ -654,9 +671,10 @@ def log_agent_jobs(jobs: list, recommended_by="claude") -> dict:
     """
     Batch-log agent-recommended jobs as link-only Tracker stubs (pending).
 
-    Each item is {"url", "title"?, "company"?, "location"?, "recommended_by"?}
-    or a bare URL string, saved separately so it keeps its own identity
-    fields. A per-item recommended_by overrides the batch default.
+    Each item is {"url", "title"?, "company"?, "location"?, "recommended_by"?,
+    "reason"?} or a bare URL string, saved separately so it keeps its own
+    identity fields. A per-item recommended_by overrides the batch default;
+    reason (why the job fits) is stored as matched_jobs.recommend_reason.
 
     A job_id already known anywhere (matched_jobs, jobs, or timeout_jobs;
     Indeed: all jk variants) is skipped with no write at all — unlike Log
@@ -700,6 +718,7 @@ def log_agent_jobs(jobs: list, recommended_by="claude") -> dict:
             status="pending",
             recommended_by=rec,
             identity=identity,
+            recommend_reason=item.get("reason"),
         ) or {}
         if url in result.get("ok", []):
             merged["ok"].append(url)
