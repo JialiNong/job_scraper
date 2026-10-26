@@ -1271,6 +1271,7 @@
       color: var(--muted);
     }
     .source-pill { text-transform: capitalize; }
+    .source-pill.site-pill { text-transform: none; }
 
     /* Summary */
     .recommend-reason {
@@ -3562,6 +3563,20 @@ function highlightBadgesHtml(highlights) {
   ).join('');
 }
 
+/* source "manual" just means "not LinkedIn / Indeed"; for agent pushes
+   show the job site's domain instead so it does not read as Log Job. */
+function sourcePillHtml(job) {
+  const source = String(job.source || '');
+  if (source === 'manual' && RECOMMENDED_BY_LABEL[String(job.recommended_by || '').toLowerCase()]) {
+    let host = '';
+    try { host = new URL(job.link || '').hostname.replace(/^www\./, ''); } catch (e) {}
+    return host
+      ? `<span class="meta-pill source-pill site-pill" title="${escHtml(job.link || '')}">${escHtml(host)}</span>`
+      : '';
+  }
+  return `<span class="meta-pill source-pill">${escHtml(source)}</span>`;
+}
+
 function recommendedByBadge(job) {
   const key = String(job.recommended_by || '').toLowerCase();
   const label = RECOMMENDED_BY_LABEL[key];
@@ -3660,7 +3675,7 @@ function renderCard(job) {
       </div>
       <div class="row-meta">
         ${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">📍 ${escHtml(job.location)}</span>` : ''}
-        <span class="meta-pill source-pill">${escHtml(job.source || '')}</span>
+        ${sourcePillHtml(job)}
         ${recBadge}
         ${aiHint ? '<span class="meta-pill ai-pending-pill">AI pending</span>' : ''}
         <span class="row-highlights" data-row-highlights>${highlightBadges}</span>
@@ -3699,7 +3714,7 @@ function renderCard(job) {
 
       <div class="card-meta">
         <span class="body-highlights" data-body-highlights>${highlightBadges}</span>
-        <span class="meta-pill source-pill">${escHtml(job.source || '')}</span>
+        ${sourcePillHtml(job)}
         ${recBadge}
         ${aiHint ? '<span class="meta-pill ai-pending-pill">AI pending</span>' : ''}
         ${job.matched_at ? `<span class="meta-pill">📅 ${job.matched_at}</span>` : ''}
