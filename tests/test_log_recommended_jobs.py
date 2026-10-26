@@ -139,6 +139,21 @@ class AgentJobsApiTests(unittest.TestCase):
         with patch.dict(os.environ, {"AGENT_API_TOKEN": ""}):
             self.assertEqual(self._post({"jobs": [URL_A]}).status_code, 503)
 
+    def test_bare_job_list_body_is_accepted(self):
+        body = [{"url": URL_A, "recommended_by": "gpt", "reason": "fits"}]
+        result = {"ok": [URL_A], "skipped": [], "failed": [], "existing": []}
+        with patch.dict(os.environ, {"AGENT_API_TOKEN": TOKEN}), \
+                patch.object(web_app, "log_agent_jobs", return_value=result) as log:
+            resp = self._post(body)
+        self.assertEqual(resp.status_code, 200)
+        self.assertEqual(log.call_args.args[0], body)
+
+    def test_non_object_body_is_400_not_500(self):
+        with patch.dict(os.environ, {"AGENT_API_TOKEN": TOKEN}):
+            for body in ("just a string", 42):
+                with self.subTest(body=body):
+                    self.assertEqual(self._post(body).status_code, 400)
+
     def test_rejects_missing_or_wrong_token(self):
         with patch.dict(os.environ, {"AGENT_API_TOKEN": TOKEN}):
             self.assertEqual(self._post({"jobs": [URL_A]}, token=None).status_code, 401)

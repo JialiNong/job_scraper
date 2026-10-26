@@ -1828,6 +1828,7 @@ def api_agent_jobs():
     Body:   {"jobs": [{"url", "title"?, "company"?, "location"?,
                        "recommended_by"?, "reason"?}, ...],
              "recommended_by": "claude"}   # optional, default claude
+            (a bare job list is accepted as {"jobs": <list>})
     recommended_by is claude / cursor / gemini / gpt; a per-job value
     overrides the top-level one (each agent should send its own name).
     reason is the agent's one-line "why this job fits" (stored as
@@ -1846,6 +1847,11 @@ def api_agent_jobs():
         return jsonify({"error": "Unauthorized"}), 401
 
     data = request.get_json(silent=True) or {}
+    # Agents sometimes post the bare job list instead of {"jobs": [...]}
+    if isinstance(data, list):
+        data = {"jobs": data}
+    if not isinstance(data, dict):
+        return jsonify({"error": "Body must be {\"jobs\": [...]} or a job list"}), 400
     jobs = data.get("jobs")
     if not isinstance(jobs, list) or not jobs:
         return jsonify({"error": "jobs must be a non-empty list"}), 400
