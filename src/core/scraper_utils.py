@@ -11,6 +11,7 @@ import re
 import socket
 import subprocess
 import time
+import urllib.request
 
 # Lazy import lingua - only needed for language detection in scrapers
 # Web UI doesn't use language detection, so it can run without lingua installed
@@ -940,6 +941,25 @@ def goto_page(page, url, wait_until="domcontentloaded", attempts=3, timeout=6000
     raise last_error
 
 
+def ensure_cdp_page():
+    """
+    Open a blank tab if the debug Chrome has no pages.
+
+    On macOS, closing every window leaves Chrome running with no tabs, and
+    Playwright's connect_over_cdp then fails with "Browser context management
+    is not supported".
+    """
+    try:
+        with urllib.request.urlopen(f"{CDP_URL}/json/list", timeout=2) as resp:
+            targets = json.load(resp)
+        if any(t.get("type") == "page" for t in targets):
+            return
+        req = urllib.request.Request(f"{CDP_URL}/json/new?about:blank", method="PUT")
+        urllib.request.urlopen(req, timeout=5).close()
+    except Exception as e:
+        print(f"Could not ensure a Chrome tab is open: {e}")
+
+
 def connect_browser(playwright, site_name="the website"):
     """
     Connect to Chrome via Chrome DevTools Protocol.
@@ -957,6 +977,7 @@ def connect_browser(playwright, site_name="the website"):
     """
     if not is_cdp_open():
         start_debug_chrome(site_name)
+    ensure_cdp_page()
     try:
         browser = playwright.chromium.connect_over_cdp(CDP_URL)
     except Exception as e:
