@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Optional
 from bson import ObjectId
 import json
+import re
 
 # Add src/ to path so package imports work when run as a script
 _SRC_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -196,6 +197,10 @@ SIDE_STATUSES = (
     "too_many_questions", "repost", "duplicate",
 )
 
+# Default Tracker view: Not Applied plus application progress. Side statuses
+# stay hidden until their own chip (or All) is picked.
+ACTIVE_STATUS_FILTER = "active"
+
 # Tracker chips for application progress (derived from timeline / applied_at).
 PROGRESS_STAGES = APPLIED_STATUSES
 INTERVIEW_TIMELINE_STEPS = (
@@ -245,6 +250,55 @@ UNMATCHED_PAGE_SIZE = 20
 # List payload omits full JD text (often multi-KB per job). Lazy-load via
 # GET /api/jobs/<id>/description when the user expands "Original description".
 JOBS_LIST_PROJECTION = {"description": 0}
+
+# Tracker country, derived from the free-text location (no stored field).
+# Checked in order; anything that matches none of them is Germany, since the
+# scrapers search Germany and bare German city names carry no country.
+COUNTRY_PATTERNS = (
+    ("netherlands", r"netherlands|nederland|holland|amsterdam|rotterdam|utrecht"
+                    r"|eindhoven|the hague|den haag|delft|leiden|groningen|geleen"
+                    r"|haarlem|amstelveen|hoofddorp|almere|tilburg|breda|nijmegen"
+                    r"|arnhem|maastricht|zwolle|enschede"),
+    ("germany", r"germany|deutschland"),
+    ("other", r"sweden|switzerland|austria|france|spain|united kingdom|\buk\b"
+              r"|poland|denmark|belgium|ireland|portugal|italy|czech|norway|finland"),
+    ("remote", r"^\s*(fully\s+)?(remote|european union|european economic area|emea|europe|eu)\b"),
+)
+COUNTRY_LABELS = {
+    "germany": "Germany",
+    "netherlands": "Netherlands",
+    "remote": "Remote / EU",
+    "other": "Other",
+}
+
+
+def job_country(location) -> str:
+    """Country key for a Tracker card location (see COUNTRY_PATTERNS)."""
+    text = str(location or "")
+    for key, pattern in COUNTRY_PATTERNS:
+        if re.search(pattern, text, re.IGNORECASE):
+            return key
+    return "germany"
+
+
+def jobs_country_filter_query(country: Optional[str]) -> dict:
+    """Mongo clause matching job_country(location) == country."""
+    if not country or country not in COUNTRY_LABELS:
+        return {}
+
+    def no_match(pattern):
+        return {"location": {"$not": re.compile(pattern, re.IGNORECASE)}}
+
+    keys = [key for key, _ in COUNTRY_PATTERNS]
+    idx = keys.index(country)
+    pattern = COUNTRY_PATTERNS[idx][1]
+    clauses = [no_match(p) for _, p in COUNTRY_PATTERNS[:idx]]
+    hit = {"location": {"$regex": pattern, "$options": "i"}}
+    if country == "germany":
+        # Germany is also the fallback for locations no pattern matches.
+        hit = {"$or": [hit, {"$and": [no_match(p) for _, p in COUNTRY_PATTERNS[idx + 1:]]}]}
+    clauses.append(hit)
+    return {"$and": clauses}
 FETCH_DETAILS_BATCH_MAX = 80
 
 # Ensure indexes once at import (Flask reloader may import twice; ensure_indexes is idempotent)
@@ -315,6 +369,8 @@ def job_matches_status_filter(job: dict, status_filter: Optional[str]) -> bool:
     """Same rules as GET /api/jobs?status= and the filter-chip counts."""
     if not status_filter or status_filter == "all":
         return True
+    if status_filter == ACTIVE_STATUS_FILTER:
+        return (job.get("status") or "pending") not in SIDE_STATUSES
     if status_filter in PROGRESS_STAGES:
         return application_progress(job) == status_filter
     return (job.get("status") or "pending") == status_filter
@@ -330,6 +386,8 @@ def jobs_status_filter_query(status_filter: Optional[str]) -> dict:
     """
     if not status_filter or status_filter == "all":
         return {}
+    if status_filter == ACTIVE_STATUS_FILTER:
+        return {"status": {"$nin": list(SIDE_STATUSES)}}
     if status_filter not in PROGRESS_STAGES:
         return {"status": status_filter}
 
@@ -373,9 +431,11 @@ def chip_status_counts(jobs: list) -> dict:
     Progress chips use application_progress, so a side-status interview
     increments both Unsuitable and Interview.
     """
-    counts: dict = {}
+    counts: dict = {ACTIVE_STATUS_FILTER: 0}
     for job in jobs:
         status = job.get("status") or "pending"
+        if status not in SIDE_STATUSES:
+            counts[ACTIVE_STATUS_FILTER] += 1
         if status not in PROGRESS_STAGES:
             counts[status] = counts.get(status, 0) + 1
         progress = application_progress(job)
@@ -575,6 +635,7 @@ def _serialize(job: dict) -> dict:
     job["recommended_by"] = rec
     job["recommend_reason"] = str(job.get("recommend_reason") or "")
     job["details_missing"] = job_missing_details(job)
+    job["country"] = job_country(job.get("location"))
     job["can_fetch_details"] = can_fetch_details(job)
     raw_manual = job.get("manual_fields")
     if isinstance(raw_manual, list):
@@ -648,9 +709,10 @@ def timeouts():
 
 
 def _jobs_list_query_from_args(args) -> dict:
-    """Mongo query for Tracker list filters (status, source, search, dates, highlights)."""
+    """Mongo query for Tracker list filters (status, source, country, search, dates, highlights)."""
     status_filter = args.get("status")
     source_filter = args.get("source")
+    country_filter = args.get("country")
     search_query = (args.get("q") or "").strip()
     date_from = (args.get("date_from") or "").strip() or None
     date_to = (args.get("date_to") or "").strip() or None
@@ -658,6 +720,7 @@ def _jobs_list_query_from_args(args) -> dict:
     clauses = [jobs_status_filter_query(status_filter)]
     if source_filter and source_filter != "all":
         clauses.append({"source": source_filter})
+    clauses.append(jobs_country_filter_query(country_filter))
     if highlights_filter in ("1", "true", "yes"):
         clauses.append({"highlights.0": {"$exists": True}})
     if search_query:
@@ -2224,20 +2287,40 @@ def _missing_details_mongo_clause() -> dict:
     }
 
 
-def collect_fetch_detail_targets(query: dict, *, missing_only: bool = False, limit: int = FETCH_DETAILS_BATCH_MAX) -> list:
-    """Tracker rows that can Fetch details, matching the list filters, newest first."""
+def _missing_ai_mongo_clause() -> dict:
+    """Cards without an AI result yet (same rule as the card's Run AI hint)."""
+    return {
+        "$or": [
+            {"ai_pending": True},
+            {"match_score": {"$in": [None, ""]}},
+            {"summary": {"$in": [None, ""]}},
+        ]
+    }
+
+
+def collect_fetch_detail_targets(
+    query: dict,
+    *,
+    missing_only: bool = False,
+    missing_ai: bool = False,
+    limit: int = FETCH_DETAILS_BATCH_MAX,
+) -> list:
+    """Tracker rows that can Fetch details / Run AI, matching the list filters, newest first."""
     collection = get_collection("matched_jobs")
     missing_clause = _missing_details_mongo_clause()
-    fetch_clause = (
-        missing_clause
-        if missing_only
-        else {
-            "$or": [
-                {"recommended_by": {"$in": list(RECOMMENDED_BY_AGENTS)}},
-                missing_clause,
-            ]
-        }
-    )
+    if missing_ai:
+        fetch_clause = _missing_ai_mongo_clause()
+    else:
+        fetch_clause = (
+            missing_clause
+            if missing_only
+            else {
+                "$or": [
+                    {"recommended_by": {"$in": list(RECOMMENDED_BY_AGENTS)}},
+                    missing_clause,
+                ]
+            }
+        )
     full_query = combine_job_list_query([query, fetch_clause])
     cap = max(1, min(int(limit or FETCH_DETAILS_BATCH_MAX), FETCH_DETAILS_BATCH_MAX))
     docs = list(
@@ -2406,10 +2489,12 @@ def api_fetch_details_ids():
 
     ?missing=1 limits to link-only / empty-JD stubs (including jobs
     logged before recommended_by existed). Used by Select missing details.
+    ?missing_ai=1 limits to cards with no AI result yet (Select missing AI result).
     """
     missing = (request.args.get("missing") or "").strip().lower() in ("1", "true", "yes")
+    missing_ai = (request.args.get("missing_ai") or "").strip().lower() in ("1", "true", "yes")
     query = _jobs_list_query_from_args(request.args)
-    targets = collect_fetch_detail_targets(query, missing_only=missing)
+    targets = collect_fetch_detail_targets(query, missing_only=missing, missing_ai=missing_ai)
     return jsonify({
         "ids": [t["id"] for t in targets],
         "jobs": targets,

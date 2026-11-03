@@ -24,9 +24,13 @@ with patch.object(db_mongo, "ensure_indexes"):
         application_progress,
         chip_status_counts,
         combine_job_list_query,
+        job_country,
         job_matches_status_filter,
+        jobs_country_filter_query,
         jobs_status_filter_query,
     )
+
+HTML = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
 
 APPLIED_AT = datetime(2026, 3, 10, 14, 30)
 INTERVIEW_AT = datetime(2026, 4, 2, 11, 0)
@@ -154,6 +158,14 @@ class StatusFilterMatchTests(unittest.TestCase):
         self.assertFalse(job_matches_status_filter(job, "interview"))
         self.assertFalse(job_matches_status_filter(job, "applied"))
 
+    def test_active_hides_side_statuses(self):
+        self.assertTrue(job_matches_status_filter({"status": "pending"}, "active"))
+        self.assertTrue(job_matches_status_filter(_job(status="applied"), "active"))
+        self.assertTrue(job_matches_status_filter(_job(status="rejected"), "active"))
+        self.assertTrue(job_matches_status_filter({}, "active"))
+        for side in SIDE_STATUSES:
+            self.assertFalse(job_matches_status_filter(_job(status=side), "active"))
+
 
 class StatusFilterQueryTests(unittest.TestCase):
     def test_interview_query_is_not_status_equals_only(self):
@@ -182,6 +194,10 @@ class StatusFilterQueryTests(unittest.TestCase):
         self.assertEqual(jobs_status_filter_query("closed"), {"status": "closed"})
         self.assertEqual(jobs_status_filter_query("pending"), {"status": "pending"})
         self.assertEqual(jobs_status_filter_query("all"), {})
+        self.assertEqual(
+            jobs_status_filter_query("active"),
+            {"status": {"$nin": list(SIDE_STATUSES)}},
+        )
         self.assertEqual(jobs_status_filter_query(None), {})
 
     def test_search_and_progress_filter_combine_with_and(self):
@@ -217,7 +233,37 @@ class ChipCountTests(unittest.TestCase):
         self.assertEqual(counts.get("unsuitable"), 2)
         self.assertEqual(counts.get("applied"), 1)
         self.assertEqual(counts.get("pending"), 1)
+        self.assertEqual(counts.get("active"), 3)
         self.assertNotIn("all", counts)
+
+
+class CountryTests(unittest.TestCase):
+    def test_job_country_from_location(self):
+        self.assertEqual(job_country("Amsterdam, Netherlands (hybrid)"), "netherlands")
+        self.assertEqual(job_country("Near Utrecht"), "netherlands")
+        self.assertEqual(job_country("Berlin, Germany (Hybrid)"), "germany")
+        self.assertEqual(job_country("Remote (Germany)"), "germany")
+        self.assertEqual(job_country("Leipzig"), "germany")
+        self.assertEqual(job_country(""), "germany")
+        self.assertEqual(job_country(None), "germany")
+        self.assertEqual(job_country("European Union (Remote)"), "remote")
+        self.assertEqual(job_country("remote"), "remote")
+        self.assertEqual(job_country("Sweden"), "other")
+
+    def test_country_query_unknown_is_no_filter(self):
+        self.assertEqual(jobs_country_filter_query(None), {})
+        self.assertEqual(jobs_country_filter_query("all"), {})
+        self.assertEqual(jobs_country_filter_query("mars"), {})
+
+    def test_country_query_netherlands_matches_location(self):
+        query = jobs_country_filter_query("netherlands")
+        self.assertEqual(query["$and"][-1]["location"]["$options"], "i")
+        self.assertIn("amsterdam", query["$and"][-1]["location"]["$regex"])
+
+    def test_default_view_is_active(self):
+        self.assertIn("let currentStatusFilter = 'active';", HTML)
+        self.assertIn('id="countryFilter"', HTML)
+        self.assertIn("params.set('country', country)", HTML)
 
 
 if __name__ == "__main__":

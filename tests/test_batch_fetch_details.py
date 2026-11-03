@@ -292,7 +292,13 @@ class TrackerUiContractTests(unittest.TestCase):
 
     def test_select_missing_uses_current_filters(self):
         self.assertIn("currentJobListParams()", HTML)
-        self.assertIn("params.set('missing', '1')", HTML)
+        self.assertIn("params.set(param, '1')", HTML)
+        self.assertIn("param: 'missing',", HTML)
+
+    def test_select_missing_ai_button(self):
+        self.assertIn('onclick="selectMissingAi()"', HTML)
+        self.assertIn("param: 'missing_ai',", HTML)
+        self.assertNotIn(">AI pending</span>", HTML)
 
 
 if __name__ == "__main__":

@@ -148,7 +148,7 @@ class CheckGatesUiTests(unittest.TestCase):
         self.assertIn("AI scoring was not run", HTML)
 
     def test_scored_card_checkbox_is_delete_only(self):
-        self.assertIn("const fetchable = canFetch && aiHint;", HTML)
+        self.assertIn("const fetchable = aiHint;", HTML)
         self.assertIn('data-fetchable="${fetchable ? \'1\' : \'0\'}"', HTML)
         self.assertIn(".card-select[data-fetchable=\"1\"]", HTML)
 

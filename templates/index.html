@@ -105,6 +105,7 @@
       width: 8px; height: 8px; border-radius: 50%;
     }
     .dot-all        { background: var(--accent); }
+    .dot-active     { background: linear-gradient(135deg, var(--pending), var(--applied)); }
     .dot-pending    { background: var(--pending); }
     .dot-applied    { background: var(--applied); }
     .dot-rejected   { background: var(--rejected); }
@@ -1445,10 +1446,20 @@
       color: #fbbf24;
       border: 1px solid #f59e0b55;
     }
-    .meta-pill.ai-pending-pill {
-      background: #422006;
-      color: #fbbf24;
-      border: 1px solid #f59e0b44;
+    .country-pill {
+      font-size: .68rem;
+      font-weight: 600;
+      border-radius: 6px;
+      padding: 2px 7px;
+      white-space: nowrap;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+    .country-pill.country-netherlands {
+      background: #431407;
+      color: #fdba74;
+      border-color: #f9731655;
     }
     .meta-pill.recommended-pill {
       background: #1e1b4b;
@@ -2556,7 +2567,11 @@
 
 <!-- ── Stats bar ───────────────────────────────────────────────────── -->
 <div class="stats-bar" id="statsBar">
-  <div class="stat-chip active" data-status="all"   onclick="setStatusFilter('all')">
+  <div class="stat-chip active" data-status="active" onclick="setStatusFilter('active')" title="Not Applied, Applied, Interview, Offer and Rejected — hides Unsuitable, Closed, Repost and other side statuses">
+    <span class="dot dot-active"></span>
+    <span>Active <b id="cnt-active">–</b></span>
+  </div>
+  <div class="stat-chip" data-status="all"   onclick="setStatusFilter('all')">
     <span class="dot dot-all"></span>
     <span>All <b id="cnt-all">–</b></span>
   </div>
@@ -2618,6 +2633,13 @@
     <option value="linkedin">LinkedIn</option>
     <option value="indeed">Indeed</option>
   </select>
+  <select id="countryFilter" onchange="currentPage = 1; loadJobs()">
+    <option value="all">All Countries</option>
+    <option value="germany">Germany</option>
+    <option value="netherlands">Netherlands</option>
+    <option value="remote">Remote / EU</option>
+    <option value="other">Other</option>
+  </select>
   <select id="timePreset" onchange="onTimePresetChange()">
     <option value="all">All Time</option>
     <option value="today">Today</option>
@@ -2645,6 +2667,7 @@
   <button type="button" class="batch-fetch-btn select-mode-only" id="selectAllVisibleBtn" onclick="selectAllVisible()" title="Select every card on this page (for Delete selected)">Select all on page</button>
   <button type="button" class="batch-fetch-btn" id="selectVisibleBtn" onclick="selectVisibleRecommended()" title="Select missing-detail / fetchable cards on this page">Select visible</button>
   <button type="button" class="batch-fetch-btn" id="selectMissingBtn" onclick="selectMissingDetails()" title="Select jobs that still need details (all pages, current filters — including Applied)">Select missing details</button>
+  <button type="button" class="batch-fetch-btn" id="selectMissingAiBtn" onclick="selectMissingAi()" title="Select jobs with no AI result yet (all pages, current filters), then Run AI for selected">Select missing AI result</button>
   <button type="button" class="batch-fetch-btn" id="clearFetchSelectBtn" onclick="clearFetchSelection()">Clear selection</button>
   <button type="button" class="btn-fetch-details" id="fetchSelectedBtn" onclick="fetchDetailsForSelected()" disabled title="Scrape title, company, location, and description only (no AI)">📥 Fetch details for selected</button>
   <button type="button" class="btn-run-ai" id="runAiSelectedBtn" onclick="runAiForSelected()" disabled title="Scrape details if missing, then run AI matching">🤖 Run AI for selected</button>
@@ -2671,7 +2694,7 @@
 
 <script>
 /* ── State ───────────────────────────────────────────────────────── */
-let currentStatusFilter = 'all';
+let currentStatusFilter = 'active';
 let highlightsOnly = false;
 let debounceTimer = null;
 let dateDebounceTimer = null;
@@ -2701,6 +2724,12 @@ const STATUS_LABEL = {
   too_many_questions: 'Skipped · Long Form',
   repost:     'Repost',
   duplicate:  'Duplicate',
+};
+const COUNTRY_LABEL = {
+  germany:     'Germany',
+  netherlands: 'Netherlands',
+  remote:      'Remote / EU',
+  other:       'Other',
 };
 const SIDE_STATUSES = ['unsuitable', 'closed', 'closed_no_reply', 'prev_rejected', 'too_many_questions', 'repost', 'duplicate'];
 const PROGRESS_STAGES = ['applied', 'rejected', 'interview', 'offer'];
@@ -2788,7 +2817,7 @@ async function loadStats() {
       const el = document.getElementById(`cnt-${status}`);
       if (el) el.textContent = cnt;
     }
-    ['pending','applied','rejected','interview','offer','unsuitable','closed','closed_no_reply','prev_rejected','too_many_questions','repost','duplicate'].forEach(s => {
+    ['active','pending','applied','rejected','interview','offer','unsuitable','closed','closed_no_reply','prev_rejected','too_many_questions','repost','duplicate'].forEach(s => {
       if (!data.by_status[s]) {
         const el = document.getElementById(`cnt-${s}`);
         if (el) el.textContent = 0;
@@ -3565,6 +3594,12 @@ function highlightBadgesHtml(highlights) {
 
 /* source "manual" just means "not LinkedIn / Indeed"; for agent pushes
    show the job site's domain instead so it does not read as Log Job. */
+function countryPillHtml(job) {
+  const key = String(job.country || '');
+  if (!COUNTRY_LABEL[key]) return '';
+  return `<span class="country-pill country-${escHtml(key)}">${escHtml(COUNTRY_LABEL[key])}</span>`;
+}
+
 function sourcePillHtml(job) {
   const source = String(job.source || '');
   if (source === 'manual' && RECOMMENDED_BY_LABEL[String(job.recommended_by || '').toLowerCase()]) {
@@ -3640,7 +3675,7 @@ function renderCard(job) {
   const canFetch = canFetchDetails(job);
   // Every card can be selected for Delete selected; batch Fetch / Run AI
   // only take cards where AI has not run yet (Re-run AI stays per card).
-  const fetchable = canFetch && aiHint;
+  const fetchable = aiHint;
   const isSelected = selectedFetchIds.has(job._id) || selectedDeleteOnlyIds.has(job._id);
   const fetchBtn = canFetch ? `
         <button type="button" class="btn-fetch-details" data-id="${job._id}"
@@ -3674,10 +3709,10 @@ function renderCard(job) {
         <div class="row-company">${escHtml(job.company || '')}</div>
       </div>
       <div class="row-meta">
+        ${countryPillHtml(job)}
         ${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">📍 ${escHtml(job.location)}</span>` : ''}
         ${sourcePillHtml(job)}
         ${recBadge}
-        ${aiHint ? '<span class="meta-pill ai-pending-pill">AI pending</span>' : ''}
         <span class="row-highlights" data-row-highlights>${highlightBadges}</span>
         ${statusPillHtml(status, job.application_timeline)}
         <div class="score-badge ${scoreCls(hasAiScore(job) ? job.match_score : null)}">${score}</div>
@@ -3716,7 +3751,7 @@ function renderCard(job) {
         <span class="body-highlights" data-body-highlights>${highlightBadges}</span>
         ${sourcePillHtml(job)}
         ${recBadge}
-        ${aiHint ? '<span class="meta-pill ai-pending-pill">AI pending</span>' : ''}
+        ${countryPillHtml(job)}
         ${job.matched_at ? `<span class="meta-pill">📅 ${job.matched_at}</span>` : ''}
         ${job.applicants ? `<span class="meta-pill">👥 ${escHtml(job.applicants)}</span>` : ''}
       </div>
@@ -3879,6 +3914,7 @@ function progressStage(status, timeline, appliedAt) {
 
 function jobMatchesStatusFilter(job, filter) {
   if (!filter || filter === 'all') return true;
+  if (filter === 'active') return !SIDE_STATUSES.includes(job.status || 'pending');
   if (PROGRESS_STAGES.includes(filter)) {
     return progressStage(job.status, job.application_timeline, job.applied_at) === filter;
   }
@@ -3993,7 +4029,9 @@ function currentJobListParams() {
   const search = document.getElementById('searchInput').value.trim();
   const source = document.getElementById('sourceFilter').value;
   const dates  = currentDateRange();
+  const country = document.getElementById('countryFilter').value;
   if (currentStatusFilter !== 'all') params.set('status', currentStatusFilter);
+  if (country !== 'all') params.set('country', country);
   if (highlightsOnly) params.set('highlights', 'true');
   if (source !== 'all') params.set('source', source);
   if (search) params.set('q', search);
@@ -4458,8 +4496,27 @@ function selectVisibleRecommended() {
 }
 
 async function selectMissingDetails() {
+  await selectMissingAcrossPages({
+    cardSelector: '.card-select[data-missing="1"][data-fetchable="1"]',
+    param: 'missing',
+    noun: 'missing-detail',
+    icon: '📥',
+  });
+}
+
+async function selectMissingAi() {
+  await selectMissingAcrossPages({
+    cardSelector: '.card-select[data-fetchable="1"]',
+    param: 'missing_ai',
+    noun: 'missing-AI',
+    icon: '🤖',
+  });
+}
+
+/** Select matching cards on this page, then on every page via /api/fetch-details/ids. */
+async function selectMissingAcrossPages({ cardSelector, param, noun, icon }) {
   setSelectMode(true);
-  document.querySelectorAll('.card-select[data-missing="1"][data-fetchable="1"]').forEach(input => {
+  document.querySelectorAll(cardSelector).forEach(input => {
     input.checked = true;
     selectedFetchIds.add(input.dataset.id);
     const card = document.getElementById(`card-${input.dataset.id}`);
@@ -4468,11 +4525,11 @@ async function selectMissingDetails() {
   updateBatchFetchUI();
   try {
     const params = currentJobListParams();
-    params.set('missing', '1');
+    params.set(param, '1');
     const res = await fetch('/api/fetch-details/ids?' + params.toString());
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      showToast('❌ ' + (data.error || 'Could not list missing-detail jobs'), 'err');
+      showToast('❌ ' + (data.error || `Could not list ${noun} jobs`), 'err');
       return;
     }
     (data.ids || []).forEach(id => selectedFetchIds.add(id));
@@ -4486,10 +4543,10 @@ async function selectMissingDetails() {
     updateBatchFetchUI();
     const extra = selectedFetchIds.size - document.querySelectorAll('.card-select:checked').length;
     if (extra > 0) {
-      showToast(`📥 ${selectedFetchIds.size} missing-detail job(s) selected (${extra} on other pages)`);
+      showToast(`${icon} ${selectedFetchIds.size} ${noun} job(s) selected (${extra} on other pages)`);
     }
   } catch (err) {
-    showToast('❌ ' + (err.message || 'Could not list missing-detail jobs'), 'err');
+    showToast('❌ ' + (err.message || `Could not list ${noun} jobs`), 'err');
   }
 }
 
