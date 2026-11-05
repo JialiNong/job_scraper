@@ -26,7 +26,7 @@ All of the following must be **English only**:
 
 Chat replies to the user may follow the user’s language. Repo artifacts stay English.
 
-When translating or rewriting docs, keep technical identifiers unchanged (`run_task.sh`, `german_gate`, collection names, env vars).
+When translating or rewriting docs, keep technical identifiers unchanged (`run_jobs.sh`, `german_gate`, collection names, env vars).
 
 ## Keep architecture in sync (hard rule)
 
@@ -98,24 +98,18 @@ One-line funnel (must stay true in architecture + code):
 
 Location / German company / “nice to have German” / plus / German-OR-English / basic German / “businesses speak German” in a since-clause must **not** fail the match gate.
 
-### Shared LinkedIn card path
-
-`linkedin_quick_scraper` reuses `linkedin_scraper.scrape_jobs()`. Title + language filters must stay shared unless you intentionally split them and document that in architecture.
-
 ## Entry points
 
 | Entry | Role |
 |-------|------|
-| `run_task.sh` / Telegram `/jobs` | Full: Indeed + LinkedIn (24h) parallel lanes (scrape → match that source + Telegram ping) → unmatched desc cleanup → Telegram match digest |
-| `run_quick.sh` / Telegram `/quick_jobs` | Light: Indeed 24h (2 pages/keyword) + LinkedIn 12h quick URL (3 pages) parallel lanes (scrape → match that source + Telegram ping) → Telegram match digest |
-| `run_linkedin.sh` / Telegram `/linkedin [hours]` | LinkedIn-only: keyword loop + AI match; `--hours N` sets `f_TPR` (default 24; number only, e.g. `/linkedin 4`). Pages: 3 if hours ≥ 24, 2 if hours < 24 (`linkedin_default_max_pages`); `-p`/`-j` override |
-| `start_ui.sh` | Flask tracker UI (default port 5050) |
-| `src/bot/telegram_bot.py` | `/start` `/test` `/jobs` `/quick_jobs` `/linkedin` `/matches` `/indeed_ok` |
-| `src/core/match_digest.py` | Shared “today’s matches” Telegram digest (pipeline + `/matches`) |
+| `scripts/run_jobs.sh` / Telegram `/jobs [days] [linkedin_hours] [pages]` | Indeed (`--days`, 1/3/7/14) + LinkedIn (`--hours`, default days × 24) parallel lanes (scrape → match that source + Telegram ping) → Telegram match digest. `--pages` sets pages/keyword on both (default `FULL_MAX_PAGES`). No DB cleanup step. |
+| `./scripts/start_ui.sh` | Flask tracker UI (default port 5050) |
+| `src/bot/telegram_bot.py` | `/start` `/test` `/jobs` `/indeed_ok` (only `/jobs` starts scrapes) |
+| `src/core/match_digest.py` | Shared “today’s matches” Telegram digest (pushed by `run_jobs.sh`) |
 | `/timeouts` | Review title-qualified scrape timeouts; add to Tracker as pending |
 | Individual `src/scrapers/*.py`, `src/matching/ai_matcher.py` | Debug / partial runs |
 
-When you change `run_task.sh` / `run_quick.sh` / `run_linkedin.sh`, check Telegram handlers still point at the right scripts and still describe timing/behavior correctly.
+There is no cron / launchd schedule in this project; do not add one. When you change `scripts/run_jobs.sh`, check the Telegram `/jobs` handler still passes the right flags and describes behavior correctly.
 
 ## Code conventions
 
@@ -133,8 +127,8 @@ When you change `run_task.sh` / `run_quick.sh` / `run_linkedin.sh`, check Telegr
 | Search keywords | `DEFAULT_KEYWORDS` in `src/core/config.py` |
 | Title blacklist | `TITLE_EXCLUDE_KEYWORDS` in `src/core/config.py` |
 | Tracker company blocklist | `MATCH_BLOCKED_COMPANIES` in `src/core/config.py` (Instaffo / Jobgether) |
-| Indeed / LinkedIn / Quick URLs & selectors | `*_CONFIG` in `src/core/config.py` |
-| LinkedIn ad-hoc time window | `run_linkedin.sh --hours N` / `/linkedin N` / `linkedin_scraper.py --hours N` (default 24; `f_TPR=rN*3600`; hours < 24 → 2 pages/keyword) |
+| Indeed / LinkedIn URLs & selectors | `*_CONFIG` in `src/core/config.py` |
+| Scrape window / pages | `/jobs [days] [linkedin_hours] [pages]` → `run_jobs.sh --days --hours --pages`; default pages `FULL_MAX_PAGES` in `src/core/config.py` |
 | Match threshold / model | `.env` (`MATCH_THRESHOLD`, `AI_MODEL`, `OPENAI_API_KEY`) |
 | Telegram destination | `.env` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_ID`, `TELEGRAM_CHAT_ID`, `TELEGRAM_MESSAGE_THREAD_ID`) |
 | Scoring policy | `docs/matching_criteria.md` |

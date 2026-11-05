@@ -15,20 +15,14 @@ DEFAULT_KEYWORDS = [
 ]
 
 # ===== Scrape budgets =====
-# Full run (run_task.sh / Telegram /jobs): last 24 hours.
+# scripts/run_jobs.sh / Telegram /jobs: default last 24 hours.
 # Both platforms walk every DEFAULT_KEYWORDS entry.
+# FULL_MAX_PAGES is the default pages per keyword (/jobs ... [pages] overrides it).
 FULL_MAX_PAGES = 3
 INDEED_JOBS_PER_PAGE = 15  # Indeed SERP page size; also the start= step
 LINKEDIN_JOBS_PER_PAGE = 30
 
-# Light run (run_quick.sh / Telegram /quick_jobs).
-# Indeed's date filter cannot go below 1 day, so the light pass reuses the
-# same 24h search and only walks fewer pages per keyword.
-# LinkedIn does not loop keywords — it uses LINKEDIN_QUICK_CONFIG (one 12h URL).
-LIGHT_INDEED_MAX_PAGES = 2
-LIGHT_LINKEDIN_MAX_PAGES = 3
-
-# Ad-hoc LinkedIn (run_linkedin.sh / /linkedin [hours] / --hours N):
+# LinkedIn --hours N (CLI runs without -p):
 # f_TPR still maps hours → seconds; only the default page budget changes.
 # Window strictly under 24h → fewer pages per keyword (less volume).
 # Explicit -p / --max-pages always wins.
@@ -148,8 +142,8 @@ MATCH_BLOCKED_COMPANIES = [
     "instaffo",
     "jobgether",
     "Alignerr",
+    "Hyra"
 ]
-
 
 # ===== Indeed Platform Configuration =====
 INDEED_CONFIG = {
@@ -181,32 +175,5 @@ LINKEDIN_CONFIG = {
     "selectors": {
         "job_card": ".scaffold-layout__list-item",
         "job_link": "a.job-card-container__link",
-    }
-}
-
-
-# ===== LinkedIn light-run search (12-hour window) =====
-# Used by the morning light run. One OR query instead of the keyword loop,
-# because the 12h filter lives on this URL (f_TPR=r43200).
-LINKEDIN_QUICK_CONFIG = {
-    "source": "linkedin",
-    # Direct search URL — keywords encode an OR query across all target roles.
-    # f_TPR=r43200 → posted within the last 43 200 seconds (12 hours).
-    "url": (
-        "https://www.linkedin.com/jobs/search-results/"
-        "?keywords=full-time%20Full%20Stack%20Engineer%20or%20Frontend%20Developer"
-        "%20or%20Product%20Engineer%20or%20Generative%20AI%20Engineer"
-        "%2C%20on-site%20or%20hybrid%20or%20remote"
-        "&geoId=101282230"
-        "&f_TPR=r43200"
-        "&origin=JOB_SEARCH_PAGE_JOB_FILTER"
-        "&refresh=true"
-    ),
-    "time_window_hours": 12,
-
-    # SDUI search-results cards. componentkey is job-card-component-ref-<job id>.
-    "selectors": {
-        "job_card": '[componentkey^="job-card-component-ref-"][role="button"]',
-        "next_page": '[data-testid="pagination-controls-next-button-visible"]',
     }
 }

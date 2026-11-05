@@ -2,8 +2,7 @@
 Build and send today's matched-job digest to Telegram.
 
 Used by:
-  - telegram_bot.py (/matches, and as a library for formatting)
-  - run_task.sh / run_quick.sh (push after the pipeline finishes)
+  - scripts/run_jobs.sh (push after both lanes finish)
 """
 from __future__ import annotations
 

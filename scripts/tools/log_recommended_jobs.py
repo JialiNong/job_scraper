@@ -24,7 +24,7 @@ import os
 import sys
 
 # Allow imports from src/ when run from project root
-_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src")
 sys.path.insert(0, _SRC)
 
 from dotenv import load_dotenv

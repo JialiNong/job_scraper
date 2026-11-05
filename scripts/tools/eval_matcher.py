@@ -6,11 +6,11 @@ Reuses the same German / stack / AI-ML gates + AI matcher as production, but NEV
 writes to MongoDB (no mark_job_as_matched / matched_jobs).
 
 Usage:
-  python3 scripts/eval_matcher.py                 # run all cases
-  python3 scripts/eval_matcher.py -l 3            # smoke test
-  python3 scripts/eval_matcher.py --ids german-mandatory-junior-swe,devops-title-should-fail
-  python3 scripts/eval_matcher.py --save-baseline # freeze this run as "old matcher"
-  python3 scripts/eval_matcher.py --baseline evals/baselines/latest.json
+  python3 scripts/tools/eval_matcher.py                 # run all cases
+  python3 scripts/tools/eval_matcher.py -l 3            # smoke test
+  python3 scripts/tools/eval_matcher.py --ids german-mandatory-junior-swe,devops-title-should-fail
+  python3 scripts/tools/eval_matcher.py --save-baseline # freeze this run as "old matcher"
+  python3 scripts/tools/eval_matcher.py --baseline evals/baselines/latest.json
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ import sys
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 _SRC = os.path.join(_ROOT, "src")
 if _SRC not in sys.path:
     sys.path.insert(0, _SRC)

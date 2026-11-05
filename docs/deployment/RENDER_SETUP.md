@@ -9,7 +9,7 @@ When deploying to Render, you must configure these environment variables in the 
 | Variable Name | Example Value | Where to Get It | Notes |
 |--------------|---------------|-----------------|-------|
 | `TRACKER_USERNAME` | `carrie` | Choose any username | Your login username |
-| `TRACKER_PASSWORD_HASH` | `$2b$12$abc...xyz` | Run `python3 scripts/generate_password_hash.py` locally | Never use plain text password! |
+| `TRACKER_PASSWORD_HASH` | `$2b$12$abc...xyz` | Run `python3 scripts/tools/generate_password_hash.py` locally | Never use plain text password! |
 | `MONGO_URI` | `mongodb+srv://user:pass@cluster.mongodb.net/job_scraper` | MongoDB Atlas → Connect → Drivers | Full connection string with credentials |
 
 ### Auto-Generated (No Action Needed)
@@ -41,7 +41,7 @@ When deploying to Render, you must configure these environment variables in the 
 
 ## Deployment Checklist
 
-- [ ] Generate password hash locally: `python3 scripts/generate_password_hash.py`
+- [ ] Generate password hash locally: `python3 scripts/tools/generate_password_hash.py`
 - [ ] Get MongoDB connection string from Atlas dashboard
 - [ ] Allow `0.0.0.0/0` in MongoDB Atlas Network Access
 - [ ] Push code to GitHub
@@ -107,7 +107,7 @@ When deploying to Render, you must configure these environment variables in the 
 **Solutions:**
 - ✅ Verify `TRACKER_PASSWORD_HASH` is the bcrypt hash (starts with `$2b$12$`)
 - ✅ Check `TRACKER_USERNAME` matches exactly (case-sensitive)
-- ✅ Regenerate hash: `python3 scripts/generate_password_hash.py`
+- ✅ Regenerate hash: `python3 scripts/tools/generate_password_hash.py`
 - ✅ Copy entire hash including `$2b$12$` prefix
 
 ### 3. Cold Starts (Free Plan)

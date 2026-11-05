@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Generate bcrypt password hash for the job tracker web UI.
-Usage: python scripts/generate_password_hash.py
+Usage: python scripts/tools/generate_password_hash.py
 """
 import sys
 import getpass

@@ -141,7 +141,7 @@ Similar to Railway:
 
 ```bash
 # Terminal 1: Start web UI
-./start_ui.sh
+./scripts/start_ui.sh
 
 # Terminal 2: Create public tunnel
 ngrok http 5050
@@ -167,7 +167,7 @@ FLASK_SECRET_KEY=<random_hex_string>
 
 ### Generate Password Hash
 ```bash
-python3 scripts/generate_password_hash.py
+python3 scripts/tools/generate_password_hash.py
 ```
 
 ### Generate Secret Key
@@ -186,7 +186,7 @@ python3 -c "import secrets; print(secrets.token_hex(32))"
 ## Data Flow
 
 1. **Scraping** (Local Mac):
-   - LaunchD triggers `run_task.sh` / `run_quick.sh`
+   - Telegram `/jobs` triggers `scripts/run_jobs.sh`
    - Chrome + Playwright scrape Indeed/LinkedIn
    - Save jobs to MongoDB Atlas
    - AI matcher scores jobs

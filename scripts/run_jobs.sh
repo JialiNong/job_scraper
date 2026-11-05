@@ -1,16 +1,18 @@
 #!/bin/bash
-# run_task.sh - Daily job scraping and AI matching pipeline
+# run_jobs.sh - Job scraping and AI matching pipeline (Telegram /jobs)
 # Two parallel lanes (Indeed / LinkedIn): scrape → match that source.
 # Job-card digest is sent only after both lanes finish.
 #
 # Usage:
-#   caffeinate -i ./run_task.sh                     # default: both last 24h
-#   caffeinate -i ./run_task.sh --days 7            # Indeed 7d, LinkedIn 168h
-#   caffeinate -i ./run_task.sh --days 3 --hours 120  # Indeed 3d, LinkedIn 120h
+#   caffeinate -i ./scripts/run_jobs.sh                          # default: both last 24h
+#   caffeinate -i ./scripts/run_jobs.sh --days 7                 # Indeed 7d, LinkedIn 168h
+#   caffeinate -i ./scripts/run_jobs.sh --days 3 --hours 120     # Indeed 3d, LinkedIn 120h
+#   caffeinate -i ./scripts/run_jobs.sh --days 3 --hours 72 --pages 2
 #
 # Options:
 #   --days N    Indeed posted-within days: 1, 3, 7 or 14 (default: config 1)
 #   --hours N   LinkedIn posted-within hours (default: --days × 24, else config 24h)
+#   --pages N   Pages per keyword on both platforms (default: config FULL_MAX_PAGES)
 
 # Configuration
 PROJECT_DIR="/Users/carrienon/Desktop/code-project/job_scraper"
@@ -30,12 +32,15 @@ trap 'log "ERROR: Script failed at line $LINENO"' ERR
 
 DAYS=""
 HOURS=""
+PAGES=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --days)    DAYS="$2"; shift 2 ;;
         --days=*)  DAYS="${1#*=}"; shift ;;
         --hours)   HOURS="$2"; shift 2 ;;
         --hours=*) HOURS="${1#*=}"; shift ;;
+        --pages)   PAGES="$2"; shift 2 ;;
+        --pages=*) PAGES="${1#*=}"; shift ;;
         *)
             log "Unknown argument: $1"
             exit 1
@@ -57,6 +62,15 @@ fi
 if [ -n "$HOURS" ] && ! "$PYTHON" -c "h=float('$HOURS'); raise SystemExit(0 if h > 0 else 1)" 2>/dev/null; then
     log "Invalid --hours value: $HOURS (need a positive number)"
     exit 1
+fi
+
+if [ -n "$PAGES" ]; then
+    case "$PAGES" in
+        ''|*[!0-9]*|0)
+            log "Invalid --pages value: $PAGES (need a positive whole number)"
+            exit 1
+            ;;
+    esac
 fi
 
 INDEED_WINDOW_ARGS=()
@@ -88,7 +102,7 @@ trap release_pipeline_lock EXIT
 
 log "=== Job Scraping Pipeline Started ==="
 
-# Step 1: Launch Chrome in remote debug mode (background).
+# Launch Chrome in remote debug mode (background).
 # Reuse an existing debug Chrome so a second run does not kill the first
 # profile and close the tabs the scrapers are using.
 CHROME_PID=""
@@ -120,17 +134,17 @@ if ! lsof -nP -iTCP:9222 -sTCP:LISTEN >/dev/null 2>&1; then
 fi
 
 cd "$PROJECT_DIR" || exit 1
-# shellcheck source=scripts/pipeline_common.sh
-source "$PROJECT_DIR/scripts/pipeline_common.sh"
+# shellcheck source=lib/pipeline_common.sh
+source "$PROJECT_DIR/scripts/lib/pipeline_common.sh"
 
 # Two parallel lanes: scrape then match that source as soon as it finishes.
 # Page and card budgets live in src/core/config.py.
-FULL_PAGES="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.config import FULL_MAX_PAGES; print(FULL_MAX_PAGES)")"
+FULL_PAGES="${PAGES:-$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.config import FULL_MAX_PAGES; print(FULL_MAX_PAGES)")}"
 INDEED_JOBS="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.config import INDEED_JOBS_PER_PAGE; print(INDEED_JOBS_PER_PAGE)")"
 LINKEDIN_JOBS="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.config import LINKEDIN_JOBS_PER_PAGE; print(LINKEDIN_JOBS_PER_PAGE)")"
 STAMP="$(date +%Y%m%d_%H%M%S)"
 
-log "Step 1/3: Full lanes — ${FULL_PAGES} pages/keyword, Indeed ${INDEED_JOBS}/page (${DAYS:-1}d), LinkedIn ${LINKEDIN_JOBS}/page (${HOURS:-24}h)"
+log "Step 1/2: Full lanes — ${FULL_PAGES} pages/keyword, Indeed ${INDEED_JOBS}/page (${DAYS:-1}d), LinkedIn ${LINKEDIN_JOBS}/page (${HOURS:-24}h)"
 run_source_lane "Indeed" "indeed" \
   "$LOG_DIR/indeed_${STAMP}.log" "$LOG_DIR/matcher_indeed_${STAMP}.log" \
   $PYTHON src/scrapers/indeed_scraper.py \
@@ -160,16 +174,6 @@ else
     MATCHER_EXIT=1
 fi
 
-# Clear JD text on unmatched jobs older than 14 days (keeps link + AI fields)
-log "Step 2/3: Clearing old unmatched job descriptions..."
-$PYTHON scripts/cleanup_unmatched_descriptions.py --execute --days 14 > "$LOG_DIR/cleanup_desc_$(date +%Y%m%d).log" 2>&1
-CLEANUP_EXIT=$?
-if [ $CLEANUP_EXIT -eq 0 ]; then
-    log "✅ Unmatched description cleanup completed"
-else
-    log "⚠️  WARNING: Unmatched description cleanup failed (exit code: $CLEANUP_EXIT)"
-fi
-
 # Close only the Chrome this run started. A reused debug window is left open.
 if [ -n "$CHROME_PID" ]; then
     log "Closing Chrome..."
@@ -182,7 +186,6 @@ log "Indeed scrape:   $([ "$INDEED_EXIT" -eq 0 ] && echo '✅' || echo '❌')"
 log "LinkedIn scrape: $([ "$LINKEDIN_EXIT" -eq 0 ] && echo '✅' || echo '❌')"
 log "Indeed match:    $([ "$INDEED_MATCH_EXIT" -eq 0 ] && echo '✅' || echo '❌')"
 log "LinkedIn match:  $([ "$LINKEDIN_MATCH_EXIT" -eq 0 ] && echo '✅' || echo '❌')"
-log "Desc Clean:      $([ $CLEANUP_EXIT -eq 0 ] && echo '✅' || echo '❌')"
 
 # Get today's stats from the database
 log "Fetching today's stats..."
@@ -208,7 +211,7 @@ MATCHED=$(echo "$STATS" | awk '{print $2}')
 log "Today: ${SCRAPED} jobs scraped, ${MATCHED} high-quality matches"
 
 # Push today's matched jobs to Telegram only after both lanes finish
-log "Step 3/3: Pushing today's matches to Telegram..."
+log "Step 2/2: Pushing today's matches to Telegram..."
 $PYTHON -c "
 import sys
 sys.path.insert(0, 'src')

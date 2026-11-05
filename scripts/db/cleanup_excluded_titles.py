@@ -15,7 +15,7 @@ import os
 import sys
 
 # Allow imports from src/ when run from project root
-_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src")
+_SRC = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "src")
 sys.path.insert(0, _SRC)
 
 from dotenv import load_dotenv
@@ -246,8 +246,8 @@ def main():
     if dry_run:
         print("\nNext steps:")
         print("  1. Review the list above")
-        print("  2. python3 scripts/cleanup_excluded_titles.py --execute")
-        print("  3. python3 scripts/cleanup_excluded_titles.py --execute --reset-ai")
+        print("  2. python3 scripts/db/cleanup_excluded_titles.py --execute")
+        print("  3. python3 scripts/db/cleanup_excluded_titles.py --execute --reset-ai")
         print("  4. python3 src/matching/ai_matcher.py -l 20   # smoke-test then full run")
 
 

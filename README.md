@@ -2,23 +2,23 @@
 
 Automatically scrapes job listings from Indeed and LinkedIn, uses AI to score each match, and notifies you daily.
 
-### Two-pipeline workflow
+### How it runs
 
-| Pipeline | Script | When to run | What it does |
-|---|---|---|---|
-| **Full scrape** | `run_task.sh` | ~6 PM daily | Indeed + LinkedIn (last 24 h), all keywords, AI matching |
-| **Light scrape** | `run_quick.sh` | ~11 AM daily | Indeed (24 h, 2 pages/keyword) + LinkedIn quick URL (12 h, 3 pages), then AI matching |
+Everything runs on demand from Telegram with one command — there is no scheduled job in this project:
 
-Run the full scrape every evening so the database is refreshed.  
-Run the light scrape every morning before your application session to capture the freshest listings.
+```
+/jobs [days] [linkedin_hours] [pages]
+```
+
+Indeed and LinkedIn are scraped in parallel; each source is AI-matched as soon as its scrape finishes, and today's match cards arrive once both are done.
 
 ## Features
 
-- **Multi-platform scraping** – Indeed and LinkedIn, runs sequentially
+- **Multi-platform scraping** – Indeed and LinkedIn, in parallel
 - **AI matching** – OpenAI scores each job 0–10 against your profile
 - **Smart deduplication** – already-analyzed jobs are skipped automatically
 - **Human-like behavior** – random delays to avoid detection
-- **Daily automation** – macOS LaunchD triggers it every morning
+- **Telegram control** – start a run with `/jobs` from your phone
 - **MongoDB storage** – all data persisted for querying
 
 ---
@@ -33,9 +33,8 @@ job_scraper/
 │   │   ├── db_mongo.py                # MongoDB operations
 │   │   └── scraper_utils.py           # Shared utilities
 │   ├── scrapers/                      # Job scrapers
-│   │   ├── indeed_scraper.py          # Indeed scraper (24-hour window)
-│   │   ├── linkedin_scraper.py        # LinkedIn scraper (24-hour window)
-│   │   ├── linkedin_quick_scraper.py  # LinkedIn quick scraper (12-hour window)
+│   │   ├── indeed_scraper.py          # Indeed scraper (--days window)
+│   │   ├── linkedin_scraper.py        # LinkedIn scraper (--hours window)
 │   │   └── manual_apply_scraper.py    # Manual job URL logger (default: Not Applied)
 │   ├── matching/
 │   │   └── ai_matcher.py              # AI matching engine
@@ -44,14 +43,21 @@ job_scraper/
 │   └── bot/
 │       └── telegram_bot.py            # Telegram bot
 ├── docs/
+│   ├── architecture.md                # How the system works (canonical flow doc)
 │   ├── user_profile.md                # Your resume — required for AI
-│   └── matching_criteria.md           # Your job criteria — required for AI
+│   ├── matching_criteria.md           # Your job criteria — required for AI
+│   ├── deployment/                    # Render setup + deployment report
+│   └── testing/                       # Testing guide + past test/verification reports
+├── scripts/
+│   ├── run_jobs.sh                    # Pipeline behind Telegram /jobs
+│   ├── start_ui.sh                    # Start Job Tracker web UI
+│   ├── lib/pipeline_common.sh         # Shared shell helpers for run_jobs.sh
+│   ├── db/cleanup_excluded_titles.py  # One-off DB cleanup by title blacklist
+│   └── tools/                         # eval_matcher, generate_password_hash, log_recommended_jobs
+├── evals/                             # Matcher evaluation set + baselines
+├── tests/                             # Unit tests (python3 -m unittest discover -s tests)
 ├── templates/                         # Web UI templates
 ├── logs/                              # Log output directory
-├── run_task.sh                        # Full pipeline (6 PM — Indeed + LinkedIn 24 h)
-├── run_quick.sh                       # Light pipeline (11 AM — Indeed 2 pages + LinkedIn 12 h)
-├── start_ui.sh                        # Start Job Tracker web UI
-├── com.user.job_scraper.plist         # LaunchD config (daily schedule)
 └── .env                               # Environment variables (not in git)
 ```
 
@@ -90,7 +96,7 @@ FLASK_SECRET_KEY=<random_hex_string>
 The web UI now requires login. Generate a password hash:
 
 ```bash
-python3 scripts/generate_password_hash.py
+python3 scripts/tools/generate_password_hash.py
 ```
 
 This will prompt you for a password and output a hash. Copy the `TRACKER_PASSWORD_HASH=...` line to your `.env` file.
@@ -110,165 +116,47 @@ python3 src/scrapers/indeed_scraper.py -k "frontend" -p 1
 python3 src/scrapers/linkedin_scraper.py -k "frontend" -p 1
 python3 src/matching/ai_matcher.py -l 3
 
-# Test quick scraper (1 page, 5 jobs)
-python3 src/scrapers/linkedin_quick_scraper.py -p 1 -j 5
-
 # View results (web UI)
-./start_ui.sh
+./scripts/start_ui.sh
 ```
 
 ---
 
-## Daily Automation (macOS LaunchD)
+## Running a scrape
 
-### Full pipeline — 6 PM daily
+### From Telegram (normal use)
 
-```bash
-cp com.user.job_scraper.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.user.job_scraper.plist
-```
+Start the bot (`python3 src/bot/telegram_bot.py`), then send:
 
-Runs every day at **6:00 PM**. A desktop notification pops up when done.
+| Command | Indeed | LinkedIn | Pages per keyword |
+|---|---|---|---|
+| `/jobs` | last 1 day | last 24 h | config default (3) |
+| `/jobs 7` | last 7 days | last 168 h | config default |
+| `/jobs 3 120` | last 3 days | last 120 h | config default |
+| `/jobs 3 72 2` | last 3 days | last 72 h | 2 |
 
-### Quick pipeline — 11 AM daily
+- `days` must be 1, 3, 7 or 14 (Indeed's date filter).
+- `linkedin_hours` defaults to `days × 24`.
+- `pages` applies to both platforms; to set it you must also give `days` and `linkedin_hours`.
 
-Create `com.user.job_quick_scraper.plist` alongside the existing one:
+Other bot commands: `/start`, `/test` (health checks) and `/indeed_ok` (resume Indeed after a human-verification check; the inline **Continue** button does the same).
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
-  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-<plist version="1.0">
-<dict>
-  <key>Label</key>
-  <string>com.user.job_quick_scraper</string>
-  <key>ProgramArguments</key>
-  <array>
-    <string>/bin/bash</string>
-    <string>/Users/carrienon/Desktop/code-project/job_scraper/run_quick.sh</string>
-  </array>
-  <key>StartCalendarInterval</key>
-  <dict>
-    <key>Hour</key>
-    <integer>11</integer>
-    <key>Minute</key>
-    <integer>0</integer>
-  </dict>
-  <key>StandardOutPath</key>
-  <string>/Users/carrienon/Desktop/code-project/job_scraper/logs/launchd_quick_stdout.log</string>
-  <key>StandardErrorPath</key>
-  <string>/Users/carrienon/Desktop/code-project/job_scraper/logs/launchd_quick_stderr.log</string>
-</dict>
-</plist>
-```
+### From the shell
 
 ```bash
-cp com.user.job_quick_scraper.plist ~/Library/LaunchAgents/
-launchctl load ~/Library/LaunchAgents/com.user.job_quick_scraper.plist
-```
-
-### Change the schedule
-
-Edit the relevant `.plist` file:
-
-```xml
-<key>Hour</key>
-<integer>18</integer>  <!-- 18 = 6 PM (full pipeline) -->
-<key>Minute</key>
-<integer>0</integer>
-```
-
-Then reload:
-
-```bash
-# Full pipeline
-launchctl unload ~/Library/LaunchAgents/com.user.job_scraper.plist
-launchctl load  ~/Library/LaunchAgents/com.user.job_scraper.plist
-
-# Quick pipeline
-launchctl unload ~/Library/LaunchAgents/com.user.job_quick_scraper.plist
-launchctl load  ~/Library/LaunchAgents/com.user.job_quick_scraper.plist
-```
-
-### Common commands
-
-```bash
-# Run immediately
-launchctl start com.user.job_scraper        # full pipeline
-launchctl start com.user.job_quick_scraper  # quick pipeline
-
-# Pause automation
-launchctl unload ~/Library/LaunchAgents/com.user.job_scraper.plist
-launchctl unload ~/Library/LaunchAgents/com.user.job_quick_scraper.plist
-
-# Resume automation
-launchctl load ~/Library/LaunchAgents/com.user.job_scraper.plist
-launchctl load ~/Library/LaunchAgents/com.user.job_quick_scraper.plist
-
-# Check status
-launchctl list | grep job_scraper
-```
-
-### Keep the laptop awake
-
-LaunchD won't fire if the Mac is asleep. To prevent idle sleep while the lid is **open**:
-
-```bash
-# Never idle-sleep when on AC power (lid-close still sleeps normally)
-sudo pmset -c sleep 0 displaysleep 10
-```
-
-This means: screen turns off after 10 minutes of inactivity, but the system stays awake until you close the lid. Restore defaults any time:
-
-```bash
-sudo pmset -c sleep 1 displaysleep 10
-```
-
----
-
-## Running the Pipelines Manually
-
-### Full pipeline (~6 PM — 24-hour window)
-
-```bash
-caffeinate -i ./run_task.sh
-```
-
-Execution order:
-
-1. Launch Chrome (remote debug mode)
-2. Indeed scraper — scrapes new jobs (last 24 hours)
-3. LinkedIn scraper — scrapes new jobs (last 24 hours, iterates keywords)
-4. AI matcher — analyzes all unprocessed jobs
-5. Desktop notification — shows counts
-6. Chrome closed
-
-Estimated time: **40–60 minutes**. Full run: 3 pages per keyword, Indeed ~15 cards/page, LinkedIn 30.
-
-### Light pipeline (~11 AM)
-
-```bash
-caffeinate -i ./run_quick.sh
+caffeinate -i ./scripts/run_jobs.sh                              # both last 24h
+caffeinate -i ./scripts/run_jobs.sh --days 3 --hours 72 --pages 2
 ```
 
 Execution order:
 
 1. Launch or reuse Chrome (remote debug mode)
-2. In parallel:
-   - Indeed — same last-24-hours search as the full run (Indeed cannot filter shorter than 1 day), **2 pages per keyword**, ~15 cards/page
-   - LinkedIn quick — jobs posted in the **last 12 hours**, one pre-built OR search URL (Full Stack Engineer / Frontend Developer / Product Engineer / Generative AI Engineer), **3 pages × 30 cards**
-3. AI matcher — analyzes all unprocessed jobs
+2. In parallel: Indeed lane and LinkedIn lane — each scrapes, then AI-matches its own source (Telegram ping after each step)
+3. Push today's match cards to Telegram
 4. Desktop notification — shows counts
 5. Chrome closed only if this run started it
 
-Estimated time: **20–40 minutes**.
-
-### Recommended daily schedule
-
-| Time | Command | Purpose |
-|------|---------|---------|
-| **~6 PM** | `caffeinate -i ./run_task.sh` | Refresh DB with all new jobs from the past 24 hours |
-| **~11 AM** | `caffeinate -i ./run_quick.sh` | Catch jobs posted overnight before applying |
+Only one run at a time: a second `/jobs` while one is running is refused (`logs/pipeline.pid`).
 
 ---
 
@@ -291,14 +179,12 @@ DEFAULT_KEYWORDS = [
 ### Scraping limits
 
 ```python
-FULL_MAX_PAGES = 3              # Full run: pages per keyword (both platforms)
+FULL_MAX_PAGES = 3              # Default pages per keyword (both platforms)
 INDEED_JOBS_PER_PAGE = 15       # Indeed cards per page (also the start= step)
 LINKEDIN_JOBS_PER_PAGE = 30     # LinkedIn cards per page
-LIGHT_INDEED_MAX_PAGES = 2      # Light run: Indeed pages per keyword
-LIGHT_LINKEDIN_MAX_PAGES = 3    # Light run: LinkedIn quick URL pages
 ```
 
-`run_task.sh` and `run_quick.sh` read these values at start.
+`scripts/run_jobs.sh` reads these values at start; `/jobs … [pages]` overrides `FULL_MAX_PAGES` for one run.
 
 ### Match threshold — `.env`
 
@@ -317,17 +203,12 @@ Raise it (e.g. `8.0`) for fewer, higher-quality results. Lower it (e.g. `6.0`) t
 | Option | Short | Default | Applies to |
 |--------|-------|---------|-----------|
 | `--keywords` | `-k` | `DEFAULT_KEYWORDS` | `indeed_scraper`, `linkedin_scraper` |
-| `--max-pages` | `-p` | full `3` / LinkedIn quick `3` | all scrapers |
+| `--max-pages` | `-p` | `3` | all scrapers |
 | `--max-jobs` | `-j` | Indeed `15`, LinkedIn `30` | all scrapers |
 
 ```bash
 python3 src/scrapers/indeed_scraper.py -k "react developer" -p 2
 python3 src/scrapers/linkedin_scraper.py -k "frontend" "full stack" -p 3
-
-# LinkedIn light URL — no keywords; pre-built 12-hour search
-python3 src/scrapers/linkedin_quick_scraper.py              # 3 pages, 30 jobs/page
-python3 src/scrapers/linkedin_quick_scraper.py -p 2         # 2 pages
-python3 src/scrapers/linkedin_quick_scraper.py -p 3 -j 20   # 3 pages, 20 jobs each
 ```
 
 ### AI Matcher
@@ -404,7 +285,7 @@ matched.update_one(
 ## Viewing Results
 
 ```bash
-./start_ui.sh                   # open Job Tracker web UI
+./scripts/start_ui.sh                   # open Job Tracker web UI
 ```
 
 ---
@@ -412,13 +293,11 @@ matched.update_one(
 ## Logs
 
 ```bash
-tail -f logs/main.log                       # pipeline summary (both pipelines)
-tail -f logs/indeed_YYYYMMDD.log            # Indeed detail
-tail -f logs/linkedin_YYYYMMDD.log          # LinkedIn full-scrape detail
-tail -f logs/linkedin_quick_YYYYMMDD.log    # LinkedIn quick-scrape detail
-tail -f logs/matcher_YYYYMMDD.log           # AI matcher (full pipeline)
-tail -f logs/matcher_quick_YYYYMMDD.log     # AI matcher (quick pipeline)
-tail -f logs/launchd_stderr.log             # LaunchD errors
+tail -f logs/main.log                          # pipeline summary
+tail -f logs/indeed_YYYYMMDD_HHMMSS.log        # Indeed scrape detail
+tail -f logs/linkedin_YYYYMMDD_HHMMSS.log      # LinkedIn scrape detail
+tail -f logs/matcher_indeed_YYYYMMDD_HHMMSS.log    # AI matcher (Indeed lane)
+tail -f logs/matcher_linkedin_YYYYMMDD_HHMMSS.log  # AI matcher (LinkedIn lane)
 
 # Clean up logs older than 7 days
 find logs/ -name "*.log" -mtime +7 -delete
@@ -446,14 +325,6 @@ Manually reopen Chrome with the scraper's profile and log in again:
 ```
 
 Then visit linkedin.com / indeed.com, log in, and tick **"Keep me logged in"**. Sessions typically last ~30 days.
-
-### LaunchD not firing
-
-```bash
-launchctl list | grep job_scraper        # check loaded
-tail -f logs/launchd_stderr.log          # check errors
-./run_task.sh                            # manual test
-```
 
 ### MongoDB connection failed
 
@@ -516,10 +387,10 @@ The UI is fully **mobile-responsive** and works on phones (375-430px width):
 
 ### Current Deployment
 
-The app currently runs **locally on macOS** via `./start_ui.sh`:
+The app currently runs **locally on macOS** via `./scripts/start_ui.sh`:
 - Flask dev server on `127.0.0.1:5050`
 - Accessed only from the local machine
-- LaunchD schedules automated scrapes
+- Scrapes are started on demand via Telegram `/jobs`
 - MongoDB Atlas for database (cloud)
 
 ---
@@ -537,7 +408,7 @@ Deploy the web UI to Render's free plan for mobile access. **Scrapers stay on yo
 
 2. **Generate Password Hash** (locally):
    ```bash
-   python3 scripts/generate_password_hash.py
+   python3 scripts/tools/generate_password_hash.py
    ```
    Save the hash - you'll add it to Render.
 
@@ -593,7 +464,7 @@ Deploy the web UI to Render's free plan for mobile access. **Scrapers stay on yo
 │  • LinkedIn scraper │  writes │  • Read-only tracker │  reads  │  • Jobs     │
 │  • AI matcher       │   jobs  │  • Update status     │  writes │  • Matches  │
 │  • Chrome/Playwright│         │  • Mobile access     │ status  │             │
-│  • LaunchD (6PM)    │         │  • Gunicorn          │         │             │
+│  • Telegram /jobs   │         │  • Gunicorn          │         │             │
 └─────────────────────┘         └──────────────────────┘         └─────────────┘
                                           │
                                           ├─────► 📱 iPhone
@@ -626,7 +497,7 @@ After pushing changes to GitHub:
 **Login fails:**
 - Verify `TRACKER_PASSWORD_HASH` matches your password
 - Check `TRACKER_USERNAME` is set correctly
-- Try regenerating hash with `scripts/generate_password_hash.py`
+- Try regenerating hash with `scripts/tools/generate_password_hash.py`
 
 **App won't start:**
 - Check Render logs: Dashboard → your service → Logs
@@ -672,7 +543,7 @@ For quick temporary mobile access without deployment:
 
 ```bash
 # Install ngrok: https://ngrok.com/download
-./start_ui.sh  # Start the tracker locally
+./scripts/start_ui.sh  # Start the tracker locally
 
 # In another terminal:
 ngrok http 5050
@@ -690,7 +561,7 @@ Ngrok will give you a public URL (e.g., `https://abc123.ngrok.io`) that you can 
 ### Recommended Setup
 
 **For Personal Use** (what you have now):
-- Scrapers run locally on Mac via LaunchD (need Chrome/Playwright)
+- Scrapers run locally on Mac, started via Telegram `/jobs` (need Chrome/Playwright)
 - Web UI deployed to Railway/Render for mobile access
 - MongoDB Atlas for cloud database
 - Both Mac and web UI connect to same MongoDB

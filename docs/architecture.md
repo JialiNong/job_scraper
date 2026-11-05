@@ -11,18 +11,16 @@ All project docs and code comments are written in English.
 ```mermaid
 flowchart TB
     subgraph Triggers["Entry points"]
-        T1["Telegram<br/>/jobs · /quick_jobs · /linkedin · /matches · /indeed_ok"]
-        T2["Shell<br/>run_task.sh · run_quick.sh · run_linkedin.sh"]
-        T3["LaunchD schedule<br/>~18:00 / ~11:00"]
-        T4["Web UI<br/>start_ui.sh"]
+        T1["Telegram<br/>/jobs [days] [li_hours] [pages] · /indeed_ok"]
+        T2["Shell<br/>scripts/run_jobs.sh"]
+        T4["Web UI<br/>./scripts/start_ui.sh"]
         T5["Manual CLI<br/>scrapers / matcher"]
     end
 
     subgraph Scrape["Scrape layer"]
         Chrome["Chrome CDP :9222"]
-        Indeed["indeed_scraper.py<br/>last 24h"]
+        Indeed["indeed_scraper.py<br/>1d default · --days N"]
         LI["linkedin_scraper.py<br/>24h default · --hours N"]
-        LIQ["linkedin_quick_scraper.py<br/>light run · 12h OR URL"]
         Manual["manual_apply_scraper.py<br/>manual job URLs"]
     end
 
@@ -49,12 +47,11 @@ flowchart TB
     end
 
     T1 --> T2
-    T3 --> T2
     T2 --> Chrome
     T5 --> Chrome
-    Chrome --> Indeed & LI & LIQ & Manual
+    Chrome --> Indeed & LI & Manual
 
-    Indeed & LI & LIQ --> F1 --> F2 --> F3 --> F4 --> F5
+    Indeed & LI --> F1 --> F2 --> F3 --> F4 --> F5
     F5 -->|English JD saved| Jobs
     F5 -->|non-English| Stats
 
@@ -63,30 +60,27 @@ flowchart TB
     M2 -->|write analysis back| Jobs
 
     T4 --> Matched & Jobs
-    T1 -->|/matches| Matched
 ```
 
 ---
 
 ## 2. Commands / entry points
 
-### 2.1 Daily pipelines
+### 2.1 Pipeline
 
-| Command | When | What it does | Typical time |
-|---------|------|--------------|--------------|
-| `./run_task.sh` | ~18:00 (or Telegram `/jobs`) | Full: Indeed + LinkedIn lanes in parallel (24h, 3 pages/keyword). Each source matches as soon as its scrape finishes, with Telegram pings; digest after both lanes; then cleanup old unmatched descriptions | 40–60 min |
-| `./run_quick.sh` | ~11:00 (or Telegram `/quick_jobs`) | Light: Indeed (24h, 2 pages/keyword) + LinkedIn quick URL (12h, 3 pages) lanes in parallel. Same per-source match + pings; digest after both lanes | 20–40 min |
-| `./run_linkedin.sh` | Ad hoc | LinkedIn-only keyword loop + AI match. Time window via `--hours` (default **24** → `f_TPR=rN*3600`). Default pages: **3**/keyword when hours ≥ 24, **2**/keyword when hours < 24 (`LINKEDIN_SHORT_WINDOW_MAX_PAGES`); `-p` / `-j` override. Telegram per-lane pings + today’s match digest | depends on hours / volume |
-| `./start_ui.sh` | Anytime | Start Job Tracker Web UI (default `:5050`) | — |
+There is **no scheduled job** (no cron / launchd) in this project. Runs are started on demand from Telegram `/jobs` (or the same script from a shell); recurring runs, if any, are driven by external agents.
+
+| Command | What it does | Typical time |
+|---------|--------------|--------------|
+| `./scripts/run_jobs.sh [--days N] [--hours H] [--pages P]` | Indeed + LinkedIn lanes in parallel. Each source matches as soon as its scrape finishes, with Telegram pings; match-card digest after both lanes. Defaults: Indeed 1 day, LinkedIn 24h (or `days × 24` when `--days` is given), `FULL_MAX_PAGES` (3) pages per keyword on both platforms | 40–60 min at defaults |
+| `./scripts/start_ui.sh` | Start Job Tracker Web UI (default `:5050`) | — |
 
 Prefer `caffeinate -i` for manual runs so sleep does not interrupt Playwright:
 
 ```bash
-caffeinate -i ./run_task.sh
-caffeinate -i ./run_quick.sh
-caffeinate -i ./run_linkedin.sh              # LinkedIn last 24h + match
-caffeinate -i ./run_linkedin.sh --hours 4    # last 4h → 2 pages/keyword
-caffeinate -i ./run_linkedin.sh --hours 2 -p 3  # 2h, force 3 pages
+caffeinate -i ./scripts/run_jobs.sh                              # both last 24h, 3 pages/keyword
+caffeinate -i ./scripts/run_jobs.sh --days 7                     # Indeed 7d, LinkedIn 168h
+caffeinate -i ./scripts/run_jobs.sh --days 3 --hours 72 --pages 2
 ```
 
 ### 2.2 Telegram bot commands
@@ -95,17 +89,14 @@ caffeinate -i ./run_linkedin.sh --hours 2 -p 3  # 2h, force 3 pages
 |---------|---------|
 | `/start` | Confirm bot is online |
 | `/test` | Confirm the Mac is connected and ready |
-| `/jobs` | Run `run_task.sh` in the background; per-source scrape/match pings; “Done” when both lanes finish |
-| `/quick_jobs` | Run `run_quick.sh` in the background; same per-source pings; “Done” when both lanes finish |
-| `/linkedin` `[hours]` | Run `run_linkedin.sh` (LinkedIn-only + AI match). Optional hours number (default **24**; hours < 24 → 2 pages/keyword). Examples: `/linkedin`, `/linkedin 4`, `/linkedin 2` |
-| `/matches` | Push today’s `matched_jobs` without scraping |
+| `/jobs [days] [linkedin_hours] [pages]` | Run `scripts/run_jobs.sh` in the background; per-source scrape/match pings; “Done” when both lanes finish. `days` ∈ 1/3/7/14 (Indeed), `linkedin_hours` defaults to `days × 24`, `pages` applies to both platforms. Examples: `/jobs`, `/jobs 7`, `/jobs 3 120`, `/jobs 3 72 2` |
 | `/indeed_ok` | Resume Indeed after human verification (also: inline **Continue** button) |
 
 **Per-source progress:** each lane sends two short Telegram notes — scrape done (matching started), then matching done. Indeed and LinkedIn do not wait for each other to start matching.
 
-**Match card push:** `run_task.sh` / `run_quick.sh` call `core.match_digest.push_todays_matched_jobs()` only after **both** lanes finish. That covers Telegram `/jobs` / `/quick_jobs`, launchd, and any manual shell run. `/matches` uses the same digest helper without scraping.
+**Match card push:** `scripts/run_jobs.sh` calls `core.match_digest.push_todays_matched_jobs()` only after **both** lanes finish. That covers Telegram `/jobs` and any manual shell run.
 
-**Single-flight lock:** `run_task.sh` / `run_quick.sh` / `run_linkedin.sh` write `logs/pipeline.pid`. A second `/jobs`, `/quick_jobs`, or shell run exits immediately instead of launching another debug Chrome (same `--user-data-dir` would kill the first Chrome and abort Indeed with `TargetClosedError`). Telegram also checks this pidfile. If Indeed’s tab still dies mid-run, `indeed_scraper` reconnects over CDP and retries that page instead of exiting 1.
+**Single-flight lock:** `scripts/run_jobs.sh` writes `logs/pipeline.pid`. A second `/jobs` or shell run exits immediately instead of launching another debug Chrome (same `--user-data-dir` would kill the first Chrome and abort Indeed with `TargetClosedError`). Telegram also checks this pidfile. If Indeed’s tab still dies mid-run, `indeed_scraper` reconnects over CDP and retries that page instead of exiting 1.
 
 **Destination:** Job cards, pipeline Done/error status, and Indeed challenge alerts go to the configured forum topic (`TELEGRAM_CHAT_ID` + `TELEGRAM_MESSAGE_THREAD_ID` — Jiali Personal Hub → Job Assistance). Command authorization stays on `TELEGRAM_ALLOWED_USER_ID` (your personal account). Slash-command replies (`/start`, Started, …) stay in the topic you typed in; send commands from Job Assistance so those stay there too.
 
@@ -130,51 +121,44 @@ Indeed pacing is slower and more human-like than LinkedIn: random think-time bef
 
 | Command | Purpose |
 |---------|---------|
-| `python3 src/scrapers/indeed_scraper.py [-k …] [-p N] [-j N]` | Indeed only (default 3 pages × 15) |
+| `python3 src/scrapers/indeed_scraper.py [-k …] [-p N] [-j N] [--days N]` | Indeed only, no matching (default 3 pages × 15, last 1 day) |
 | `python3 src/scrapers/linkedin_scraper.py [-k …] [-p N] [-j N] [--hours N]` | Full LinkedIn keyword loop (default 3 pages × 30; `--hours` < 24 → 2 pages; time window default config 24h, or `--hours`) |
-| `python3 src/scrapers/linkedin_quick_scraper.py [-p N] [-j N]` | LinkedIn 12h quick URL (default 3 pages × 30) |
-| `./run_linkedin.sh [--hours N] [-p N] [-j N]` | LinkedIn-only scrape + AI match (default `--hours 24`; short window → 2 pages/keyword) |
 | `python3 src/matching/ai_matcher.py [-l N] [-s source] [-t 7.0]` | AI match only (jobs without `matched_at`) |
 | `python3 src/scrapers/manual_apply_scraper.py <urls…>` | Manual job URLs → `matched_jobs` (default `status=pending`; `--status applied` optional). Already on Tracker with a full card: skip, or mark applied when requested. Link-only / `ai_pending` Tracker rows are scraped in place (notes / timeline kept). Chrome / Indeed / AI failure still saves a **new** URL stub (`ai_pending`). `--link-only` skips scrape/AI. |
-| `python3 scripts/log_recommended_jobs.py <jobs.json \| ->` | Local twin of `POST /api/agent/jobs`. Batch log agent picks as link-only Tracker stubs: `pending`, `recommended_by` from `--recommended-by` (default `claude`; per-job `recommended_by` wins), per-job title / company / location. No browser / no AI; a job_id already in `matched_jobs` / `jobs` / `timeout_jobs` is skipped with no write. Score later with Tracker **Select missing details** → **Run AI for selected**. |
-| `python3 scripts/cleanup_unmatched_descriptions.py …` | Clear old unmatched JD text (also run at end of full pipeline) |
-| `python3 scripts/cleanup_excluded_titles.py …` | Cleanup DB rows by title blacklist |
-| `python3 scripts/eval_matcher.py …` | Matcher evaluation |
+| `python3 scripts/tools/log_recommended_jobs.py <jobs.json \| ->` | Local twin of `POST /api/agent/jobs`. Batch log agent picks as link-only Tracker stubs: `pending`, `recommended_by` from `--recommended-by` (default `claude`; per-job `recommended_by` wins), per-job title / company / location. No browser / no AI; a job_id already in `matched_jobs` / `jobs` / `timeout_jobs` is skipped with no write. Score later with Tracker **Select missing details** → **Run AI for selected**. |
+| `python3 scripts/db/cleanup_excluded_titles.py …` | Cleanup DB rows by title blacklist |
+| `python3 scripts/tools/eval_matcher.py …` | Matcher evaluation |
 
 ---
 
-## 3. Full vs Light pipelines
-
-### 3.1 Full — `run_task.sh` / `/jobs`
+## 3. Pipeline — `scripts/run_jobs.sh` / `/jobs`
 
 ```mermaid
 sequenceDiagram
-    participant S as run_task.sh
+    participant S as run_jobs.sh
     participant C as Chrome :9222
     participant I as Indeed scraper
     participant L as LinkedIn scraper
     participant DB as MongoDB
     participant AI as ai_matcher
     participant TG as Telegram topic
-    participant CL as cleanup script
 
     S->>C: Start or reuse debug Chrome
     par Parallel lanes
-        S->>I: indeed_scraper.py -p 3 -j 15
+        S->>I: indeed_scraper.py --days N -p P -j 15
         I->>DB: save_job after filters
         I->>TG: Indeed scrape done — matching started
         S->>AI: ai_matcher.py --source indeed
         AI->>DB: mark_job_as_matched / save matched_jobs
         AI->>TG: Indeed matching done
     and
-        S->>L: linkedin_scraper.py -p 3 -j 30
+        S->>L: linkedin_scraper.py --hours H -p P -j 30
         L->>DB: save_job after filters
         L->>TG: LinkedIn scrape done — matching started
         S->>AI: ai_matcher.py --source linkedin
         AI->>DB: mark_job_as_matched / save matched_jobs
         AI->>TG: LinkedIn matching done
     end
-    S->>CL: cleanup_unmatched_descriptions --days 14
     S->>TG: today's match-card digest
     S->>S: Desktop notification + close Chrome (only if this run started it)
 ```
@@ -182,56 +166,17 @@ sequenceDiagram
 Order:
 
 1. Chrome remote debugging (reuse if `:9222` already open)
-2. **Indeed + LinkedIn lanes in parallel** — 3 pages per keyword. Indeed processes about 15 cards per page (`start` steps by 15). LinkedIn processes up to 30 cards per page.
+2. **Indeed + LinkedIn lanes in parallel** — `--pages` per keyword (default `FULL_MAX_PAGES` = 3). Indeed processes about 15 cards per page (`start` steps by 15). LinkedIn processes up to 30 cards per page.
 3. As soon as a source finishes scraping → **AI matcher for that source only** (`--source indeed` / `--source linkedin`) + Telegram ping
-4. After both lanes finish → clear descriptions on unmatched jobs older than 14 days
-5. Push today's match-card digest + optionally close Chrome
+4. After both lanes finish → push today's match-card digest + optionally close Chrome
 
-Indeed search URL (`INDEED_CONFIG`): `de.indeed.com/jobs?q=<keyword>&l=&fromage=1`. Location stays empty (same as the desktop SERP). Hyphens in keywords are sent as spaces (`full-stack` → `q=full+stack`) so the query matches typing “Full Stack” in the search box. Each keyword still walks only 3 pages × ~15 cards.
+The pipeline does **not** delete or clear any database rows.
 
-### 3.2 Light — `run_quick.sh` / `/quick_jobs`
+Indeed search URL (`INDEED_CONFIG`): `de.indeed.com/jobs?q=<keyword>&l=&fromage=<days>`. Location stays empty (same as the desktop SERP). Hyphens in keywords are sent as spaces (`full-stack` → `q=full+stack`) so the query matches typing “Full Stack” in the search box. Indeed only offers 1, 3, 7 or 14 days.
 
-```mermaid
-sequenceDiagram
-    participant S as run_quick.sh
-    participant C as Chrome :9222
-    participant I as Indeed scraper
-    participant Q as LinkedIn Quick
-    participant DB as MongoDB
-    participant AI as ai_matcher
-    participant TG as Telegram topic
+LinkedIn time window: `f_TPR=r<hours × 3600>`.
 
-    S->>C: Start or reuse debug Chrome
-    par Parallel lanes
-        S->>I: indeed_scraper.py -p 2 -j 15
-        Note over I: Same 24h search as Full<br/>Indeed date filter minimum is 1 day
-        I->>DB: save_job after filters
-        I->>TG: Indeed scrape done — matching started
-        S->>AI: ai_matcher.py --source indeed
-        AI->>DB: mark / matched_jobs
-        AI->>TG: Indeed matching done
-    and
-        S->>Q: linkedin_quick_scraper.py -p 3 -j 30
-        Note over Q: Fixed 12h OR search URL<br/>reuses scrape_jobs() filters
-        Q->>DB: save_job after filters
-        Q->>TG: LinkedIn scrape done — matching started
-        S->>AI: ai_matcher.py --source linkedin
-        AI->>DB: mark / matched_jobs
-        AI->>TG: LinkedIn matching done
-    end
-    S->>TG: today's match-card digest
-    S->>S: Notify + close Chrome (only if this run started it)
-```
-
-Differences from Full:
-
-- **Both platforms**, still in parallel lanes (scrape → match that source)
-- Indeed stays on the 24h search (`fromage=1`, empty `l=`; the site cannot filter shorter than 1 day) and walks **2 pages per keyword** instead of 3
-- LinkedIn does **not** loop keywords — one pre-built OR search URL (Full Stack / Frontend / Product / GenAI, `f_TPR=r43200` = 12h), **3 pages × 30 cards**
-- **No** description cleanup step
-- LinkedIn card processing reuses `linkedin_scraper.scrape_jobs()` (same title + language filters). The quick URL is the SDUI `/jobs/search-results/` page: cards are `[componentkey^="job-card-component-ref-"]`, and the next page control is `pagination-controls-next-button-visible`
-
-Budgets are defined in `src/core/config.py` (`FULL_*`, `LIGHT_*`, `LINKEDIN_SHORT_WINDOW_MAX_PAGES`, `INDEED_JOBS_PER_PAGE`, `LINKEDIN_JOBS_PER_PAGE`). Shell scripts read those values at start; ad-hoc LinkedIn uses `linkedin_default_max_pages(hours)`.
+Budgets are defined in `src/core/config.py` (`FULL_MAX_PAGES`, `INDEED_JOBS_PER_PAGE`, `LINKEDIN_JOBS_PER_PAGE`, `LINKEDIN_SHORT_WINDOW_MAX_PAGES`). `run_jobs.sh` reads them at start; `--pages` overrides `FULL_MAX_PAGES`. A standalone `linkedin_scraper.py --hours N` run without `-p` uses `linkedin_default_max_pages(hours)`.
 
 ---
 
@@ -414,11 +359,12 @@ AI `special_match` / `special_match_reasons` are still written by the matcher fo
 
 ```
 job_scraper/
-├── run_task.sh / run_quick.sh / run_linkedin.sh / start_ui.sh
 ├── docs/
 │   ├── architecture.md          # this file
 │   ├── matching_criteria.md     # AI scoring source of truth
-│   └── user_profile.md          # resume / profile
+│   ├── user_profile.md          # resume / profile
+│   ├── deployment/              # Render setup + deployment report
+│   └── testing/                 # testing guide + past test / verification reports
 ├── src/
 │   ├── core/
 │   │   ├── config.py            # keywords, title blacklist, platform URLs
@@ -427,17 +373,22 @@ job_scraper/
 │   │   ├── manual_log.py        # Save Link Only / stub save (no Playwright)
 │   │   ├── scraper_utils.py     # title gates, Lingua, CDP helpers
 │   │   ├── challenge_wait.py    # Indeed captcha detect + auto-continue / Telegram resume
-│   │   ├── pipeline_lock.py     # Single-flight pidfile for run_task / run_quick / run_linkedin
+│   │   ├── pipeline_lock.py     # Single-flight pidfile for scripts/run_jobs.sh
 │   │   ├── telegram_notify.py   # Sync Bot API helper (scraper alerts)
-│   │   └── match_digest.py      # Today's match cards → Telegram (pipeline + /matches)
-│   ├── scrapers/                # Indeed / LinkedIn / Quick / Manual
+│   │   └── match_digest.py      # Today's match cards → Telegram (after run_jobs.sh)
+│   ├── scrapers/                # Indeed / LinkedIn / Manual
 │   ├── matching/
 │   │   ├── ai_matcher.py        # match orchestration (`evaluate_job`)
 │   │   ├── german_gate.py       # mandatory-German rule gate on English JDs
 │   │   └── stack_gate.py        # extract + local backend / AI-ML-core gate
 │   ├── web/web_app.py           # Tracker UI
 │   └── bot/telegram_bot.py      # Telegram commands (+ Indeed resume)
-└── scripts/                     # pipeline_common.sh, cleanup / eval helpers
+└── scripts/
+    ├── run_jobs.sh              # pipeline behind Telegram /jobs
+    ├── start_ui.sh              # Tracker web UI
+    ├── lib/pipeline_common.sh   # shared shell helpers (lanes, Telegram pings)
+    ├── db/                      # one-off DB maintenance (cleanup_excluded_titles.py)
+    └── tools/                   # eval_matcher, generate_password_hash, log_recommended_jobs
 ```
 
 ---
@@ -446,4 +397,4 @@ job_scraper/
 
 > **Title gates (blacklist → keywords → AI title) → open detail → discard non-English JD → save English JD → matcher skips empty/incomplete desc → mandatory-German rule gate → stack extract + backend/AI-ML local gate → AI scores by criteria (JD facts only) → ≥ 7 and company not Instaffo/Jobgether enters Tracker.**
 
-The two daily commands only change *how much* to scrape. Evening Full is 24h on both platforms, 3 pages per keyword (Indeed ~15 cards/page, LinkedIn 30). Morning Light runs both in parallel: Indeed the same 24h search for 2 pages per keyword, LinkedIn the 12h quick URL for 3 pages. Ad hoc `run_linkedin.sh` / `/linkedin` is LinkedIn-only with a flexible `--hours` window (default 24); when hours < 24 the default page budget drops to 2 per keyword (`linkedin_default_max_pages`). Each source starts AI matching as soon as its scrape finishes; job cards are pushed only after both lanes complete (or after the single LinkedIn lane for `run_linkedin.sh`). **Filter and match rules are the same.**
+`/jobs` arguments only change *how much* to scrape: Indeed days, LinkedIn hours, and pages per keyword (both platforms). Each source starts AI matching as soon as its scrape finishes; job cards are pushed only after both lanes complete. **Filter and match rules are the same for every window.**
