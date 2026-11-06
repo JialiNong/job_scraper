@@ -19,6 +19,7 @@ from core.job_url import (
     detect_source,
     job_stub_from_url,
     link_only_job_title,
+    expand_short_job_url,
     normalize_pasted_job_url,
     plan_manual_log_action,
     resolve_job_id,
@@ -689,7 +690,7 @@ def log_agent_jobs(jobs: list, recommended_by="claude") -> dict:
         if not isinstance(item, dict):
             continue
         raw = str(item.get("url") or "").strip()
-        url = normalize_pasted_job_url(raw) or raw
+        url = expand_short_job_url(raw) or raw
         if not url:
             continue
         source = detect_source(url)

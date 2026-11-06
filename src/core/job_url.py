@@ -8,7 +8,7 @@ from __future__ import annotations
 import hashlib
 import re
 from typing import Optional
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import urljoin, urlparse, urlunparse
 
 from core.scraper_utils import extract_indeed_jk_from_url
 
@@ -46,6 +46,62 @@ def normalize_pasted_job_url(url: str) -> str:
     elif not _SCHEME_RE.match(text):
         text = "https://" + text
     return text
+
+
+# Indeed short-link hosts (the Indeed connector / share buttons hand these out).
+# They 302 to /uie/clk?…&jk=<key>, so one hop is enough to get the job key.
+_SHORT_LINK_HOSTS = {"to.indeed.com"}
+_SHORT_LINK_MAX_HOPS = 4
+_SHORT_LINK_TIMEOUT = 8
+
+
+def is_short_job_url(url: str) -> bool:
+    host = (urlparse(normalize_pasted_job_url(url)).hostname or "").lower()
+    return host in _SHORT_LINK_HOSTS
+
+
+def expand_short_job_url(url: str) -> str:
+    """
+    Follow an Indeed short link (to.indeed.com/…) until a URL with a job key
+    appears, and return that URL. Any other URL is returned normalised and
+    unchanged; on network errors the short URL is returned as-is.
+
+    Redirects are followed by hand and stop as soon as jk= shows up, so the
+    real job page (Cloudflare-protected) is never requested.
+    """
+    import urllib.error
+    import urllib.request
+
+    url = normalize_pasted_job_url(url)
+    if not url or not is_short_job_url(url):
+        return url
+
+    class _NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            return None
+
+    opener = urllib.request.build_opener(_NoRedirect)
+    current = url
+    for _ in range(_SHORT_LINK_MAX_HOPS):
+        req = urllib.request.Request(
+            current, method="GET", headers={"User-Agent": "Mozilla/5.0"}
+        )
+        try:
+            resp = opener.open(req, timeout=_SHORT_LINK_TIMEOUT)
+            resp.close()
+            break  # 2xx with no redirect: nothing more to follow
+        except urllib.error.HTTPError as e:
+            location = e.headers.get("Location") if e.code in (301, 302, 303, 307, 308) else None
+            e.close()
+            if not location:
+                break
+        except (urllib.error.URLError, OSError, ValueError) as e:
+            print(f"  ⚠️  Could not expand short link {url}: {e}")
+            break
+        current = urljoin(current, location)
+        if extract_indeed_jk_from_url(current):
+            return current
+    return url
 
 
 def detect_source(url: str) -> str:

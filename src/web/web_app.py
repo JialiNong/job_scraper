@@ -1672,11 +1672,11 @@ def api_manual_apply_lookup():
     if not cleaned:
         return jsonify({"error": "No valid URLs provided"}), 400
 
-    from core.job_url import detect_source, normalize_pasted_job_url, resolve_job_id
+    from core.job_url import detect_source, expand_short_job_url, resolve_job_id
 
     results = []
     for raw in cleaned:
-        url = normalize_pasted_job_url(raw) or raw
+        url = expand_short_job_url(raw) or raw
         source = detect_source(url)
         job_id = resolve_job_id(url, source)
         hit = lookup_known_job(job_id, source) if job_id else None
@@ -1747,10 +1747,10 @@ def api_manual_apply():
     urls = data.get("urls", [])
     if not isinstance(urls, list):
         return jsonify({"error": "urls must be a list"}), 400
-    from core.job_url import normalize_pasted_job_url
+    from core.job_url import expand_short_job_url
 
     urls = [
-        normalize_pasted_job_url(u) or u.strip()
+        expand_short_job_url(u) or u.strip()
         for u in urls
         if isinstance(u, str) and u.strip()
     ]
