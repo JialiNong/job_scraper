@@ -1273,6 +1273,8 @@
     }
     .source-pill { text-transform: capitalize; }
     .source-pill.site-pill { text-transform: none; }
+    .meta-pill.origin-pipeline { color: #7dd3fc; border-color: #0ea5e944; }
+    .meta-pill.origin-manual   { color: #86efac; border-color: #22c55e44; }
 
     /* Summary */
     .recommend-reason {
@@ -2612,6 +2614,12 @@
     <option value="linkedin">LinkedIn</option>
     <option value="indeed">Indeed</option>
   </select>
+  <select id="originFilter" onchange="currentPage = 1; loadJobs()" title="How the job got onto the Tracker">
+    <option value="all">All Origins</option>
+    <option value="pipeline">Scraper</option>
+    <option value="manual">Log Job (manual)</option>
+    <option value="agent">AI agent</option>
+  </select>
   <select id="countryFilter" onchange="currentPage = 1; loadJobs()">
     <option value="germany" selected>Germany</option>
     <option value="europe">Europe (excl. Germany)</option>
@@ -3585,6 +3593,18 @@ function sourcePillHtml(job) {
   return `<span class="meta-pill source-pill">${escHtml(source)}</span>`;
 }
 
+/* Agent rows already show the ✦ agent badge, so only pipeline / manual get a pill. */
+const ORIGIN_PILL = {
+  pipeline: { label: 'Scraper', title: 'Found by the Python scraper pipeline' },
+  manual:   { label: 'Log Job', title: 'Logged by hand via Log Job' },
+};
+
+function originPillHtml(job) {
+  const pill = ORIGIN_PILL[String(job.origin || '')];
+  if (!pill) return '';
+  return `<span class="meta-pill origin-pill origin-${escHtml(job.origin)}" title="${escHtml(pill.title)}">${escHtml(pill.label)}</span>`;
+}
+
 function recommendedByBadge(job) {
   const key = String(job.recommended_by || '').toLowerCase();
   const label = RECOMMENDED_BY_LABEL[key];
@@ -3685,6 +3705,7 @@ function renderCard(job) {
         ${countryPillHtml(job)}
         ${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">📍 ${escHtml(job.location)}</span>` : ''}
         ${sourcePillHtml(job)}
+        ${originPillHtml(job)}
         ${recBadge}
         <span class="row-highlights" data-row-highlights>${highlightBadges}</span>
         ${statusPillHtml(status, job.application_timeline)}
@@ -3723,6 +3744,7 @@ function renderCard(job) {
       <div class="card-meta">
         <span class="body-highlights" data-body-highlights>${highlightBadges}</span>
         ${sourcePillHtml(job)}
+        ${originPillHtml(job)}
         ${recBadge}
         ${countryPillHtml(job)}
         ${job.matched_at ? `<span class="meta-pill">📅 ${job.matched_at}</span>` : ''}
@@ -3996,6 +4018,8 @@ function currentJobListParams() {
   const source = document.getElementById('sourceFilter').value;
   const dates  = currentDateRange();
   const country = document.getElementById('countryFilter').value;
+  const origin = document.getElementById('originFilter').value;
+  if (origin !== 'all') params.set('origin', origin);
   if (currentStatusFilter !== 'all') params.set('status', currentStatusFilter);
   if (country !== 'all') params.set('country', country);
   if (highlightsOnly) params.set('highlights', 'true');

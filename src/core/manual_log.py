@@ -16,6 +16,7 @@ from core.db_mongo import (
     lookup_known_job,
 )
 from core.country import normalize_country
+from core.job_origin import log_job_origin
 from core.job_url import (
     detect_source,
     job_stub_from_url,
@@ -460,7 +461,11 @@ def force_save_manual_job(
     try:
         matched_col.update_one(
             {"job_id": job_id, "source": source},
-            {"$set": matched_data, "$setOnInsert": {"created_at": t}},
+            {
+                "$set": matched_data,
+                # First entry path only: re-saving a pipeline row keeps "pipeline".
+                "$setOnInsert": {"created_at": t, "origin": log_job_origin(rec)},
+            },
             upsert=True,
         )
     except Exception as e:

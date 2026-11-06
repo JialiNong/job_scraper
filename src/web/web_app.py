@@ -44,6 +44,12 @@ from core.db_mongo import (
     reapplied_count,
 )
 from core.scraper_utils import indeed_job_id_variants
+from core.job_origin import (
+    ORIGIN_PIPELINE,
+    infer_origin,
+    normalize_origin,
+    origin_filter_query,
+)
 from core.manual_log import (
     AGENT_JOBS_MAX,
     IDENTITY_FIELDS,
@@ -593,6 +599,7 @@ def _serialize(job: dict) -> dict:
     rec = normalize_recommended_by(job.get("recommended_by"))
     job["recommended_by"] = rec
     job["recommend_reason"] = str(job.get("recommend_reason") or "")
+    job["origin"] = infer_origin(job)
     job["details_missing"] = job_missing_details(job)
     job["country"] = job_country(job.get("location"), job.get("country"))
     job["country_label"] = COUNTRY_LABELS.get(job["country"], "")
@@ -669,7 +676,7 @@ def timeouts():
 
 
 def _jobs_list_query_from_args(args) -> dict:
-    """Mongo query for Tracker list filters (status, source, country, search, dates, highlights)."""
+    """Mongo query for Tracker list filters (status, source, origin, country, search, dates, highlights)."""
     status_filter = args.get("status")
     source_filter = args.get("source")
     country_filter = args.get("country")
@@ -677,10 +684,13 @@ def _jobs_list_query_from_args(args) -> dict:
     date_from = (args.get("date_from") or "").strip() or None
     date_to = (args.get("date_to") or "").strip() or None
     highlights_filter = (args.get("highlights") or "").strip().lower()
+    origin_filter = normalize_origin(args.get("origin"))
     clauses = [jobs_status_filter_query(status_filter)]
     if source_filter and source_filter != "all":
         clauses.append({"source": source_filter})
     clauses.append(jobs_country_filter_query(country_filter))
+    if origin_filter:
+        clauses.append(origin_filter_query(origin_filter))
     if highlights_filter in ("1", "true", "yes"):
         clauses.append({"highlights.0": {"$exists": True}})
     if search_query:
@@ -1225,6 +1235,7 @@ def api_update_unmatched_status(job_id: str):
                     "highlights":     [],
                     "created_at":     now,
                     "from_unmatched": True,
+                    "origin":         ORIGIN_PIPELINE,
                 }
 
                 # Insert only if this job is not already on the Tracker.
@@ -1338,6 +1349,7 @@ def api_timeout_match(doc_id: str):
             "application_qa": [],
             "highlights": [],
             "from_timeout": True,
+            "origin": ORIGIN_PIPELINE,
         })
         save_job({
             "title": doc.get("title", ""),
