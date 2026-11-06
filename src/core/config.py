@@ -12,6 +12,7 @@ DEFAULT_KEYWORDS = [
     "fullstack engineer",
     "product engineer",
     "software engineer",
+    "forward deployed engineer",
 ]
 
 # Titles containing one of these are clicked without the AI title check.

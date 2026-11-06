@@ -168,13 +168,12 @@ Only one run at a time: a second `/jobs` while one is running is refused (`logs/
 
 ```python
 DEFAULT_KEYWORDS = [
-    "frontend",
-    "full stack",
-    "full-stack",
-    "fullstack",
-    "ai engineer",
+    "frontend engineer",
+    "full-stack engineer",
+    "fullstack engineer",
     "product engineer",
     "software engineer",
+    "forward deployed engineer",
 ]
 ```
 
