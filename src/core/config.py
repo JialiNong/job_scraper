@@ -14,6 +14,18 @@ DEFAULT_KEYWORDS = [
     "software engineer",
 ]
 
+# Titles containing one of these are clicked without the AI title check.
+# "software engineer" is a search keyword but NOT here: it also matches
+# embedded / HMI / data titles ("Qt/QML Simulation HMI Software Engineer"),
+# so those titles go through the AI title check instead.
+TITLE_AUTO_PASS_KEYWORDS = [
+    "frontend engineer",
+    "full-stack engineer",
+    "fullstack engineer",
+    "product engineer",
+    "forward deployed engineer",
+]
+
 # ===== Scrape budgets =====
 # scripts/run_jobs.sh / Telegram /jobs: default last 24 hours.
 # Both platforms walk every DEFAULT_KEYWORDS entry.
@@ -80,7 +92,6 @@ TITLE_EXCLUDE_KEYWORDS = [
     r"\bDesign\s+Engineer\b",
     r"\biOS\b",
     r"\bSwift\b",
-    r"\bForward\s+Deployed\b",
     r"\bInfrastructure\s+Engineer\b",
     r"\bAnalytics\s+Engineer\b",
     r"\bKubernetes\b",

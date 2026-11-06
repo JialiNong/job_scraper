@@ -36,6 +36,11 @@ separately.
    integration, DevOps/SRE/infrastructure, data engineering / data science, ML/AI model
    engineering (training, fine-tuning, ML platforms), native mobile only, QA-only, sales / solutions
    / support engineering, business-process automation / RPA, non-engineering roles.
+   **Forward Deployed Engineer is not automatically a fail.** Judge it by the duties: if the
+   job mainly builds and ships software for customers (web apps, integrations, internal tools,
+   AI features in TypeScript / JavaScript / Node.js), classify it as a fullstack role. Only fail it
+   as `not_web_dev` when it is mainly pre-sales, demos, support, configuration, or data / ML
+   pipelines. Customer-facing travel or consulting is a watch-out, not a fail.
 5. **Backend-heavy.** Backend-only, labelled backend-focused, or needs several years of senior
    backend / distributed-systems ownership. The candidate has about 1 year of backend.
 6. **Too many years.** A must-have of more than 7 years overall/frontend, or more than 2 years of

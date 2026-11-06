@@ -26,8 +26,8 @@ flowchart TB
 
     subgraph Filters["Per-card filters (before/after click)"]
         F1["1. Title blacklist<br/>TITLE_EXCLUDE_KEYWORDS"]
-        F2["2. Title keywords<br/>DEFAULT_KEYWORDS"]
-        F3["3. AI title relevance<br/>only if no keyword hit"]
+        F2["2. Auto-pass keywords<br/>TITLE_AUTO_PASS_KEYWORDS"]
+        F3["3. AI title check<br/>only if no auto-pass hit"]
         F4["4. Dedup<br/>job_id already in DB?"]
         F5["5. JD language · Lingua<br/>non-English → do not save"]
     end
@@ -191,10 +191,10 @@ flowchart TD
 
     Card --> Excl{"1. Title hits<br/>TITLE_EXCLUDE_KEYWORDS?<br/>e.g. Java / DevOps / Lead / QA…"}
     Excl -->|yes| Skip1["Skip — do not open detail"]
-    Excl -->|no| KW{"2. Title contains<br/>DEFAULT_KEYWORDS?<br/>frontend / fullstack / …"}
+    Excl -->|no| KW{"2. Title contains<br/>TITLE_AUTO_PASS_KEYWORDS?<br/>frontend / fullstack / product /<br/>forward deployed engineer"}
 
     KW -->|yes| Dedup
-    KW -->|no| AITitle{"3. AI title check<br/>related to target roles?"}
+    KW -->|no| AITitle{"3. AI title check<br/>clearly not web/product dev?"}
     AITitle -->|unrelated| Skip2["Skip<br/>count ai_title_filtered"]
     AITitle -->|related / API fail-open| Dedup
 
@@ -218,8 +218,8 @@ flowchart TD
 | Step | Implementation | Purpose |
 |------|----------------|---------|
 | 1. Title blacklist | `is_title_excluded()` · `TITLE_EXCLUDE_KEYWORDS` | Skip clearly wrong roles before clicking. `Cloud` only matches Cloud Engineer / Architect / similar roles, not “Cloud SaaS” in a frontend title. |
-| 2. Keyword hit | `title_matches_default_keywords()` · `DEFAULT_KEYWORDS` | Title already on-target → click without AI |
-| 3. AI title screen | `is_title_relevant_by_ai()` | After blacklist + no keyword: cheap AI “is this a target role?” |
+| 2. Auto-pass hit | `title_matches_auto_pass()` · `TITLE_AUTO_PASS_KEYWORDS` | frontend / full-stack / fullstack / product / forward deployed engineer → click without AI. `software engineer` is a search keyword (`DEFAULT_KEYWORDS`) but **not** auto-pass, because it also matches embedded / HMI / data titles |
+| 3. AI title screen | `is_title_relevant_by_ai()` (`AI_MODEL`, default gpt-4.1-mini) | After blacklist + no auto-pass: the prompt describes a JS/TS web engineer and skips only titles that are clearly not web/product development (embedded, HMI/Qt, data/BI, integration, growth/marketing, DevOps, QA, sales, other language stacks). Unsure → open. API error → open |
 | 4. Dedup | `is_job_id_exists()` | Do not re-open known jobs |
 | 4b. Detail timeout | `save_timeout_job()` | Title passed but JD panel missing → `timeout_jobs` for `/timeouts` |
 | 4c. LinkedIn JD body | `extract_linkedin_description()` | About-the-job region only (`JobDetails_AboutTheJob_*`). Expands See more / Mehr anzeigen. Never the whole SDUI `lazy-column` (top card + teaser + similar jobs). |
@@ -328,6 +328,6 @@ job_scraper/
 
 ## 8. One-line funnel
 
-> **Title gates (blacklist → keywords → AI title) → open detail → discard non-English JD → save English JD → matcher skips empty desc → model labels the job against CV + rules (hard fails quote the JD) → model looks up the company (cached) → code scores with MATCH_WEIGHTS → ≥ 7 and company not blocked enters Tracker.**
+> **Title gates (blacklist → auto-pass keywords → AI title) → open detail → discard non-English JD → save English JD → matcher skips empty desc → model labels the job against CV + rules (hard fails quote the JD) → model looks up the company (cached) → code scores with MATCH_WEIGHTS → ≥ 7 and company not blocked enters Tracker.**
 
 `/jobs` arguments only change *how much* to scrape: Indeed days, LinkedIn hours, and pages per keyword (both platforms). Each source starts AI matching as soon as its scrape finishes; job cards are pushed only after both lanes complete. **Filter and match rules are the same for every window.**

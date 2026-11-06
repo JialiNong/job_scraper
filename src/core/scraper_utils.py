@@ -25,6 +25,7 @@ except ImportError:
 
 from core.config import (
     DEFAULT_KEYWORDS,
+    TITLE_AUTO_PASS_KEYWORDS,
     INDEED_CONFIG,
     CDP_HOST,
     CDP_PORT,
@@ -497,9 +498,9 @@ def _normalize_title_text(text: str) -> str:
     return _KEYWORD_SPLIT.sub(" ", (text or "").lower()).strip()
 
 
-def title_matches_default_keywords(title: str, keywords=None) -> bool:
+def title_matches_auto_pass(title: str, keywords=None) -> bool:
     """
-    Return True if the title contains any DEFAULT_KEYWORDS term
+    Return True if the title contains any TITLE_AUTO_PASS_KEYWORDS term
     (hyphen/space insensitive, e.g. full-stack ≈ fullstack ≈ full stack).
     """
     if not title:
@@ -507,7 +508,7 @@ def title_matches_default_keywords(title: str, keywords=None) -> bool:
     normalized_title = _normalize_title_text(title)
     # Also check a no-space form so "fullstack" matches "full stack"
     compact_title = normalized_title.replace(" ", "")
-    for kw in keywords if keywords is not None else DEFAULT_KEYWORDS:
+    for kw in keywords if keywords is not None else TITLE_AUTO_PASS_KEYWORDS:
         normalized_kw = _normalize_title_text(kw)
         if not normalized_kw:
             continue
@@ -518,12 +519,44 @@ def title_matches_default_keywords(title: str, keywords=None) -> bool:
     return False
 
 
-def is_title_relevant_by_ai(title: str, keywords=None) -> bool:
-    """
-    Ask AI whether a job title is related to the target roles in DEFAULT_KEYWORDS.
+_TITLE_CHECK_PROMPT = """You screen job titles before opening the posting, for one candidate:
+a frontend / full-stack web engineer (JavaScript/TypeScript, React / Vue / Angular,
+some Node.js backend). A later step reads the full posting, so only reject titles
+that are clearly NOT web/product software development.
 
-    Used when the title already passed TITLE_EXCLUDE_KEYWORDS but does not
-    contain any DEFAULT_KEYWORDS term. Returns True if related (safe to click).
+Relevant (open it):
+- Software Engineer / Developer, also with a team or product suffix
+  ("Software Engineer – Payments", "Software Engineer (m/f/d)")
+- Frontend / Front-End / Full Stack / Web / UI Developer or Engineer
+- Product Engineer, Forward Deployed Engineer
+- JavaScript / TypeScript / React / Vue / Angular / Node.js Developer
+- Titles at AI companies where the work is building the product
+
+Not relevant (skip), e.g.:
+- Embedded, firmware, hardware, electronics, robotics, automotive ECU
+- HMI / Qt / QML / C++ desktop or simulation software
+  ("Qt/QML Simulation HMI Software Engineer")
+- Data visualisation / data / BI / analytics engineering ("Data Visualisation Engineer")
+- Systems / network / integration engineering ("Digital Integration Engineer")
+- Growth / marketing engineering ("Growth Engineer // AI Music Video Platform")
+- DevOps, SRE, cloud, security, QA, test, support, sales, solutions roles
+- Roles in another language stack named in the title (Java, .NET, PHP, Python, Go, …)
+
+If unsure, answer relevant.
+
+Job title: {title}
+
+Respond ONLY with valid JSON:
+{{"relevant": true/false, "reason": "<one short sentence>"}}
+"""
+
+
+def is_title_relevant_by_ai(title: str) -> bool:
+    """
+    Ask AI whether a title is plausibly web/product software development.
+
+    Used when the title passed TITLE_EXCLUDE_KEYWORDS but has no
+    TITLE_AUTO_PASS_KEYWORDS term. Returns True if worth clicking.
 
     On missing API key or API failure, returns True (fail open) so potentially
     good jobs are not dropped due to transient errors.
@@ -531,27 +564,11 @@ def is_title_relevant_by_ai(title: str, keywords=None) -> bool:
     if not title:
         return False
 
-    target_keywords = keywords if keywords is not None else DEFAULT_KEYWORDS
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         print("⚠ OPENAI_API_KEY missing; allowing click for title without keyword match")
         return True
 
-    roles = ", ".join(target_keywords)
-    prompt = f"""You screen job titles before opening the posting.
-
-Target roles (keywords): {roles}
-
-Job title: {title}
-
-Is this title plausibly related to any of the target roles above?
-Related examples: Software Developer, Frontend Developer, Full Stack Developer,
-Web Engineer, GenAI Engineer, Product-minded Software Engineer, React Developer.
-Unrelated examples: unrelated domains or roles not in the target list.
-
-Respond ONLY with valid JSON:
-{{"relevant": true/false, "reason": "<one short sentence>"}}
-"""
     try:
         from openai import OpenAI
 
@@ -563,13 +580,12 @@ Respond ONLY with valid JSON:
                 {
                     "role": "system",
                     "content": (
-                        "You classify job titles against a fixed list of target "
-                        "software roles. Be inclusive of close synonyms "
-                        "(developer ≈ engineer, fullstack ≈ full-stack) but "
-                        "reject clearly unrelated titles. Respond only with JSON."
+                        "You classify job titles for a JavaScript/TypeScript web "
+                        "engineer. Reject only titles that are clearly not web or "
+                        "product software development. Respond only with JSON."
                     ),
                 },
-                {"role": "user", "content": prompt},
+                {"role": "user", "content": _TITLE_CHECK_PROMPT.format(title=title)},
             ],
             temperature=0,
             response_format={"type": "json_object"},
@@ -590,20 +606,19 @@ def should_skip_title_before_click(title: str) -> tuple:
     Pre-click title gate.
 
     1. TITLE_EXCLUDE_KEYWORDS match → skip
-    2. Contains a DEFAULT_KEYWORDS term → click
-    3. Otherwise ask AI; skip only when AI says unrelated
+    2. Contains a TITLE_AUTO_PASS_KEYWORDS term → click
+    3. Otherwise ask AI; skip only when AI says clearly not web/product dev
 
     Returns:
         (should_skip: bool, reason: str)
     """
     if is_title_excluded(title):
         return True, "title excluded by filter"
-    if title_matches_default_keywords(title):
-        return False, "matches DEFAULT_KEYWORDS"
+    if title_matches_auto_pass(title):
+        return False, "matches TITLE_AUTO_PASS_KEYWORDS"
     if is_title_relevant_by_ai(title):
         return False, "AI judged relevant to target roles"
     return True, "AI judged unrelated to target roles"
-
 
 def _get_language_detector():
     """Build a Lingua detector once; language models load lazily on first use."""

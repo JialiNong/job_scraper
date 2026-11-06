@@ -89,7 +89,7 @@ A short always-applied pointer lives in [`.cursor/rules/impact-check.mdc`](../..
 
 One-line funnel (must stay true in architecture + code):
 
-> Title gates (exclude → DEFAULT_KEYWORDS → AI title) → click detail → non-English JD discarded → English JD saved → matcher empty-desc skip → layer 1 model labels (hard fails quote the JD) → layer 2 company lookup (cached) → code score (`MATCH_WEIGHTS`) → ≥ threshold and company not in `MATCH_BLOCKED_COMPANIES` → `matched_jobs`.
+> Title gates (exclude → TITLE_AUTO_PASS_KEYWORDS → AI title) → click detail → non-English JD discarded → English JD saved → matcher empty-desc skip → layer 1 model labels (hard fails quote the JD) → layer 2 company lookup (cached) → code score (`MATCH_WEIGHTS`) → ≥ threshold and company not in `MATCH_BLOCKED_COMPANIES` → `matched_jobs`.
 
 ### Two German-related gates
 
@@ -127,6 +127,7 @@ There is no cron / launchd schedule in this project; do not add one. When you ch
 | Concern | Location |
 |---------|----------|
 | Search keywords | `DEFAULT_KEYWORDS` in `src/core/config.py` |
+| Titles clicked without AI check | `TITLE_AUTO_PASS_KEYWORDS` in `src/core/config.py` (not `software engineer`) |
 | Title blacklist | `TITLE_EXCLUDE_KEYWORDS` in `src/core/config.py` |
 | Tracker company blocklist | `MATCH_BLOCKED_COMPANIES` in `src/core/config.py` (Instaffo / Jobgether) |
 | Indeed / LinkedIn URLs & selectors | `*_CONFIG` in `src/core/config.py` |
