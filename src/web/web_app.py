@@ -251,54 +251,13 @@ UNMATCHED_PAGE_SIZE = 20
 # GET /api/jobs/<id>/description when the user expands "Original description".
 JOBS_LIST_PROJECTION = {"description": 0}
 
-# Tracker country, derived from the free-text location (no stored field).
-# Checked in order; anything that matches none of them is Germany, since the
-# scrapers search Germany and bare German city names carry no country.
-COUNTRY_PATTERNS = (
-    ("netherlands", r"netherlands|nederland|holland|amsterdam|rotterdam|utrecht"
-                    r"|eindhoven|the hague|den haag|delft|leiden|groningen|geleen"
-                    r"|haarlem|amstelveen|hoofddorp|almere|tilburg|breda|nijmegen"
-                    r"|arnhem|maastricht|zwolle|enschede"),
-    ("germany", r"germany|deutschland"),
-    ("other", r"sweden|switzerland|austria|france|spain|united kingdom|\buk\b"
-              r"|poland|denmark|belgium|ireland|portugal|italy|czech|norway|finland"),
-    ("remote", r"^\s*(fully\s+)?(remote|european union|european economic area|emea|europe|eu)\b"),
+# Tracker country: stored `country` (agent push) or derived from location.
+# See core.country; the names below are kept for existing imports/tests.
+from core.country import (  # noqa: E402
+    COUNTRY_LABELS,
+    country_filter_query as jobs_country_filter_query,
+    job_country,
 )
-COUNTRY_LABELS = {
-    "germany": "Germany",
-    "netherlands": "Netherlands",
-    "remote": "Remote / EU",
-    "other": "Other",
-}
-
-
-def job_country(location) -> str:
-    """Country key for a Tracker card location (see COUNTRY_PATTERNS)."""
-    text = str(location or "")
-    for key, pattern in COUNTRY_PATTERNS:
-        if re.search(pattern, text, re.IGNORECASE):
-            return key
-    return "germany"
-
-
-def jobs_country_filter_query(country: Optional[str]) -> dict:
-    """Mongo clause matching job_country(location) == country."""
-    if not country or country not in COUNTRY_LABELS:
-        return {}
-
-    def no_match(pattern):
-        return {"location": {"$not": re.compile(pattern, re.IGNORECASE)}}
-
-    keys = [key for key, _ in COUNTRY_PATTERNS]
-    idx = keys.index(country)
-    pattern = COUNTRY_PATTERNS[idx][1]
-    clauses = [no_match(p) for _, p in COUNTRY_PATTERNS[:idx]]
-    hit = {"location": {"$regex": pattern, "$options": "i"}}
-    if country == "germany":
-        # Germany is also the fallback for locations no pattern matches.
-        hit = {"$or": [hit, {"$and": [no_match(p) for _, p in COUNTRY_PATTERNS[idx + 1:]]}]}
-    clauses.append(hit)
-    return {"$and": clauses}
 FETCH_DETAILS_BATCH_MAX = 80
 
 # Ensure indexes once at import (Flask reloader may import twice; ensure_indexes is idempotent)
@@ -635,7 +594,8 @@ def _serialize(job: dict) -> dict:
     job["recommended_by"] = rec
     job["recommend_reason"] = str(job.get("recommend_reason") or "")
     job["details_missing"] = job_missing_details(job)
-    job["country"] = job_country(job.get("location"))
+    job["country"] = job_country(job.get("location"), job.get("country"))
+    job["country_label"] = COUNTRY_LABELS.get(job["country"], "")
     job["can_fetch_details"] = can_fetch_details(job)
     raw_manual = job.get("manual_fields")
     if isinstance(raw_manual, list):
@@ -1889,13 +1849,15 @@ def api_agent_jobs():
 
     Header: Authorization: Bearer <AGENT_API_TOKEN>
     Body:   {"jobs": [{"url", "title"?, "company"?, "location"?,
-                       "recommended_by"?, "reason"?}, ...],
+                       "recommended_by"?, "reason"?, "country"?}, ...],
              "recommended_by": "claude"}   # optional, default claude
             (a bare job list is accepted as {"jobs": <list>})
     recommended_by is claude / cursor / gemini / gpt; a per-job value
     overrides the top-level one (each agent should send its own name).
     reason is the agent's one-line "why this job fits" (stored as
     recommend_reason, shown on the Tracker card).
+    country is the job's country ("Finland", "FI") or "Remote" for a
+    remote role open across countries; it overrides the location guess.
     Saves link-only Tracker stubs (pending, ai_pending) synchronously — no
     Chrome / no AI, so it runs on Render. A job_id already in matched_jobs /
     jobs / timeout_jobs is skipped with no write.

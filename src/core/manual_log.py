@@ -15,6 +15,7 @@ from core.db_mongo import (
     is_job_on_tracker,
     lookup_known_job,
 )
+from core.country import normalize_country
 from core.job_url import (
     detect_source,
     job_stub_from_url,
@@ -45,6 +46,7 @@ DETAILS_PRESERVE_FIELDS = (
     "application_qa",
     "recommended_by",
     "recommend_reason",
+    "country",
     "match_score",
     "manual_fields",
 )
@@ -448,6 +450,9 @@ def force_save_manual_job(
         matched_data["recommend_reason"] = reason
     if manual:
         matched_data["manual_fields"] = manual
+    country = normalize_country(job.get("country"))
+    if country:
+        matched_data["country"] = country
 
     try:
         matched_col.update_one(
@@ -583,6 +588,7 @@ def save_link_only_urls(
     recommended_by=None,
     identity=None,
     recommend_reason=None,
+    country=None,
     title=None,
     company=None,
     location=None,
@@ -643,6 +649,8 @@ def save_link_only_urls(
             job["recommended_by"] = rec
         if reason:
             job["recommend_reason"] = reason
+        if normalize_country(country):
+            job["country"] = normalize_country(country)
         apply_identity_to_job(job, identity)
         ok = save_job_record(
             job, analysis, status, applied_date, ai_pending=True, extra="link-only"
@@ -673,9 +681,11 @@ def log_agent_jobs(jobs: list, recommended_by="claude") -> dict:
     Batch-log agent-recommended jobs as link-only Tracker stubs (pending).
 
     Each item is {"url", "title"?, "company"?, "location"?, "recommended_by"?,
-    "reason"?} or a bare URL string, saved separately so it keeps its own
+    "reason"?, "country"?} or a bare URL string, saved separately so it keeps its own
     identity fields. A per-item recommended_by overrides the batch default;
     reason (why the job fits) is stored as matched_jobs.recommend_reason.
+    country (name, ISO code, or "Remote") is stored as matched_jobs.country
+    and wins over the country derived from location.
 
     A job_id already known anywhere (matched_jobs, jobs, or timeout_jobs;
     Indeed: all jk variants) is skipped with no write at all — unlike Log
@@ -720,6 +730,7 @@ def log_agent_jobs(jobs: list, recommended_by="claude") -> dict:
             recommended_by=rec,
             identity=identity,
             recommend_reason=item.get("reason"),
+            country=item.get("country"),
         ) or {}
         if url in result.get("ok", []):
             merged["ok"].append(url)

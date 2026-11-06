@@ -1456,6 +1456,11 @@
       border: 1px solid var(--border);
       color: var(--muted);
     }
+    .country-pill.country-remote {
+      background: #082f49;
+      color: #7dd3fc;
+      border-color: #0ea5e955;
+    }
     .country-pill.country-netherlands {
       background: #431407;
       color: #fdba74;
@@ -2634,11 +2639,10 @@
     <option value="indeed">Indeed</option>
   </select>
   <select id="countryFilter" onchange="currentPage = 1; loadJobs()">
+    <option value="germany" selected>Germany</option>
+    <option value="europe">Europe (excl. Germany)</option>
+    <option value="remote">Remote (global)</option>
     <option value="all">All Countries</option>
-    <option value="germany">Germany</option>
-    <option value="netherlands">Netherlands</option>
-    <option value="remote">Remote / EU</option>
-    <option value="other">Other</option>
   </select>
   <select id="timePreset" onchange="onTimePresetChange()">
     <option value="all">All Time</option>
@@ -2724,12 +2728,6 @@ const STATUS_LABEL = {
   too_many_questions: 'Skipped · Long Form',
   repost:     'Repost',
   duplicate:  'Duplicate',
-};
-const COUNTRY_LABEL = {
-  germany:     'Germany',
-  netherlands: 'Netherlands',
-  remote:      'Remote / EU',
-  other:       'Other',
 };
 const SIDE_STATUSES = ['unsuitable', 'closed', 'closed_no_reply', 'prev_rejected', 'too_many_questions', 'repost', 'duplicate'];
 const PROGRESS_STAGES = ['applied', 'rejected', 'interview', 'offer'];
@@ -3596,8 +3594,9 @@ function highlightBadgesHtml(highlights) {
    show the job site's domain instead so it does not read as Log Job. */
 function countryPillHtml(job) {
   const key = String(job.country || '');
-  if (!COUNTRY_LABEL[key]) return '';
-  return `<span class="country-pill country-${escHtml(key)}">${escHtml(COUNTRY_LABEL[key])}</span>`;
+  const label = String(job.country_label || '');
+  if (!key || !label) return '';
+  return `<span class="country-pill country-${escHtml(key)}">${escHtml(label)}</span>`;
 }
 
 function sourcePillHtml(job) {

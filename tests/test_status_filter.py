@@ -248,7 +248,9 @@ class CountryTests(unittest.TestCase):
         self.assertEqual(job_country(None), "germany")
         self.assertEqual(job_country("European Union (Remote)"), "remote")
         self.assertEqual(job_country("remote"), "remote")
-        self.assertEqual(job_country("Sweden"), "other")
+        self.assertEqual(job_country("Sweden"), "sweden")
+        self.assertEqual(job_country("Helsinki"), "finland")
+        self.assertEqual(job_country("Berlin", "finland"), "finland")
 
     def test_country_query_unknown_is_no_filter(self):
         self.assertEqual(jobs_country_filter_query(None), {})
@@ -257,12 +259,17 @@ class CountryTests(unittest.TestCase):
 
     def test_country_query_netherlands_matches_location(self):
         query = jobs_country_filter_query("netherlands")
-        self.assertEqual(query["$and"][-1]["location"]["$options"], "i")
-        self.assertIn("amsterdam", query["$and"][-1]["location"]["$regex"])
+        self.assertEqual(query["$or"][0], {"country": {"$in": ["netherlands"]}})
+        derived = query["$or"][1]["$and"][-1]["$and"][-1]["location"]
+        self.assertEqual(derived["$options"], "i")
+        self.assertIn("amsterdam", derived["$regex"])
 
     def test_default_view_is_active(self):
         self.assertIn("let currentStatusFilter = 'active';", HTML)
         self.assertIn('id="countryFilter"', HTML)
+        self.assertIn('<option value="germany" selected>Germany</option>', HTML)
+        self.assertIn('<option value="europe">', HTML)
+        self.assertIn('<option value="remote">', HTML)
         self.assertIn("params.set('country', country)", HTML)
 
 
