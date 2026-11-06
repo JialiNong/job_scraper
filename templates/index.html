@@ -1410,32 +1410,6 @@
       width: fit-content;
     }
     .btn-run-ai:hover { border-color: var(--accent); color: var(--accent); }
-    .btn-check-gates {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: var(--surface2);
-      color: var(--text);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 14px;
-      font-size: .82rem; font-weight: 600;
-      cursor: pointer;
-      width: fit-content;
-    }
-    .btn-check-gates:hover { border-color: var(--accent); color: var(--accent); }
-    .btn-check-gates:disabled { opacity: .45; pointer-events: none; }
-    .gate-check-result {
-      margin-top: 10px;
-      padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: var(--surface2);
-      font-size: .8rem;
-      line-height: 1.5;
-    }
-    .gate-check-result ul { list-style: none; padding: 0; margin: 0 0 6px; }
-    .gate-check-result li { margin: 4px 0; overflow-wrap: anywhere; }
-    .gate-check-result .gc-detail { color: var(--muted); display: block; padding-left: 22px; }
-    .gate-check-result .gc-verdict { font-weight: 600; margin-top: 4px; }
     .btn-run-ai:disabled { opacity: .45; pointer-events: none; }
     .btn-run-ai.ai-pending-btn {
       border-color: #f59e0b66;
@@ -3774,14 +3748,7 @@ function renderCard(job) {
           ${runAiLabel}
         </button>
         ${fetchBtn}
-        ${missing ? '' : `
-        <button type="button" class="btn-check-gates" data-id="${job._id}"
-                onclick="event.stopPropagation(); checkGatesForJob('${job._id}', this)"
-                title="Re-test the stored JD against the German / AI-ML title / tech-stack gates (no Chrome, no scoring, nothing saved)">
-          🧪 Check gates
-        </button>`}
       </div>
-      <div class="gate-check-result" id="gate-check-${job._id}" hidden></div>
 
       <div class="card-split">
         <div class="card-split-match">
@@ -4743,55 +4710,18 @@ async function fetchJobDetails(jobId, btn) {
 
 /* ── Run AI (scrape link + match on existing Tracker card) ───────── */
 const GATE_LABELS = {
-  german: 'German language gate',
-  stack: 'Tech stack gate',
-  ai_ml: 'AI/ML gate',
-  ai_ml_title: 'AI/ML title gate',
-  description: 'JD completeness',
-  empty_desc: 'JD completeness (empty)',
-  incomplete_desc: 'JD completeness (incomplete)',
+  german: 'German required',
+  stack: 'Non-JS backend required',
+  leadership: 'Leadership role',
+  not_web_dev: 'Not web development',
+  backend_heavy: 'Backend-heavy',
+  too_many_years: 'Too many years required',
+  contract_or_location: 'Contract type / location',
+  blocked_company: 'Blocked company',
+  empty_desc: 'Empty JD',
+  incomplete_desc: 'Unusable JD',
+  ai_ml: 'AI/ML role',
 };
-
-async function checkGatesForJob(jobId, btn) {
-  const box = document.getElementById(`gate-check-${jobId}`);
-  if (!jobId || !btn || !box) return;
-  const originalLabel = btn.textContent;
-  btn.disabled = true;
-  btn.textContent = '⏳ Checking…';
-  box.hidden = false;
-  box.innerHTML = '<span class="gc-detail" style="padding:0">Running gates on the stored JD (tech-stack gate calls the extractor, a few seconds)…</span>';
-  try {
-    const res = await fetch(`/api/jobs/${jobId}/check-gates`, { method: 'POST' });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data.ok) {
-      box.innerHTML = `<div class="gc-verdict">❌ ${escHtml(data.error || 'Gate check failed')}</div>`;
-      return;
-    }
-    const icon = { pass: '✅', block: '⛔', skip: '⏭️', error: '⚠️' };
-    const rows = (data.steps || []).map(step => `
-      <li>${icon[step.status] || '•'} <strong>${escHtml(step.label)}</strong> — ${escHtml(step.status)}
-        ${step.detail ? `<span class="gc-detail">${escHtml(step.detail)}</span>` : ''}
-      </li>`).join('');
-    const current = data.current_gate || '';
-    const wasGated = current && current !== 'scored';
-    let verdict;
-    if (data.would_score) {
-      verdict = wasGated
-        ? `✅ All gates pass now (card was stopped at ${escHtml(GATE_LABELS[current] || current)}). Click Re-run AI to score it.`
-        : '✅ All gates pass — a Run AI would go on to scoring.';
-    } else {
-      const by = GATE_LABELS[data.blocked_by] || data.blocked_by;
-      verdict = `⛔ A Run AI would stop at ${escHtml(by)}.`;
-    }
-    box.innerHTML = `<ul>${rows}</ul><div class="gc-verdict">${verdict}</div>
-      <div class="gc-detail" style="padding:0">Dry run on the stored JD — nothing was saved.</div>`;
-  } catch (err) {
-    box.innerHTML = `<div class="gc-verdict">❌ ${escHtml(err.message || 'Network error')}</div>`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = originalLabel;
-  }
-}
 
 async function runAiForJob(jobId, btn) {
   if (!jobId || !btn) return;
@@ -4827,7 +4757,7 @@ async function runAiForJob(jobId, btn) {
         if (data.ok) {
           const gate = data.match_gate || '';
           if (gate && gate !== 'scored') {
-            showToast(`⛔ Stopped at ${GATE_LABELS[gate] || gate} — AI scoring was not run. Use 🧪 Check gates to see why.`, 'err');
+            showToast(`⛔ Hard fail: ${GATE_LABELS[gate] || gate} — see the card for the quoted reason.`, 'err');
           } else {
             const score = data.match_score != null ? ` score ${data.match_score}/10` : '';
             showToast(`✅ AI done${score}`);

@@ -153,7 +153,7 @@ class FallbackSaveTests(unittest.TestCase):
         ), patch(
             "matching.ai_matcher.load_user_profile", return_value=""
         ), patch(
-            "matching.ai_matcher.load_matching_criteria", return_value=""
+            "matching.ai_matcher.load_matching_rules", return_value=""
         ), patch.object(mas, "get_tracker_job", return_value=None), patch.object(
             ml, "is_job_on_tracker", return_value=False
         ), patch.object(ml, "force_save_manual_job", side_effect=fake_save), patch.object(
@@ -189,7 +189,7 @@ class FallbackSaveTests(unittest.TestCase):
         ), patch(
             "matching.ai_matcher.load_user_profile", return_value="profile"
         ), patch(
-            "matching.ai_matcher.load_matching_criteria", return_value="criteria"
+            "matching.ai_matcher.load_matching_rules", return_value="rules"
         ), patch.object(mas, "get_tracker_job", return_value=None), patch.object(
             mas, "scrape_job_page", return_value=None
         ), patch.object(ml, "force_save_manual_job", side_effect=fake_save), patch.object(

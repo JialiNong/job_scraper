@@ -1,467 +1,326 @@
 #!/usr/bin/env python3
 """
-Dry-run matching eval against a frozen golden JD set.
+Check the matcher (src/matching/evaluator.py) against Jiali's own Tracker decisions.
+"old" is the score stored on each card by the matcher that produced it.
 
-Reuses the same German / stack / AI-ML gates + AI matcher as production, but NEVER
-writes to MongoDB (no mark_job_as_matched / matched_jobs).
+Labels come from matched_jobs.status:
+  positive = she applied (applied / rejected / interview / prev_rejected / closed_no_reply)
+  negative = she marked it unsuitable
+A third set re-checks jobs the current German rule gate rejected.
+
+Read-only on MongoDB. Results go to evals/results/ (gitignored); company lookups are
+cached in evals/results/company_cache.json so reruns do not search again.
 
 Usage:
-  python3 scripts/tools/eval_matcher.py                 # run all cases
-  python3 scripts/tools/eval_matcher.py -l 3            # smoke test
-  python3 scripts/tools/eval_matcher.py --ids german-mandatory-junior-swe,devops-title-should-fail
-  python3 scripts/tools/eval_matcher.py --save-baseline # freeze this run as "old matcher"
-  python3 scripts/tools/eval_matcher.py --baseline evals/baselines/latest.json
+  python3 scripts/tools/eval_matcher.py                    # 40 pos, 40 neg, 25 German
+  python3 scripts/tools/eval_matcher.py --pos 10 --neg 10 --german 5
+  python3 scripts/tools/eval_matcher.py --job-model gpt-5.5
+  python3 scripts/tools/eval_matcher.py --unapplied        # every Tracker job she did not apply to
+  python3 scripts/tools/eval_matcher.py --unapplied --limit 100   # the 100 most recent ones
 """
-from __future__ import annotations
-
 import argparse
 import json
 import os
+import random
+from collections import Counter
 import sys
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 
 _ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-_SRC = os.path.join(_ROOT, "src")
-if _SRC not in sys.path:
-    sys.path.insert(0, _SRC)
+sys.path.insert(0, os.path.join(_ROOT, "src"))
 
-from dotenv import load_dotenv
-
-from matching.ai_matcher import (
-    evaluate_job,
-    load_matching_criteria,
-    load_user_profile,
-)
+from dotenv import load_dotenv  # noqa: E402
 
 load_dotenv(os.path.join(_ROOT, ".env"))
 
-DEFAULT_FIXTURES = os.path.join(_ROOT, "evals", "matching_eval_set.json")
-DEFAULT_BASELINE = os.path.join(_ROOT, "evals", "baselines", "latest.json")
+import matching.evaluator as ev  # noqa: E402
+from core.db_mongo import APPLICATION_QUERY, get_collection  # noqa: E402
+from matching.evaluator import load_user_profile  # noqa: E402
+
+POSITIVE = ["applied", "rejected", "interview", "prev_rejected", "closed_no_reply"]
 RESULTS_DIR = os.path.join(_ROOT, "evals", "results")
-
-BANDS: Dict[str, Tuple[float, float]] = {
-    "fail": (0.0, 3.0),
-    "weak": (4.0, 6.0),
-    "good": (7.0, 8.0),
-    "special": (9.0, 10.0),
-}
+CACHE_PATH = os.path.join(RESULTS_DIR, "company_cache.json")
+MIN_DESC = 500
 
 
-def score_to_band(score: float, special_match: bool = False) -> str:
-    if special_match or score >= 9.0:
-        return "special"
-    if score <= 3.0:
-        return "fail"
-    if score <= 6.0:
-        return "weak"
-    return "good"
+def _desc(doc, jobs):
+    text = doc.get("description") or ""
+    if len(text) < MIN_DESC:
+        src = jobs.find_one(
+            {"job_id": doc.get("job_id"), "source": doc.get("source")},
+            {"description": 1},
+        )
+        text = (src or {}).get("description") or text
+    return text
 
 
-def distance_to_band(score: float, band: str) -> float:
-    lo, hi = BANDS[band]
-    if lo <= score <= hi:
-        return 0.0
-    if score < lo:
-        return lo - score
-    return score - hi
+def build_sample(n_pos, n_neg, n_german, seed):
+    rng = random.Random(seed)
+    mj = get_collection("matched_jobs")
+    jobs = get_collection("jobs")
+    fields = {
+        "title": 1, "company": 1, "location": 1, "description": 1, "job_id": 1,
+        "source": 1, "status": 1, "match_score": 1, "notes": 1, "recommended_by": 1,
+        "link": 1,
+    }
 
+    def pick(query, n, label):
+        docs = list(mj.find(query, fields))
+        rng.shuffle(docs)
+        out = []
+        for d in docs:
+            if len(out) >= n:
+                break
+            d["description"] = _desc(d, jobs)
+            if len(d["description"]) < MIN_DESC:
+                continue
+            d["label"] = label
+            out.append(d)
+        return out
 
-def load_fixtures(path: str) -> Dict[str, Any]:
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    if not data.get("cases"):
-        raise SystemExit(f"No cases in {path}")
-    return data
+    sample = pick({"status": {"$in": POSITIVE}}, n_pos, "positive")
+    sample += pick({"status": "unsuitable"}, n_neg, "negative")
 
-
-def load_baseline(path: Optional[str]) -> Dict[str, Dict[str, Any]]:
-    """Map eval_id -> {match_score, recommendation, special_match, ...}."""
-    if not path:
-        return {}
-    if not os.path.exists(path):
-        print(f"Warning: baseline not found at {path}; comparing to fixture baseline_from_db only")
-        return {}
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    cases = data.get("cases") or data.get("results") or []
-    out = {}
-    for row in cases:
-        eid = row.get("eval_id")
-        if not eid:
+    german = list(
+        jobs.find(
+            {"match_gate": "german", "description": {"$exists": True}},
+            {**fields, "disqualification_reason": 1},
+        )
+    )
+    rng.shuffle(german)
+    for d in german:
+        if sum(1 for s in sample if s["label"] == "german_gate") >= n_german:
+            break
+        if len(d.get("description") or "") < MIN_DESC:
             continue
-        # Saved baseline format from --save-baseline
-        if "match_score" in row:
-            out[eid] = row
-        elif "new" in row:
-            out[eid] = row["new"]
+        d["label"] = "german_gate"
+        sample.append(d)
+    return sample
+
+
+def build_unapplied(limit=None):
+    """matched_jobs rows with no application (no applied_at / timeline / applied status),
+    newest first (by when they were added to the Tracker)."""
+    mj = get_collection("matched_jobs")
+    jobs = get_collection("jobs")
+    out = []
+    cursor = mj.find({"$nor": [APPLICATION_QUERY]}).sort("_id", -1)
+    if limit:
+        cursor = cursor.limit(limit)
+    for d in cursor:
+        d["description"] = _desc(d, jobs)
+        d["label"] = "unapplied"
+        out.append(d)
     return out
 
 
-def baseline_for_case(
-    case: Dict[str, Any],
-    file_baseline: Dict[str, Dict[str, Any]],
-) -> Optional[Dict[str, Any]]:
-    eid = case["eval_id"]
-    if eid in file_baseline:
-        return file_baseline[eid]
-    db_base = case.get("baseline_from_db") or {}
-    if db_base.get("match_score") is not None:
-        return {
-            "match_score": db_base.get("match_score"),
-            "recommendation": db_base.get("recommendation"),
-            "special_match": bool(db_base.get("special_match")),
-            "disqualification_reason": db_base.get("disqualification_reason") or "",
-            "summary": db_base.get("summary") or "",
-            "source": "fixture_db",
-        }
-    return None
+def report_unapplied(rows):
+    def band(score):
+        if score is None:
+            return "error"
+        if score < 6:
+            return "<6"
+        if score < 7:
+            return "6–6.9"
+        return "≥7"
+
+    errors = [r for r in rows if r["score"] is None]
+    no_jd = [r for r in rows if "description unusable" in r["parts"]]
+    judged = [r for r in rows if r not in no_jd and r not in errors]
+    print(f"\n=== {len(rows)} Tracker jobs she did not apply to ===")
+    print(f"API errors (not scored): {len(errors)}")
+    print(f"No usable JD (cannot judge): {len(no_jd)}")
+    print(f"Judged: {len(judged)}")
+    if not judged:
+        return
+    for b in ("<6", "6–6.9", "≥7"):
+        n = sum(1 for r in judged if band(r["score"]) == b)
+        if n:
+            print(f"  {b:<6} {n:4}  ({n / len(judged):.0%})")
+
+    print("\nBy her status (judged jobs):")
+    statuses = sorted({r["status"] for r in judged}, key=lambda s: -sum(1 for r in judged if r["status"] == s))
+    for st in statuses:
+        group = [r for r in judged if r["status"] == st]
+        cells = "  ".join(f"{b} {sum(1 for r in group if band(r['score']) == b):3}" for b in ("<6", "6–6.9", "≥7"))
+        print(f"  {str(st):<20} {len(group):4} | {cells}")
+
+    reasons = Counter()
+    for r in judged:
+        if (r["score"] or 0) < 6:
+            reasons[next((p for p in r["parts"] if p.startswith("hard fail")), "low score (no hard fail)")] += 1
+    print("\nWhy below 6:")
+    for k, n in reasons.most_common():
+        print(f"  {n:4}  {k}")
+
+    print("\nPending (undecided) jobs scoring ≥ 7 — maybe worth a look:")
+    for r in sorted(judged, key=lambda r: -(r["score"] or 0)):
+        if r["status"] == "pending" and (r["score"] or 0) >= 7:
+            print(f"  {r['score']:>4} | {r['title']} | {r['company']} | {r.get('link') or ''}")
 
 
-def run_one(
-    case: Dict[str, Any],
-    user_profile: str,
-    criteria: str,
-    temperature: float,
-) -> Dict[str, Any]:
-    job = dict(case["job"])
-    analysis = evaluate_job(
-        job, user_profile, criteria, temperature=temperature
-    )
-    if not analysis:
-        return {
-            "eval_id": case["eval_id"],
-            "expected_band": case["expected_band"],
-            "error": "AI analysis failed",
-            "used_german_gate": False,
-            "match_gate": "",
-        }
-
-    match_gate = analysis.get("match_gate") or "scored"
-    used_german_gate = match_gate == "german"
-
-    score = float(analysis.get("match_score") or 0)
-    special = bool(analysis.get("special_match"))
-    actual_band = score_to_band(score, special)
-
-    return {
-        "eval_id": case["eval_id"],
-        "expected_band": case["expected_band"],
-        "note": case.get("note") or "",
-        "title": job.get("title") or "",
-        "company": job.get("company") or "",
-        "location": job.get("location") or "",
-        "warnings": list(case.get("warnings") or []),
-        "used_german_gate": used_german_gate,
-        "match_gate": match_gate,
-        "match_score": score,
-        "recommendation": analysis.get("recommendation") or "",
-        "special_match": special,
-        "special_match_reasons": analysis.get("special_match_reasons") or [],
-        "disqualification_reason": analysis.get("disqualification_reason") or "",
-        "summary": analysis.get("summary") or "",
-        "actual_band": actual_band,
-        "band_pass": actual_band == case["expected_band"],
-        "distance_to_expected": distance_to_band(score, case["expected_band"]),
-    }
+def run_one(job, cv, rules, cache):
+    if job["label"] == "german_gate":
+        labels = ev.classify_job(job, cv=cv, rules=rules)
+        return {"labels": labels, "company": None, **ev.score_job(job, labels)}
+    return ev.evaluate(job, cv=cv, rules=rules, company_cache=cache)
 
 
-def compare_to_baseline(row: Dict[str, Any], baseline: Optional[Dict[str, Any]]) -> None:
-    if not baseline or baseline.get("match_score") is None:
-        row["baseline_score"] = None
-        row["delta"] = None
-        row["vs_baseline"] = "n/a"
+def _old_score(job):
+    try:
+        return float(job.get("match_score"))
+    except (TypeError, ValueError):
+        return None
+
+
+def report(rows):
+    lab = [r for r in rows if r["label"] in ("positive", "negative")]
+    pos = [r for r in lab if r["label"] == "positive"]
+    neg = [r for r in lab if r["label"] == "negative"]
+    print(f"\n=== Tracker decisions: {len(pos)} applied, {len(neg)} unsuitable ===")
+    print("How many of each would reach the Tracker, and the unsuitable share among them:")
+
+    def line(name, key, t):
+        p = sum(1 for r in pos if (r[key] is not None and r[key] >= t))
+        n = sum(1 for r in neg if (r[key] is not None and r[key] >= t))
+        share = n / (p + n) if p + n else 0
+        print(f"  {name:<10} ≥{t:<4} applied kept {p:3}/{len(pos)}  unsuitable kept {n:3}/{len(neg)}  unsuitable share {share:.0%}")
+
+    for t in (7, 8, 9):
+        line("stored", "old_score", t)
+    for t in (6, 7, 7.5, 8):
+        line("now", "score", t)
+
+    ger = [r for r in rows if r["label"] == "german_gate"]
+    if ger:
+        agree = sum(1 for r in ger if r["labels"] and r["labels"].get("german_required"))
+        print(f"\n=== German rule gate re-check: matcher also says German required for {agree}/{len(ger)} ===")
+        for r in ger:
+            lb = r["labels"] or {}
+            if not lb.get("german_required"):
+                print(f"  DISAGREE: {r['title']} | {r['company']}")
+                print(f"     rule gate: {(r.get('disqualification_reason') or '')[:160]}")
+                print(f"     matcher: {lb.get('summary', '')[:200]}")
+
+    falsely_german = [r for r in pos if r["labels"] and r["labels"].get("german_required")]
+    print(f"\nApplied jobs the matcher marks German-required: {len(falsely_german)}")
+    for r in falsely_german:
+        print(f"  {r['title']} | {r['company']} | {r['labels'].get('german_evidence', '')[:160]}")
+
+    print("\n=== Unsuitable jobs still scored ≥ 7 ===")
+    for r in sorted(neg, key=lambda r: -(r["score"] or 0)):
+        if (r["score"] or 0) >= 7:
+            print(f"  {r['score']:>4} | {r['title']} | {r['company']} | {', '.join(r['parts'])}")
+            if r.get("notes"):
+                print(f"       her note: {str(r['notes'])[:160]}")
+    print("\n=== Applied jobs scored < 7 ===")
+    for r in sorted(pos, key=lambda r: (r["score"] or 0)):
+        if (r["score"] or 0) < 7:
+            lb = r["labels"] or {}
+            print(f"  {r['score']} | {r['title']} | {r['company']} | {', '.join(r['parts'])}")
+            if lb.get("hard_fail_evidence"):
+                print(f"       evidence: {lb['hard_fail_evidence'][:160]}")
+
+    tin = sum((r["labels"] or {}).get("_usage", {}).get("input_tokens", 0) for r in rows)
+    tout = sum((r["labels"] or {}).get("_usage", {}).get("output_tokens", 0) for r in rows)
+    cin = sum((r["company_profile"] or {}).get("_usage", {}).get("input_tokens", 0) for r in rows if r.get("company_fresh"))
+    cout = sum((r["company_profile"] or {}).get("_usage", {}).get("output_tokens", 0) for r in rows if r.get("company_fresh"))
+    print(f"\nTokens — job layer: {tin} in / {tout} out over {len(rows)} jobs; "
+          f"company layer (new lookups only): {cin} in / {cout} out")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--pos", type=int, default=40)
+    ap.add_argument("--neg", type=int, default=40)
+    ap.add_argument("--german", type=int, default=25)
+    ap.add_argument("--seed", type=int, default=7)
+    ap.add_argument("--workers", type=int, default=6)
+    ap.add_argument("--job-model", default=None)
+    ap.add_argument("--company-model", default=None)
+    ap.add_argument("--from-results", help="Re-score a saved results file (no API calls)")
+    ap.add_argument("--unapplied", action="store_true",
+                    help="Score Tracker jobs she did not apply to (newest first)")
+    ap.add_argument("--limit", type=int, default=None,
+                    help="With --unapplied: only the N most recently added")
+    args = ap.parse_args()
+
+    os.makedirs(RESULTS_DIR, exist_ok=True)
+    if args.from_results:
+        with open(args.from_results, encoding="utf-8") as f:
+            rows = json.load(f)
+        for r in rows:
+            res = ev.score_job(r, r.get("labels"), r.get("company_profile"))
+            r["score"], r["parts"] = res["score"], res["parts"]
+        if rows and rows[0]["label"] == "unapplied":
+            report_unapplied(rows)
+        else:
+            report(rows)
         return
 
-    old = float(baseline["match_score"])
-    new = float(row["match_score"])
-    delta = round(new - old, 2)
-    old_dist = distance_to_band(old, row["expected_band"])
-    new_dist = row["distance_to_expected"]
+    if args.job_model:
+        ev.JOB_MODEL = args.job_model
+    if args.company_model:
+        ev.COMPANY_MODEL = args.company_model
+    print(f"Job model: {ev.JOB_MODEL} · company model: {ev.COMPANY_MODEL} · reasoning: {ev.REASONING_EFFORT}")
 
-    special_changed = bool(baseline.get("special_match")) != bool(
-        row.get("special_match")
-    )
+    cache = {}
+    if os.path.exists(CACHE_PATH):
+        with open(CACHE_PATH, encoding="utf-8") as f:
+            cache = json.load(f)
+    cached_before = set(cache)
 
-    if new_dist < old_dist - 0.05:
-        # Closer to the expected band (e.g. 8 → 2 when expected fail)
-        vs = "improved"
-    elif new_dist > old_dist + 0.05:
-        # Farther from the expected band (e.g. 2 → 7 when expected fail)
-        vs = "regress"
-    elif abs(delta) < 0.05 and not special_changed:
-        vs = "same"
+    sample = build_unapplied(args.limit) if args.unapplied else build_sample(args.pos, args.neg, args.german, args.seed)
+    print(f"Sample: {len(sample)} jobs")
+    cv, rules = load_user_profile(), ev.load_matching_rules()
+    if not cv:
+        sys.exit("docs/user_profile.md is empty or missing")
+
+    def work(job):
+        res = run_one(job, cv, rules, cache)
+        print(f"  {res['score']!s:>5} ({job['label']}) {job.get('title')} | {job.get('company')}")
+        return job, res
+
+    rows = []
+    with ThreadPoolExecutor(max_workers=args.workers) as pool:
+        try:
+            results = list(pool.map(work, sample))
+        except ev.OutOfCreditsError as exc:
+            pool.shutdown(wait=False, cancel_futures=True)
+            sys.exit(f"Stopped: {exc}")
+        for job, res in results:
+            key = ev.company_key(job.get("company") or "")
+            rows.append({
+                "label": job["label"],
+                "title": job.get("title"),
+                "company": job.get("company"),
+                "location": job.get("location"),
+                "link": job.get("link"),
+                "status": job.get("status"),
+                "recommended_by": job.get("recommended_by"),
+                "notes": job.get("notes"),
+                "disqualification_reason": job.get("disqualification_reason"),
+                "old_score": _old_score(job),
+                "score": res["score"],
+                "parts": res["parts"],
+                "labels": res["labels"],
+                "company_profile": res["company"],
+                "company_fresh": bool(res["company"]) and key not in cached_before,
+            })
+
+    with open(CACHE_PATH, "w", encoding="utf-8") as f:
+        json.dump(cache, f, ensure_ascii=False, indent=1)
+    prefix = "unapplied" if args.unapplied else "decisions"
+    out = os.path.join(RESULTS_DIR, f"{prefix}_{datetime.now():%Y%m%d_%H%M%S}.json")
+    with open(out, "w", encoding="utf-8") as f:
+        json.dump(rows, f, ensure_ascii=False, indent=1, default=str)
+    if args.unapplied:
+        report_unapplied(rows)
     else:
-        # Still the same distance (usually both already inside the expected
-        # band). Treat in-band score jitter as same, not regress/improved.
-        vs = "same"
-
-    row["baseline_score"] = old
-    row["baseline_special_match"] = bool(baseline.get("special_match"))
-    row["baseline_source"] = baseline.get("source") or "file"
-    row["delta"] = delta
-    row["vs_baseline"] = vs
-
-
-def fmt_score(v: Any) -> str:
-    if v is None:
-        return "  - "
-    return f"{float(v):4.1f}"
-
-
-def print_table(rows: List[Dict[str, Any]]) -> None:
-    header = (
-        f"{'eval_id':<34} {'exp':<8} {'base':>5} {'new':>5} {'Δ':>5} "
-        f"{'band':<8} {'vs':<9} {'ok':<5} title"
-    )
-    print("\n" + header)
-    print("-" * len(header) + "-" * 24)
-
-    for r in rows:
-        if r.get("error"):
-            print(
-                f"{r['eval_id']:<34} {r.get('expected_band','?'):<8} "
-                f"{'ERR':>5} {'':>5} {'':>5} {'':<8} {'':<9} {'FAIL':<5} {r['error']}"
-            )
-            continue
-
-        delta = r.get("delta")
-        delta_s = "  - " if delta is None else f"{delta:+4.1f}"
-        ok = "PASS" if r.get("band_pass") else "MISS"
-        warn = " !" if r.get("warnings") else ""
-        gate = ""
-        if r.get("used_german_gate"):
-            gate = " [DE]"
-        elif r.get("match_gate") == "stack":
-            gate = " [ST]"
-        elif r.get("match_gate") == "ai_ml":
-            gate = " [ML]"
-        title = (r.get("title") or "")[:40]
-        print(
-            f"{r['eval_id']:<34} {r['expected_band']:<8} "
-            f"{fmt_score(r.get('baseline_score'))} {fmt_score(r.get('match_score'))} "
-            f"{delta_s:>5} {r.get('actual_band', '?'):<8} "
-            f"{r.get('vs_baseline', 'n/a'):<9} {ok:<5} {title}{gate}{warn}"
-        )
-
-
-def print_summary(rows: List[Dict[str, Any]]) -> int:
-    usable = [r for r in rows if not r.get("error")]
-    errors = [r for r in rows if r.get("error")]
-    passed = [r for r in usable if r.get("band_pass")]
-    missed = [r for r in usable if not r.get("band_pass")]
-    improved = [r for r in usable if r.get("vs_baseline") == "improved"]
-    regress = [r for r in usable if r.get("vs_baseline") == "regress"]
-
-    print("\n=== Summary ===")
-    print(f"Cases:     {len(rows)}")
-    print(f"Band PASS: {len(passed)}/{len(usable)}")
-    print(f"Band MISS: {len(missed)}")
-    print(f"Improved:  {len(improved)}")
-    print(f"Regress:   {len(regress)}")
-    print(f"Errors:    {len(errors)}")
-
-    if missed:
-        print("\nMisses:")
-        for r in missed:
-            print(
-                f"  · {r['eval_id']}: expected {r['expected_band']}, "
-                f"got {r.get('actual_band')} ({r.get('match_score')}) "
-                f"— {r.get('summary', '')[:100]}"
-            )
-    if regress:
-        print("\nRegressions vs baseline:")
-        for r in regress:
-            print(
-                f"  · {r['eval_id']}: {r.get('baseline_score')} → {r.get('match_score')} "
-                f"(Δ {r.get('delta'):+}) expected {r['expected_band']}"
-            )
-    if improved:
-        print("\nImprovements vs baseline:")
-        for r in improved:
-            print(
-                f"  · {r['eval_id']}: {r.get('baseline_score')} → {r.get('match_score')} "
-                f"(Δ {r.get('delta'):+})"
-            )
-
-    # Non-zero exit if band misses, regressions, or errors
-    if errors or missed or regress:
-        return 1
-    return 0
-
-
-def save_baseline(path: str, rows: List[Dict[str, Any]], meta: Dict[str, Any]) -> None:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    payload = {
-        "saved_at": datetime.now(timezone.utc).isoformat(),
-        "meta": meta,
-        "cases": [
-            {
-                "eval_id": r["eval_id"],
-                "match_score": r.get("match_score"),
-                "recommendation": r.get("recommendation"),
-                "special_match": r.get("special_match"),
-                "special_match_reasons": r.get("special_match_reasons"),
-                "disqualification_reason": r.get("disqualification_reason"),
-                "summary": r.get("summary"),
-                "actual_band": r.get("actual_band"),
-                "used_german_gate": r.get("used_german_gate"),
-                "match_gate": r.get("match_gate"),
-            }
-            for r in rows
-            if not r.get("error")
-        ],
-    }
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, ensure_ascii=False)
-    print(f"\n✓ Baseline saved: {path} ({len(payload['cases'])} cases)")
-
-
-def save_results(rows: List[Dict[str, Any]], meta: Dict[str, Any]) -> str:
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    path = os.path.join(RESULTS_DIR, f"run_{stamp}.json")
-    payload = {
-        "ran_at": datetime.now(timezone.utc).isoformat(),
-        "meta": meta,
-        "results": rows,
-    }
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, indent=2, ensure_ascii=False)
-    print(f"✓ Results saved: {path}")
-    return path
-
-
-def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Dry-run AI matcher against frozen eval JDs (no DB writes)"
-    )
-    parser.add_argument(
-        "--fixtures",
-        "-f",
-        default=DEFAULT_FIXTURES,
-        help="Path to matching_eval_set.json",
-    )
-    parser.add_argument(
-        "--baseline",
-        "-b",
-        default=None,
-        help="Baseline JSON from a previous --save-baseline (default: evals/baselines/latest.json if present, else fixture DB scores)",
-    )
-    parser.add_argument(
-        "--save-baseline",
-        action="store_true",
-        help=f"Write this run to {DEFAULT_BASELINE}",
-    )
-    parser.add_argument(
-        "--limit",
-        "-l",
-        type=int,
-        default=None,
-        help="Only run the first N cases",
-    )
-    parser.add_argument(
-        "--ids",
-        default=None,
-        help="Comma-separated eval_id list to run",
-    )
-    parser.add_argument(
-        "--temperature",
-        type=float,
-        default=0.0,
-        help="AI temperature for eval (default 0.0 for more stable scores)",
-    )
-    parser.add_argument(
-        "--no-save-results",
-        action="store_true",
-        help="Do not write evals/results/run_*.json",
-    )
-    args = parser.parse_args()
-
-    fixtures = load_fixtures(args.fixtures)
-    cases = list(fixtures["cases"])
-
-    if args.ids:
-        wanted = {x.strip() for x in args.ids.split(",") if x.strip()}
-        cases = [c for c in cases if c["eval_id"] in wanted]
-        missing = wanted - {c["eval_id"] for c in cases}
-        if missing:
-            print(f"Warning: unknown eval_ids: {sorted(missing)}")
-
-    if args.limit is not None:
-        cases = cases[: args.limit]
-
-    baseline_path = args.baseline
-    if baseline_path is None and os.path.exists(DEFAULT_BASELINE):
-        baseline_path = DEFAULT_BASELINE
-    file_baseline = load_baseline(baseline_path)
-
-    user_profile = load_user_profile()
-    if not user_profile:
-        print("Error: docs/user_profile.md missing or empty")
-        return 2
-    criteria = load_matching_criteria()
-    if not criteria:
-        print("Warning: docs/matching_criteria.md missing; continuing with profile only")
-
-    print("=== Matching Eval (dry-run, no DB writes) ===")
-    print(f"Fixtures:  {args.fixtures} ({len(cases)} cases)")
-    print(f"Baseline:  {baseline_path or 'fixture baseline_from_db'}")
-    print(f"Model:     {os.getenv('AI_MODEL', 'gpt-4.1-mini')}")
-    print(f"Temp:      {args.temperature}")
-
-    rows: List[Dict[str, Any]] = []
-    for i, case in enumerate(cases, 1):
-        print(f"\n--- [{i}/{len(cases)}] {case['eval_id']} ---")
-        print(f"Expected: {case['expected_band']} | {case.get('note', '')[:90]}")
-        if case.get("warnings"):
-            print(f"⚠ warnings: {case['warnings']}")
-
-        row = run_one(case, user_profile, criteria, temperature=args.temperature)
-        compare_to_baseline(row, baseline_for_case(case, file_baseline))
-        rows.append(row)
-
-        if row.get("error"):
-            print(f"✗ {row['error']}")
-            continue
-        print(
-            f"Score: {row['match_score']}/10  band={row['actual_band']}  "
-            f"expected={row['expected_band']}  "
-            f"{'PASS' if row['band_pass'] else 'MISS'}  "
-            f"vs_baseline={row['vs_baseline']}"
-            + (f" (Δ {row['delta']:+})" if row.get("delta") is not None else "")
-        )
-        if row.get("used_german_gate"):
-            print(f"German gate: {row.get('disqualification_reason', '')[:120]}")
-        elif row.get("match_gate") in ("stack", "ai_ml"):
-            print(
-                f"{row['match_gate']} gate: "
-                f"{row.get('disqualification_reason', '')[:120]}"
-            )
-        if row.get("special_match"):
-            reasons = row.get("special_match_reasons") or []
-            print(f"★ Special Match: {', '.join(reasons[:3])}")
-        if row.get("summary"):
-            print(f"Summary: {row['summary'][:160]}")
-
-    print_table(rows)
-
-    meta = {
-        "fixtures": args.fixtures,
-        "baseline": baseline_path,
-        "model": os.getenv("AI_MODEL", "gpt-4.1-mini"),
-        "temperature": args.temperature,
-        "case_count": len(cases),
-    }
-
-    if not args.no_save_results:
-        save_results(rows, meta)
-
-    if args.save_baseline:
-        save_baseline(DEFAULT_BASELINE, rows, meta)
-
-    return print_summary(rows)
+        report(rows)
+    print(f"\nSaved {out}")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

@@ -204,7 +204,8 @@ def stub_ai_pending_analysis() -> dict:
         "what_youll_do": {"matched": [], "unmatched": []},
         "what_theyre_looking_for": {"matched": [], "unmatched": []},
         "match_gate": "",
-        "requirement_extract": {},
+        "job_labels": {},
+        "company_profile": {},
     }
 
 
@@ -236,7 +237,9 @@ def analysis_fields(analysis: dict) -> dict:
         "what_youll_do": _pair(analysis.get("what_youll_do")),
         "what_theyre_looking_for": _pair(analysis.get("what_theyre_looking_for")),
         "match_gate": analysis.get("match_gate") or "",
-        "requirement_extract": analysis.get("requirement_extract") or {},
+        "needs_refetch": bool(analysis.get("needs_refetch")),
+        "job_labels": analysis.get("job_labels") or {},
+        "company_profile": analysis.get("company_profile") or {},
     }
 
 

@@ -38,12 +38,12 @@ flowchart TB
         Stats[("scraper_stats")]
     end
 
-    subgraph Match["Match layer · ai_matcher.py"]
-        M0["Empty / incomplete description → skip AI"]
-        M1["German gate (rules)"]
-        M1b["Stack extract + local gate<br/>hard backend / AI-ML-core"]
-        M2["Full AI match<br/>matching_criteria.md"]
-        M3["Score ≥ threshold<br/>+ company not Instaffo/Jobgether<br/>→ matched_jobs"]
+    subgraph Match["Match layer · ai_matcher.py → evaluator.py"]
+        M0["Empty description → skip AI"]
+        M1["Layer 1 · model labels the job<br/>CV + matching_rules.md<br/>hard fails quote the JD"]
+        M1b["Layer 2 · company lookup<br/>web search, cached per company"]
+        M2["Code score<br/>MATCH_WEIGHTS"]
+        M3["Score ≥ threshold<br/>+ company not blocked<br/>→ matched_jobs"]
     end
 
     T1 --> T2
@@ -55,8 +55,8 @@ flowchart TB
     F5 -->|English JD saved| Jobs
     F5 -->|non-English| Stats
 
-    Jobs --> M0 --> M1 --> M1b --> M2
-    M2 -->|≥ 7.0| Matched
+    Jobs --> M0 --> M1 --> M1b --> M2 --> M3
+    M3 -->|≥ 7.0| Matched
     M2 -->|write analysis back| Jobs
 
     T4 --> Matched & Jobs
@@ -128,6 +128,7 @@ Indeed pacing is slower and more human-like than LinkedIn: random think-time bef
 | `python3 scripts/tools/log_recommended_jobs.py <jobs.json \| ->` | Local twin of `POST /api/agent/jobs`. Batch log agent picks as link-only Tracker stubs: `pending`, `recommended_by` from `--recommended-by` (default `claude`; per-job `recommended_by` wins), per-job title / company / location. No browser / no AI; a job_id already in `matched_jobs` / `jobs` / `timeout_jobs` is skipped with no write. Score later with Tracker **Select missing details** → **Run AI for selected**. |
 | `python3 scripts/db/cleanup_excluded_titles.py …` | Cleanup DB rows by title blacklist |
 | `python3 scripts/tools/eval_matcher.py …` | Matcher evaluation |
+| `python3 scripts/tools/eval_matcher.py [--pos N --neg N --german N] [--job-model M]` | Check the matcher against Tracker decisions (applied vs unsuitable) and re-check old German rejects. `--unapplied [--limit N]` scores Tracker jobs she did not apply to. `--from-results <file>` re-scores a saved run with the current weights (no API calls). Read-only on MongoDB (company lookups cached in `evals/results/company_cache.json`); output in `evals/results/`. |
 
 ---
 
@@ -233,123 +234,53 @@ Unified title-gate entry point:
 
 ---
 
-## 5. After save: pre-AI and AI matching
+## 5. After save: AI matching
 
-`ai_matcher.py` only processes `jobs` documents that still lack `matched_at`:
+`ai_matcher.py` only processes `jobs` documents that still lack `matched_at`. Each job goes through `matching/evaluator.py`:
 
 ```mermaid
 flowchart TD
     New["get_new_jobs()<br/>no matched_at yet"]
-
-    New --> Empty{"Complete description?<br/>assess_job_description"}
-    Empty -->|empty / incomplete| FailEmpty["mark_job_as_matched<br/>score=0 · empty_desc / incomplete_desc<br/>needs_refetch · no AI call"]
-
-    Empty -->|yes| Gate{"German gate (rules)<br/>find_mandatory_german_requirement()<br/>English JD requires mandatory German?"}
-
-    Gate -->|mandatory German| FailDE["Local reject<br/>score≈1 · no full AI match<br/>write analysis"]
-    Gate -->|pass| TitleML{"AI/ML title?<br/>find_ai_ml_title_requirement()"}
-    TitleML -->|AI Engineer / ML / LLM…| FailML["Local reject · ai_ml"]
-    TitleML -->|pass| Extract["extract_jd_requirements()<br/>cheap JSON, no resume"]
-    Extract -->|fail-open on API error| AI
-    Extract -->|ok| ReqGate{"evaluate_requirement_gate()<br/>hard unknown backend<br/>or AI/ML-core JD?"}
-    ReqGate -->|fail| FailStack["Local reject · stack / ai_ml<br/>stack: keep title+link, clear JD"]
-    ReqGate -->|pass| AI["analyze_job_with_ai()<br/>inject extract + profile + criteria"]
-
-    AI --> Score{"match_score ≥ MATCH_THRESHOLD<br/>default 7.0?"}
-    Score -->|yes| Co{"Company blocked?<br/>MATCH_BLOCKED_COMPANIES<br/>Instaffo / Jobgether"}
-    Co -->|yes| OnlyJobs["Write AI analysis on jobs only"]
-    Co -->|no| MJ["Write matched_jobs<br/>status=pending"]
-    Score -->|no| OnlyJobs
-    MJ --> Mark["mark_job_as_matched"]
+    New --> Empty{"Empty description?<br/>assess_job_description kind=empty"}
+    Empty -->|yes| FailEmpty["score 0 · empty_desc · needs_refetch<br/>no AI call"]
+    Empty -->|no| L1["Layer 1 · classify_job()<br/>CV (user_profile.md) + matching_rules.md + JD<br/>gpt-5.4-mini · JSON schema"]
+    L1 --> Hard{"Hard fail?<br/>German required · required non-JS backend ·<br/>leadership · not web dev · backend-heavy ·<br/>years · contract/location · unusable JD ·<br/>blocked company"}
+    Hard -->|yes| FailHard["score 1 (0 for unusable JD)<br/>match_gate = fail kind<br/>reason quotes the JD"]
+    Hard -->|no| L2["Layer 2 · research_company()<br/>web search → business, product type,<br/>customer markets, recruiter?<br/>cached in company_profiles"]
+    L2 --> Score["score_job()<br/>role type + stack + seniority + backend ask +<br/>AI product + location + product type + markets<br/>weights: MATCH_WEIGHTS"]
+    Score --> T{"score ≥ MATCH_THRESHOLD (7.0)?"}
+    T -->|yes| MJ["matched_jobs (Tracker) · status pending"]
+    T -->|no| OnlyJobs["jobs only (Unmatched page)"]
+    MJ --> Mark["mark_job_as_matched<br/>analysis + job_labels + company_profile"]
     OnlyJobs --> Mark
-    FailDE --> Mark
-    FailML --> Mark
-    FailStack --> Mark
+    FailEmpty --> Mark
+    FailHard --> Mark
 ```
 
-### Do not confuse the two German-related gates
+**Who decides what**
 
-| | Scrape · language detection | Match · German gate |
-|--|-----------------------------|---------------------|
-| **Module** | `scraper_utils.is_non_english_job_detail` | `matching/german_gate.py` |
-| **Question** | What language is the JD **written in**? (Lingua) | Does an **English** JD require German as a must-have skill? |
-| **Typical hit** | Entire German posting | “fluent German required”, “German C1 required”, “German and English required”, “must speak German” |
-| **Does not hit** | — | “Berlin, Germany” alone, German company, German as plus/nice-to-have/basic (including “Working proficiency in German is a plus, since … businesses … speak German”), “German or English” / “Deutsch- oder Englischkenntnisse” |
-| **Outcome** | **Not saved**; count `german_filtered` | **Saved then rejected**; low score; **no full AI scoring** |
-| **Order** | Earlier (on detail fetch) | Later (matcher entry) |
+| Step | Decided by |
+|------|------------|
+| Empty JD | Code (`assess_job_description`) — no API call |
+| Job labels and hard fails | Model (`MATCH_JOB_MODEL`, default `gpt-5.4-mini`), rules in [`matching_rules.md`](./matching_rules.md). Every hard fail and German requirement must quote the posting |
+| What a label does | Code (`score_job`). Only `backend_language_ask = required_non_js` fails on backend; `implied_non_js` is −1. Duties like "lead a squad / lead projects" → `lead_or_above` (−3) |
+| Company business / markets | Model with web search (`MATCH_COMPANY_MODEL`), cached per normalised company name in MongoDB `company_profiles`. Only for jobs that passed layer 1 |
+| Final score | Code, `MATCH_WEIGHTS` in `src/core/config.py`. Tune preferences there, not in prompts |
+| Tracker cut-off | `MATCH_THRESHOLD` (`.env`, default 7.0) and `MATCH_BLOCKED_COMPANIES` (case-insensitive) |
 
-The AI prompt / `matching_criteria.md` also describes a German gate as a fallback. In code, the rule-based `german_gate` runs first and skips the model when it hits.
+**Stored fields:** `match_score`, `match_gate` (`scored`, `german`, `stack`, `leadership`, `not_web_dev`, `backend_heavy`, `too_many_years`, `contract_or_location`, `blocked_company`, `incomplete_desc`, `empty_desc`, `score_failed`; older rows may still carry `ai_ml`), `disqualification_reason` (quote), `summary`, `match_reasons` (Business / Customers/markets / Stack / score breakdown), `red_flags` (watch-out), `job_labels`, `company_profile`. JDs are never cleared.
 
-Already-rejected jobs are **not** rematched automatically (`process_new_jobs` only reads documents without `matched_at`). To re-score a false German reject after a gate fix: Unmatched **Can Apply** copies the card to Tracker, then **Run AI** / **Re-run AI** (`POST /api/jobs/<id>/run-ai`) scrapes and runs `evaluate_job` in place. Alternatively clear `matched_at` on that `jobs` row and run `ai_matcher.py`. Do not bulk-rewrite live DB.
+**Scrape-time language filter vs German requirement:** Lingua (`scraper_utils.is_non_english_job_detail`) drops postings *written* in another language before they are saved. A German requirement inside an English JD is a layer-1 hard fail (`german_required` + quote); German as a plus / "German or English" passes.
 
-### Match-stage gates after German
+If the OpenAI account runs out of credits, matching stops and the remaining jobs stay without `matched_at` for the next run.
 
-| | Backend-stack gate | AI/ML-core gate |
-|--|--------------------|-----------------|
-| **Module** | `matching/stack_gate.py` | same extract; plus title regex |
-| **Question** | Is a hard/implied backend a language the candidate cannot do in production? | Is this an AI/ML *engineering* job (train/fine-tune/LLM stack), not product UI that uses AI? |
-| **Typical hit** | Python/Java/Go/Kotlin required in Requirements, even without “must-have” | “AI Engineer”, “Software Engineer” whose JD is training models |
-| **Does not hit** | Node/TypeScript or Python (OR), including “TypeScript, Python or similar” and “Next.js, FastAPI, or comparable server frameworks”; duty/tech-dump “Node.js and Go” / “stack you'll touch” (gap lang → `company_uses`); junior “willingness to learn Java”; frontend role whose company backend is Go | Frontend/fullstack / “AI Product Engineer” product roles; Copilot / shipping LLM product features |
-| **Outcome** | Local reject; **no full AI scoring**. Stays on Unmatched as a title + link stub (JD cleared) so the filter can be reviewed | Local reject; **no full AI scoring** |
-| **Extract fail** | Fail-open to the full scorer | Fail-open (title regex still runs) |
-
-Candidate production backends: Node.js / TypeScript-backend / JavaScript-backend. Python is **not** production. Mixed AND-stack (Python **and** TypeScript both hard) now fails; it is no longer floored at 7.0.
-
-`evaluate_job()` in `ai_matcher.py` is the shared path (daily matcher, eval, manual job log).
-
-### AI scoring order (criteria)
-
-1. Hard gates (code first, then scorer fallback): mandatory German → unknown/non-production hard backend → AI/ML-core → years too high → DevOps/SRE-core
-2. Ordinary score 4–8 (required skills + nice-to-have / domain bonuses)
-3. Special Match A/B/C → 9–10 (Leipzig can add +0.5–1)
-4. `match_score ≥ threshold` → `matched_jobs` (unless scraped company is in `MATCH_BLOCKED_COMPANIES`: Instaffo / Jobgether — still scored on `jobs`, never Tracker)
-
-The scorer prompt may use **only facts in the provided description** (temperature 0). Listed skills that are not in the JD text are dropped after the call. Incomplete descriptions never reach this step.
-
-Details: [`matching_criteria.md`](./matching_criteria.md).
+Already-scored jobs are not rematched automatically. To re-score one: Unmatched **Can Apply** → Tracker **Re-run AI**, or clear `matched_at` on that `jobs` row and run `ai_matcher.py`.
 
 ---
 
-## 6. Data stores
-
-| Collection | Written by | Contents |
-|------------|------------|----------|
-| `jobs` | scrapers; matcher writes analysis back | Jobs that passed the language gate (including empty/incomplete-description placeholders). Matcher also stores `match_gate` (`empty_desc` / `incomplete_desc` / `german` / `stack` / `ai_ml` / `scored`) and `requirement_extract`. Stack-gate rejects clear `description` immediately (title + link stub for Unmatched review). |
-| `matched_jobs` | matcher (≥ threshold, and company not in `MATCH_BLOCKED_COMPANIES`); manual job log (`/manual-apply`, default `pending`); unmatched **Can Apply** override; **timeout review Add as Not Applied**; Tracker **Run AI** updates analysis in place; **Fetch job details** patches scraped fields in place | High-score matches / manually logged jobs / user-promoted unmatched or timeout jobs. Link-only manual saves set `ai_pending=True` and `match_score=null` until Run AI. Manual log can store `recommended_by` (`claude` / `cursor` / `gemini` / `gpt`). UI can store manual `highlights` tags (separate from AI `special_match`). Aggregators Instaffo / Jobgether are blocked from automatic matcher inserts. |
-| `timeout_jobs` | scrapers, when the title passed but the JD panel timed out | Title + link for later review (`/timeouts`). Open → **Add as Not Applied** (`pending`) or Dismiss. |
-| `scraper_stats` | scrapers | Counters: `title_passed_clicked`, `german_filtered`, `ai_title_filtered`, `detail_timeout`, … |
-
-Web UI (`web_app.py`) reads these for today’s funnel, match list, unmatched reasons, and scrape timeouts.
-
-**Log Job page (`/manual-apply`):** paste job URLs (LinkedIn / Indeed / career pages). On paste (and before scrape), `POST /api/manual-apply/lookup` resolves `job_id` and checks `matched_jobs` → `jobs` → `timeout_jobs` (Indeed: all jk variants). Stages:
-
-| Stage | Meaning | UI |
-|-------|---------|-----|
-| `tracker` | Already in `matched_jobs` | Opens Tracker at `/?open=<matched_jobs _id>` on paste; submit with Applied updates that card |
-| `unmatched` | In `jobs` with AI score below threshold | Opens `/unmatched?open=<jobs _id>`; still promotable via Scrape & Log / Save Link Only |
-| `awaiting_match` | In `jobs` but not yet AI-matched (invisible on Unmatched) | Explains “scraped, awaiting AI”; Scrape & Log / Save Link Only adds it to Tracker |
-| `timeout` | Pending on `/timeouts` | Link to Timeouts; still promotable |
-
-- **Scrape & Log** (`mode=scrape`, default): CDP Chrome scrape + AI score → `matched_jobs`. LinkedIn opens the canonical `/jobs/view/{id}/` page (logged-in or public selectors, then trafilatura fallback) — not a 24h `search-results` filter that often misses the posting. If Chrome, Indeed, or AI is unavailable, a **new** URL + parsed `job_id` is still saved as an `ai_pending` stub instead of being dropped. Already on Tracker with a complete card: skip, or mark **Applied** when that status was requested (does not wipe notes / timeline). Already on Tracker as a link-only / `ai_pending` stub: scrape and patch in place (`apply_analysis_to_existing` / `apply_scraped_details`).
-- **Save Link Only** (`mode=link_only`): no browser / no AI — `core.manual_log.save_link_only_urls` stores a URL stub with `ai_pending=True`. This path never imports Playwright or scraper modules (required on Render, where Playwright is not installed). If scrape is requested but Playwright is missing, it falls back to the same stub save. Optional **Job title / Company / Location** go on the same `title` / `company` / `location` fields the Tracker already uses (search, cards, Locations stats). User-typed fields are marked in `manual_fields` so a later scrape or **Fetch job details** will not overwrite them unless that field is empty.
-
-Default status is **Not Applied** (`pending`); choose **Applied** only when you already applied (optional applied date). Optional **Recommended by AI agent** (`recommended_by`: Claude / Cursor / Gemini / GPT) is stored on the Tracker card. Paste `de.indeed.com/viewjob?jk=…` with or without `https://`. Indeed short links (`to.indeed.com/…`, from the Indeed connector or share buttons) are expanded server-side by following the redirect until a `jk=` appears (`core.job_url.expand_short_job_url`; the job page itself is never fetched), so they save as the normal `de.indeed.com/viewjob?jk=…` link. This also applies to `POST /api/agent/jobs`.
-
-**Tracker country filter:** each card's country is the stored `country` field (agent push) or is guessed from `location` by `core.country` (country names plus major cities across Europe; Germany is checked first, so "Berlin or Helsinki" is Germany; `Remote` for locations starting with remote / worldwide / Europe / EU / EMEA; `Outside Europe` for common non-European places); anything unmatched counts as Germany. The card pill shows the specific country. The dropdown has four options: **Germany** (default), **Europe (excl. Germany)**, **Remote (global)**, and **All Countries** (the only view that also shows Outside Europe). Top stat chips are not country-filtered.
-
-**Agent job push (`POST /api/agent/jobs`):** for scheduled agents (Claude daily job push) that cannot log in. Auth is `Authorization: Bearer <AGENT_API_TOKEN>` (Render env var; endpoint returns 503 when unset, 401 on a bad token) instead of the login session. Body `{"jobs": [{"url", "title"?, "company"?, "location"?, "recommended_by"?, "reason"?, "country"?}], "recommended_by": "claude"}` (max 50); a bare job list is accepted as `{"jobs": <list>}`. `reason` (the agent's "why this fits") is stored as `matched_jobs.recommend_reason` and shown on the card as **Why AI recommends this**. `recommended_by` (claude / cursor / gemini / gpt, case-insensitive) defaults to `claude`, so **each agent must send its own name** (Cursor sends `"recommended_by": "cursor"`); a per-job value overrides the top-level one, and an unknown value is a 400. The response echoes the batch `recommended_by`. Runs `core.manual_log.log_agent_jobs` synchronously: each job is a link-only stub (`pending`, `ai_pending`, own identity fields). A job_id already in `matched_jobs`, `jobs`, or `timeout_jobs` (Indeed: all jk variants) is skipped with **no write** — no `recommended_by` / identity stamp and no overwrite of a scraped JD, unlike Log Job. Returns `{saved, skipped, failed, urls}` (`urls.existing` lists each skip's `stage`). `country` (name like `"Finland"`, ISO code like `"FI"`, or `"Remote"` for a remote role open across countries) is stored as `matched_jobs.country` and wins over the location guess; unknown values are ignored. Score later with **Select missing details** → **Run AI for selected**.
-
-**Tracker Run AI:** every matched card has **Run AI** / **Re-run AI**. `POST /api/jobs/<id>/run-ai` opens the card’s link in debug Chrome (LinkedIn: `/jobs/view/{id}/`), scrapes the JD if details are missing (or re-scrapes), runs `evaluate_job`, and patches analysis fields on `matched_jobs` + `jobs` without wiping notes / timeline / status. Clears `ai_pending`. Requires the same CDP Chrome session as scrapers.
-
-**Fetch job details:** Tracker cards that still need a JD (Save Link Only / `(Link only)` title / `ai_pending` / empty description — including jobs logged **before** `recommended_by` existed) and agent-tagged cards have **Fetch job details**. `POST /api/jobs/<id>/fetch-details` scrapes title / company / location / description via CDP Playwright and patches those fields only — no AI matching. Empty scrapes are rejected (the stub is left unchanged). Missing title / company / location are inferred from the JD when possible. Status, `applied_at`, timeline, notes, and user-typed `manual_fields` (title / company / location from Log Job) are preserved. Playwright is imported lazily; on Render (no Playwright) the endpoint returns a friendly error instead of crashing.
-
-**Batch Fetch details / Run AI:** on the Tracker home list (`/` — Matched / All / Applied chips are the same page), those cards get checkboxes in select mode, plus **Select visible** / **Select missing details** (link-only stubs across the current filters, including Applied, not only this page) and two actions: **Fetch details for selected** (scrape only) and **Run AI for selected** (scrape + match). `POST /api/fetch-details/batch` and `POST /api/run-ai/batch` share one Chrome lock; Playwright is checked **once**, then jobs run sequentially (one failure does not stop the rest). Poll `GET /api/fetch-details/batch/status` for `3/12` progress (`mode` is `fetch` or `run_ai`). When the batch finishes the list refreshes and the UI shows a completion banner (optional browser notification). Same preserve rules as the single buttons. On Render the batch start returns the friendly “run locally” error immediately. The Unmatched and Timeouts pages do not list these Tracker stubs.
-
-**Select jobs / Delete selected:** card checkboxes are hidden until **☑ Select jobs** is on (**Select visible** / **Select missing details** turn it on too; **✕ Done selecting** hides them and clears the selection). In select mode every card has a checkbox and **Select all on page** appears. Already-scored cards are selectable for delete only — **Select visible** / **Select missing details** and the Fetch / Run AI batch still take only cards where AI has not run yet. **🗑 Delete selected** (after a confirm) calls `POST /api/jobs/batch-delete` `{"ids": [...]}` in chunks of 80; each id is deleted exactly like the per-card **Delete** (`matched_jobs` doc + its `jobs` doc, Indeed: all jk variants), so an agent can push the same job again later. Returns `{deleted, missing, ids}`; refused (409) while a batch Fetch / Run AI is running.
-
 **Timeouts page (`/timeouts`):** cards whose **title already passed** the scrape gates but the detail panel did not load in time. These are not saved to `jobs` (no JD). You open the original link and, if it is a real match, **Add as Not Applied** — that copies the card into `matched_jobs` as `pending`. Cards with no readable title (typical Indeed ad/empty slots, ~1 per SERP page) are not listed.
 
-**Unmatched page (`/unmatched`):** any job below the match threshold can be marked **Can Apply** (`user_status=watchlist`). That copies it into `matched_jobs` as `pending` (does not overwrite an existing Tracker row) so it can be tracked or marked applied. This is a manual override when AI scoring was wrong; it is not limited to the 6–7 score band. Stack-gate rejects are stored without the JD (title, company, link, and the short stack reason only); filter the page by **Stack reject** to review them.
+**Unmatched page (`/unmatched`):** any job below the match threshold can be marked **Can Apply** (`user_status=watchlist`). That copies it into `matched_jobs` as `pending` (does not overwrite an existing Tracker row) so it can be tracked or marked applied. This is a manual override when AI scoring was wrong; it is not limited to the 6–7 score band. Filter by hard-fail kind with the gate dropdown; each card shows the quoted reason plus the company / score breakdown.
 
 **Tracker Other statuses:** `unsuitable`, `closed`, `repost`, `duplicate` are overlays on a card. They do **not** clear `applied_at` or `application_timeline`; a job that was applied still shows its progress and still counts in funnel / Journey / Locations / daily-activity applied totals. Reset Not Applied (`pending`) is the explicit wipe: it clears the timeline and `applied_at` and is not counted as an application. `repost` is a manual mark when the same role was posted again as a new listing and does not need another application. `duplicate` marks a listing already tracked from another source (e.g. LinkedIn and Indeed for the same role). Tracker chips **Applied / Interview / Offer / Rejected** filter and count by that progress (latest timeline step, or `applied_at` / flat applied-like status when there is no timeline), not exclusively by the `status` field — so an Unsuitable card with an interview step still appears under Interview, with the overlay pill still visible. Overlay chips still filter by the side-status field.
 
@@ -363,7 +294,7 @@ AI `special_match` / `special_match_reasons` are still written by the matcher fo
 job_scraper/
 ├── docs/
 │   ├── architecture.md          # this file
-│   ├── matching_criteria.md     # AI scoring source of truth
+│   ├── matching_rules.md        # layer-1 rules for the model (hard fails, labels)
 │   ├── user_profile.md          # resume / profile
 │   ├── deployment/              # Render setup + deployment report
 │   └── testing/                 # testing guide + past test / verification reports
@@ -382,8 +313,7 @@ job_scraper/
 │   ├── scrapers/                # Indeed / LinkedIn / Manual
 │   ├── matching/
 │   │   ├── ai_matcher.py        # match orchestration (`evaluate_job`)
-│   │   ├── german_gate.py       # mandatory-German rule gate on English JDs
-│   │   └── stack_gate.py        # extract + local backend / AI-ML-core gate
+│   │   └── evaluator.py         # layer 1 labels, layer 2 company lookup, code score
 │   ├── web/web_app.py           # Tracker UI
 │   └── bot/telegram_bot.py      # Telegram commands (+ Indeed resume)
 └── scripts/
@@ -398,6 +328,6 @@ job_scraper/
 
 ## 8. One-line funnel
 
-> **Title gates (blacklist → keywords → AI title) → open detail → discard non-English JD → save English JD → matcher skips empty/incomplete desc → mandatory-German rule gate → stack extract + backend/AI-ML local gate → AI scores by criteria (JD facts only) → ≥ 7 and company not Instaffo/Jobgether enters Tracker.**
+> **Title gates (blacklist → keywords → AI title) → open detail → discard non-English JD → save English JD → matcher skips empty desc → model labels the job against CV + rules (hard fails quote the JD) → model looks up the company (cached) → code scores with MATCH_WEIGHTS → ≥ 7 and company not blocked enters Tracker.**
 
 `/jobs` arguments only change *how much* to scrape: Indeed days, LinkedIn hours, and pages per keyword (both platforms). Each source starts AI matching as soon as its scrape finishes; job cards are pushed only after both lanes complete. **Filter and match rules are the same for every window.**

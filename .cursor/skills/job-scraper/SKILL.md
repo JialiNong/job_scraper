@@ -2,7 +2,7 @@
 name: job-scraper
 description: >-
   Project conventions for the personal job_scraper (Indeed/LinkedIn scrape,
-  title filters, Lingua language gate, German language gate, AI matching,
+  title filters, Lingua language gate, AI matching (model labels + code score),
   Telegram bot, Web UI). Use whenever editing scrapers, matching, config,
   shell pipelines, bot commands, docs/, or architecture. Enforces English
   docs/comments, keeps docs/architecture.md in sync with flow changes, and
@@ -26,7 +26,7 @@ All of the following must be **English only**:
 
 Chat replies to the user may follow the user’s language. Repo artifacts stay English.
 
-When translating or rewriting docs, keep technical identifiers unchanged (`run_jobs.sh`, `german_gate`, collection names, env vars).
+When translating or rewriting docs, keep technical identifiers unchanged (`run_jobs.sh`, `evaluator`, collection names, env vars).
 
 ## Keep architecture in sync (hard rule)
 
@@ -37,8 +37,8 @@ Canonical flow doc: [`docs/architecture.md`](../../../docs/architecture.md).
 - New / renamed / removed CLI, shell script step, or Telegram command
 - Scraper order, parallelism, time window (24h / 12h), or keyword strategy
 - Title filter stages, exclude lists, AI title check behavior
-- Language detection (`is_non_english_job_detail`) or German gate (`german_gate.py`)
-- Matcher gates, threshold, Special Match rules wiring
+- Language detection (`is_non_english_job_detail`)
+- Matcher rules (`docs/matching_rules.md`), label schema, `MATCH_WEIGHTS`, threshold
 - Mongo collections / important fields written by scrapers or matcher
 - Web UI funnel metrics that map to pipeline stages
 
@@ -79,22 +79,24 @@ A short always-applied pointer lives in [`.cursor/rules/impact-check.mdc`](../..
 
 ## Matching source of truth
 
-- Scoring rules live in [`docs/matching_criteria.md`](../../../docs/matching_criteria.md).
-- Candidate profile lives in `docs/user_profile.md`.
-- Do **not** invent hard gates or Special Match rules only in `ai_matcher.py` prompts. If scoring logic changes, update `matching_criteria.md` first (or together), then align prompt text and any code gates (`german_gate.py`, `stack_gate.py`).
+- The model only **labels** a job (`src/matching/evaluator.py`, rules in [`docs/matching_rules.md`](../../../docs/matching_rules.md)) and looks up the company; **code** turns labels into a score with `MATCH_WEIGHTS` in `src/core/config.py`.
+- Candidate CV lives in `docs/user_profile.md` (gitignored).
+- Preference changes (e.g. "hardware lower") go into `MATCH_WEIGHTS`, not prompts. New label fields go into both the JSON schema in `evaluator.py` and `matching_rules.md`.
+- Backend policy: only explicit required / must / strong non-Node backend (`required_non_js`) fails; listed-only (`implied_non_js`) is a −1 gap; ideally / e.g. / duties / company stack pass.
+- Validate rule or weight changes with `python3 scripts/tools/eval_matcher.py` (Tracker decisions) before shipping.
 
 ## Pipeline mental model (do not confuse)
 
 One-line funnel (must stay true in architecture + code):
 
-> Title gates (exclude → DEFAULT_KEYWORDS → AI title) → click detail → non-English JD discarded → English JD saved → matcher empty/incomplete-desc skip → mandatory-German rule gate → stack extract + backend/AI-ML local gate → AI score → ≥ threshold and company not in `MATCH_BLOCKED_COMPANIES` (Instaffo / Jobgether) → `matched_jobs`.
+> Title gates (exclude → DEFAULT_KEYWORDS → AI title) → click detail → non-English JD discarded → English JD saved → matcher empty-desc skip → layer 1 model labels (hard fails quote the JD) → layer 2 company lookup (cached) → code score (`MATCH_WEIGHTS`) → ≥ threshold and company not in `MATCH_BLOCKED_COMPANIES` → `matched_jobs`.
 
 ### Two German-related gates
 
 | Stage | Module | Question | Outcome |
 |-------|--------|----------|---------|
 | Scrape | `scraper_utils.is_non_english_job_detail` | Is the JD body non-English? | Do **not** save; count `german_filtered` |
-| Match | `matching.german_gate` | Does an **English** JD require German as a must-have language? | Local reject; skip full AI scoring |
+| Match | `matching.evaluator` layer 1 (`german_required` + quote) | Does an **English** JD require German as a must-have language? | Hard fail (score 1), `match_gate=german` |
 
 Location / German company / “nice to have German” / plus / German-OR-English / basic German / “businesses speak German” in a since-clause must **not** fail the match gate.
 
@@ -129,16 +131,17 @@ There is no cron / launchd schedule in this project; do not add one. When you ch
 | Tracker company blocklist | `MATCH_BLOCKED_COMPANIES` in `src/core/config.py` (Instaffo / Jobgether) |
 | Indeed / LinkedIn URLs & selectors | `*_CONFIG` in `src/core/config.py` |
 | Scrape window / pages | `/jobs [days] [linkedin_hours] [pages]` → `run_jobs.sh --days --hours --pages`; default pages `FULL_MAX_PAGES` in `src/core/config.py` |
-| Match threshold / model | `.env` (`MATCH_THRESHOLD`, `AI_MODEL`, `OPENAI_API_KEY`) |
+| Match threshold / models | `.env` (`MATCH_THRESHOLD`, `MATCH_JOB_MODEL`, `MATCH_COMPANY_MODEL`, `MATCH_REASONING`, `OPENAI_API_KEY`); `AI_MODEL` is only the scrape-time title check |
+| Match score weights | `MATCH_WEIGHTS` in `src/core/config.py` |
 | Telegram destination | `.env` (`TELEGRAM_BOT_TOKEN`, `TELEGRAM_ALLOWED_USER_ID`, `TELEGRAM_CHAT_ID`, `TELEGRAM_MESSAGE_THREAD_ID`) |
-| Scoring policy | `docs/matching_criteria.md` |
+| Matching rules (model) | `docs/matching_rules.md` |
 
 ## Suggested agent workflow for feature work
 
 1. Read this skill + skim `docs/architecture.md` for the affected stage.
 2. Implement the code / script / bot change.
 3. Update `docs/architecture.md` if flow/commands/filters/gates changed.
-4. If scoring rules changed, update `docs/matching_criteria.md` and keep `ai_matcher` / `german_gate` aligned.
+4. If matching changed, keep `docs/matching_rules.md`, the schema in `evaluator.py`, and `MATCH_WEIGHTS` aligned, and run `scripts/tools/eval_matcher.py`.
 5. Impact check: grep usages of every touched function / field / component; update neighbors from the checklist in the same PR.
 6. Briefly tell the user what flow docs were updated and which related areas you checked.
 

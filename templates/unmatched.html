@@ -562,10 +562,16 @@
   </select>
   <select id="gateFilter" onchange="goPage(1)">
     <option value="all">All gates</option>
-    <option value="stack">Stack reject</option>
-    <option value="ai_ml">AI/ML reject</option>
-    <option value="german">German reject</option>
+    <option value="german">German required</option>
+    <option value="stack">Non-JS backend required</option>
+    <option value="not_web_dev">Not web development</option>
+    <option value="leadership">Leadership role</option>
+    <option value="backend_heavy">Backend-heavy</option>
+    <option value="too_many_years">Too many years</option>
+    <option value="contract_or_location">Contract / location</option>
+    <option value="incomplete_desc">Unusable JD</option>
     <option value="scored">Scored below threshold</option>
+    <option value="ai_ml">AI/ML reject (old runs)</option>
   </select>
   <div class="watchlist-chip" id="watchlistChip" onclick="toggleWatchlistFilter()">
     <span class="watchlist-dot"></span>
@@ -840,12 +846,23 @@ function renderList(label, items, cls) {
     </div>`;
 }
 
+const GATE_PILLS = {
+  german: 'German',
+  stack: 'Backend',
+  not_web_dev: 'Not web dev',
+  leadership: 'Leadership',
+  backend_heavy: 'Backend-heavy',
+  too_many_years: 'Years',
+  contract_or_location: 'Contract/location',
+  blocked_company: 'Blocked',
+  empty_desc: 'No JD',
+  incomplete_desc: 'Unusable JD',
+  ai_ml: 'AI/ML',
+  scored: 'Scored',
+};
+
 function gateLabel(gate) {
-  if (gate === 'stack') return 'Stack';
-  if (gate === 'ai_ml') return 'AI/ML';
-  if (gate === 'german') return 'German';
-  if (gate === 'scored') return 'Scored';
-  return '';
+  return GATE_PILLS[gate] || '';
 }
 
 function renderCard(job) {
@@ -853,7 +870,6 @@ function renderCard(job) {
   const reason = (job.disqualification_reason || '').trim();
   const summary = (job.summary || '').trim();
   const gate = job.match_gate || '';
-  const isStackStub = gate === 'stack';
   const hasAnalysis = Boolean(
     reason || summary ||
     (job.what_youll_do && ((job.what_youll_do.matched || []).length || (job.what_youll_do.unmatched || []).length)) ||
@@ -906,13 +922,14 @@ function renderCard(job) {
       </div>
 
       ${reason ? `<div class="reason-box"><strong>Rejection Reason</strong>${escHtml(reason)}</div>` : ''}
-      ${summary && summary !== reason && !isStackStub ? `<div class="card-summary">${escHtml(summary)}</div>` : ''}
+      ${summary && summary !== reason ? `<div class="card-summary">${escHtml(summary)}</div>` : ''}
       ${!hasAnalysis ? `<div class="card-summary">This match has not saved detailed analysis yet. Run matcher again to write full analysis.</div>` : ''}
 
-      ${isStackStub ? '' : renderBreakdown("What you'll do", job.what_youll_do)}
-      ${isStackStub ? '' : renderBreakdown("What they're looking for", job.what_theyre_looking_for)}
+      ${renderBreakdown("What you'll do", job.what_youll_do)}
+      ${renderBreakdown("What they're looking for", job.what_theyre_looking_for)}
       ${renderList('Missing Requirements', job.missing_requirements, 'bd-no')}
-      ${isStackStub ? '' : renderList('Red Flags', job.red_flags, 'bd-no')}
+      ${renderList('Red Flags', job.red_flags, 'bd-no')}
+      ${renderList('Company & score', job.match_reasons, '')}
 
       <a class="btn-apply" href="${escHtml(job.link || '#')}" target="_blank" rel="noopener">View Original</a>
 

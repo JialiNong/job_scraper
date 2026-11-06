@@ -48,7 +48,7 @@ def _doc(**overrides):
 def _fake_ai_matcher():
     mod = types.ModuleType("matching.ai_matcher")
     mod.load_user_profile = lambda: "profile"
-    mod.load_matching_criteria = lambda: "criteria"
+    mod.load_matching_rules = lambda: "rules"
     return patch.dict(sys.modules, {"matching.ai_matcher": mod})
 
 

@@ -202,7 +202,7 @@ class ProcessUrlsRefreshStubTests(unittest.TestCase):
         ), patch(
             "matching.ai_matcher.load_user_profile", return_value="profile"
         ), patch(
-            "matching.ai_matcher.load_matching_criteria", return_value="criteria"
+            "matching.ai_matcher.load_matching_rules", return_value="rules"
         ), patch.object(mas, "get_tracker_job", return_value=existing), patch.object(
             mas, "scrape_job_page", return_value=scraped
         ), patch.object(
@@ -242,7 +242,7 @@ class ProcessUrlsRefreshStubTests(unittest.TestCase):
         ), patch(
             "matching.ai_matcher.load_user_profile", return_value="profile"
         ), patch(
-            "matching.ai_matcher.load_matching_criteria", return_value="criteria"
+            "matching.ai_matcher.load_matching_rules", return_value="rules"
         ), patch.object(mas, "get_tracker_job", return_value=existing), patch.object(
             mas, "handle_existing_tracker", return_value="skip"
         ) as handle, patch.object(mas, "scrape_job_page") as scrape:

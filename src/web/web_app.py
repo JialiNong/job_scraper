@@ -2579,45 +2579,6 @@ def api_job_run_ai_status(job_id: str):
     })
 
 
-@app.route("/api/jobs/<job_id>/check-gates", methods=["POST"])
-@login_required
-def api_job_check_gates(job_id: str):
-    """
-    Dry-run the hard gates (JD completeness, German, AI/ML title, tech
-    stack) on the card's stored JD. No Chrome, no scoring, no DB writes —
-    use Re-run AI afterwards to actually update the card.
-    """
-    try:
-        oid = ObjectId(job_id)
-    except Exception:
-        return jsonify({"ok": False, "error": "Invalid id"}), 400
-
-    doc = get_collection("matched_jobs").find_one(
-        {"_id": oid},
-        {"title": 1, "company": 1, "location": 1, "description": 1,
-         "source": 1, "match_gate": 1},
-    )
-    if not doc:
-        return jsonify({"ok": False, "error": "Job not found"}), 404
-    if not str(doc.get("description") or "").strip():
-        return jsonify({
-            "ok": False,
-            "error": "No stored JD on this card — Fetch job details or Run AI first",
-        }), 400
-
-    try:
-        from matching.gate_check import check_hard_gates
-        result = check_hard_gates(doc)
-    except Exception as e:
-        return jsonify({"ok": False, "error": f"Gate check failed: {e}"}), 500
-
-    return jsonify({
-        "ok": True,
-        "current_gate": doc.get("match_gate") or "",
-        **result,
-    })
-
-
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
 def main():

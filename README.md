@@ -37,7 +37,8 @@ job_scraper/
 │   │   ├── linkedin_scraper.py        # LinkedIn scraper (--hours window)
 │   │   └── manual_apply_scraper.py    # Manual job URL logger (default: Not Applied)
 │   ├── matching/
-│   │   └── ai_matcher.py              # AI matching engine
+│   │   ├── ai_matcher.py              # Matching entry point (pipeline / CLI)
+│   │   └── evaluator.py               # Model labels job + company, code scores
 │   ├── web/
 │   │   └── web_app.py                 # Flask Job Tracker UI
 │   └── bot/
@@ -45,7 +46,7 @@ job_scraper/
 ├── docs/
 │   ├── architecture.md                # How the system works (canonical flow doc)
 │   ├── user_profile.md                # Your resume — required for AI
-│   ├── matching_criteria.md           # Your job criteria — required for AI
+│   ├── matching_rules.md              # Rules the model applies (hard fails, labels)
 │   ├── deployment/                    # Render setup + deployment report
 │   └── testing/                       # Testing guide + past test/verification reports
 ├── scripts/
@@ -105,8 +106,9 @@ This will prompt you for a password and output a hash. Copy the `TRACKER_PASSWOR
 
 ### 4. Fill in your profile
 
-- `docs/user_profile.md` — your resume and skills
-- `docs/matching_criteria.md` — your must-haves and red flags
+- `docs/user_profile.md` — your full CV (gitignored; the model reads all of it)
+- `docs/matching_rules.md` — hard fails and how jobs are labelled
+- `MATCH_WEIGHTS` in `src/core/config.py` — how labels turn into a score (e.g. hardware −2.5, global customers +0.7)
 
 ### 5. Test run
 
@@ -193,6 +195,21 @@ MATCH_THRESHOLD=7.0   # Only save jobs scoring ≥ this value
 ```
 
 Raise it (e.g. `8.0`) for fewer, higher-quality results. Lower it (e.g. `6.0`) to cast a wider net.
+
+### Matching models — `.env` (optional)
+
+```bash
+MATCH_JOB_MODEL=gpt-5.4-mini       # layer 1: label the job against CV + rules
+MATCH_COMPANY_MODEL=gpt-5.4-mini   # layer 2: company lookup with web search
+MATCH_REASONING=low
+```
+
+Check a change against your own Tracker decisions before relying on it:
+
+```bash
+python3 scripts/tools/eval_matcher.py                          # applied vs unsuitable sample
+python3 scripts/tools/eval_matcher.py --unapplied --limit 100  # recent jobs you did not apply to
+```
 
 ---
 
@@ -347,17 +364,9 @@ python3 src/scrapers/linkedin_scraper.py
 
 ## AI Matching Cost
 
-Using `gpt-4o-mini` (recommended):
+Per job, layer 1 uses about 4k input + 0.4k output tokens. Jobs that pass layer 1 also need a company lookup (about 12–14k input tokens plus web-search fees) the first time that company is seen; later jobs from the same company reuse the cached result in `company_profiles`.
 
-- ~$0.001–0.003 per job
-- **100 jobs ≈ $0.10–0.30 / day**
-
-Using `gpt-4o`:
-
-- ~$0.02–0.05 per job
-- **100 jobs ≈ $2–5 / day**
-
-Monitor usage at https://platform.openai.com/usage.
+Monitor usage at https://platform.openai.com/usage. If the account runs out of credits, matching stops and the remaining jobs are picked up on the next run.
 
 ---
 

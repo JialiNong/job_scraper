@@ -177,3 +177,46 @@ LINKEDIN_CONFIG = {
         "job_link": "a.job-card-container__link",
     }
 }
+
+
+# ===== Match score weights (src/matching/evaluator.py) =====
+# The model only labels the job (docs/matching_rules.md) and the company; this table
+# turns labels into a 0–10 score. Tune preferences here instead of in prompts.
+MATCH_WEIGHTS = {
+    "hard_fail_score": 1.0,
+    # Base score by what the role actually is
+    "role_type": {
+        "frontend": 7.0,
+        "fullstack_frontend_leaning": 6.5,
+        "fullstack_balanced": 5.5,
+        "fullstack_backend_leaning": 3.5,
+        "backend": 2.0,
+        "not_web_dev": 0.0,
+    },
+    "stack_fit": {"strong": 1.0, "partial": 0.0, "weak": -2.0},
+    "seniority": {"junior": -0.5, "mid": 0.0, "senior": 0.0, "lead_or_above": -3.0},
+    "backend_language_ask": {"implied_non_js": -1.0},  # required_non_js is a hard fail
+    "ai_product_work": 0.5,
+    "preferred_location": 0.3,  # Leipzig / Halle / Berlin / remote
+    # Company (layer 2): business type and where its customers are
+    "product_type": {
+        "b2b_saas": 1.0,
+        "b2c_ecommerce_marketplace": 1.0,
+        "consumer_app": 0.5,
+        "fintech": 0.3,
+        "other_software_product": 0.0,
+        "agency_consulting_outsourcing": -1.0,
+        "staffing_recruiter": -1.0,
+        "hardware_industrial_automotive": -2.5,
+        "public_sector_research": -0.5,
+        "other": -0.5,
+    },
+    "recruiter_posting": -1.0,  # agency posting on behalf of another employer
+    "markets": {
+        "global": 0.7,
+        "europe": 0.4,
+        "dach": 0.0,
+        "germany_only": -0.5,
+        "unclear": 0.0,
+    },
+}

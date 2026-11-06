@@ -1036,7 +1036,6 @@ def mark_job_as_matched(
     source,
     match_score=None,
     analysis=None,
-    clear_description=False,
 ):
     """
     Mark a job as AI-analyzed and persist the full analysis on the jobs document.
@@ -1049,7 +1048,6 @@ def mark_job_as_matched(
         source (str): Job source website
         match_score (float): Match score (0-10)
         analysis (dict): Full AI analysis payload to store on the job
-        clear_description (bool): Drop JD text (stack-gate stubs keep title + link)
 
     Returns:
         bool: True if updated successfully
@@ -1079,14 +1077,10 @@ def mark_job_as_matched(
             "what_youll_do": analysis.get("what_youll_do") or {"matched": [], "unmatched": []},
             "what_theyre_looking_for": analysis.get("what_theyre_looking_for") or {"matched": [], "unmatched": []},
             "match_gate": analysis.get("match_gate") or "",
-            "requirement_extract": analysis.get("requirement_extract") or {},
+            "needs_refetch": bool(analysis.get("needs_refetch")),
+            "job_labels": analysis.get("job_labels") or {},
+            "company_profile": analysis.get("company_profile") or {},
         })
-
-    if clear_description:
-        update_data["description"] = ""
-        update_data["description_cleared_at"] = datetime.now()
-        # Extract quotes duplicate the JD; unmatched review only needs title + link.
-        update_data["requirement_extract"] = {}
 
     result = collection.update_one(
         {"job_id": job_id, "source": source},

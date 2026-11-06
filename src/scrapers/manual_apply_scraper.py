@@ -642,7 +642,7 @@ def scrape_job_page(page, url: str) -> Optional[dict]:
 def enrich_job_and_evaluate(
     job: dict,
     user_profile: str,
-    criteria: str,
+    rules: str,
     *,
     allow_non_english: bool = True,
 ) -> Optional[dict]:
@@ -680,7 +680,7 @@ def enrich_job_and_evaluate(
             )
 
     print("  🤖 Running AI matching…")
-    analysis = evaluate_job(job, user_profile, criteria)
+    analysis = evaluate_job(job, user_profile, rules)
     if not analysis:
         print("  ⚠️  AI analysis failed — using score=0 stub")
         analysis = {
@@ -732,7 +732,7 @@ def process_urls(
     try:
         sync_playwright, _ = _load_playwright()
         from core.scraper_utils import connect_browser, pause
-        from matching.ai_matcher import load_user_profile, load_matching_criteria
+        from matching.ai_matcher import load_user_profile, load_matching_rules
     except ImportError as e:
         print(f"⚠️  Scrape is unavailable ({e}). Saving link(s) only.")
         save_link_only_urls(
@@ -750,7 +750,7 @@ def process_urls(
             "⚠️  No user profile found (docs/user_profile.md). "
             "Will save links without AI scoring."
         )
-    criteria = load_matching_criteria()
+    rules = load_matching_rules()
     stub_analysis = stub_ai_pending_analysis()
 
     results = {"ok": [], "failed": [], "skipped": []}
@@ -827,7 +827,7 @@ def process_urls(
                     analysis = None
                     if user_profile:
                         analysis = enrich_job_and_evaluate(
-                            job, user_profile, criteria
+                            job, user_profile, rules
                         )
                     if analysis:
                         if not apply_analysis_to_existing(job, analysis):
@@ -862,7 +862,7 @@ def process_urls(
                 analysis = None
                 ai_pending = False
                 if job.get("description") and user_profile:
-                    analysis = enrich_job_and_evaluate(job, user_profile, criteria)
+                    analysis = enrich_job_and_evaluate(job, user_profile, rules)
                 if not analysis:
                     analysis = stub_analysis
                     ai_pending = True
@@ -1046,12 +1046,12 @@ def _evaluate_and_save(
     job: dict,
     matched_doc: dict,
     user_profile: str,
-    criteria: str,
+    rules: str,
     *,
     used_stored_jd: bool,
 ) -> dict:
     keep_manual_identity(job, matched_doc)
-    analysis = enrich_job_and_evaluate(job, user_profile, criteria)
+    analysis = enrich_job_and_evaluate(job, user_profile, rules)
     keep_manual_identity(job, matched_doc)
     if not analysis:
         print("  ❌ No description — cannot run AI")
@@ -1097,7 +1097,7 @@ def run_ai_on_matched_job(matched_doc: dict) -> dict:
     print(f"  → {url}")
 
     try:
-        from matching.ai_matcher import load_user_profile, load_matching_criteria
+        from matching.ai_matcher import load_user_profile, load_matching_rules
     except ImportError as e:
         print(f"  ❌ AI matching is unavailable ({e})")
         return {"ok": False, "error": f"AI matching unavailable: {e}", "match_score": None}
@@ -1107,14 +1107,14 @@ def run_ai_on_matched_job(matched_doc: dict) -> dict:
         print("❌ No user profile found. Create docs/user_profile.md first.")
         return {"ok": False, "error": "Missing user profile", "match_score": None}
 
-    criteria = load_matching_criteria()
+    rules = load_matching_rules()
 
     if stored_jd_usable(matched_doc):
         chars = len(str(matched_doc.get("description") or ""))
         print(f"  📄 Using stored JD ({chars} chars) — skip Chrome")
         job = _job_from_tracker_doc(matched_doc, url)
         return _evaluate_and_save(
-            job, matched_doc, user_profile, criteria, used_stored_jd=True
+            job, matched_doc, user_profile, rules, used_stored_jd=True
         )
 
     try:
@@ -1140,7 +1140,7 @@ def run_ai_on_matched_job(matched_doc: dict) -> dict:
             return {"ok": False, "error": warn, "match_score": None}
 
         return _evaluate_and_save(
-            job, matched_doc, user_profile, criteria, used_stored_jd=False
+            job, matched_doc, user_profile, rules, used_stored_jd=False
         )
 
 
