@@ -154,7 +154,9 @@ MATCH_BLOCKED_COMPANIES = [
     "instaffo",
     "jobgether",
     "Alignerr",
-    "Hyra"
+    "Hyra",
+    "The Ai Training Company",
+    "TaskVerse",
 ]
 
 # ===== Indeed Platform Configuration =====
