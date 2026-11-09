@@ -143,6 +143,9 @@ FULL_PAGES="${PAGES:-$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from c
 INDEED_JOBS="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.config import INDEED_JOBS_PER_PAGE; print(INDEED_JOBS_PER_PAGE)")"
 LINKEDIN_JOBS="$($PYTHON -c "import sys; sys.path.insert(0, 'src'); from core.config import LINKEDIN_JOBS_PER_PAGE; print(LINKEDIN_JOBS_PER_PAGE)")"
 STAMP="$(date +%Y%m%d_%H%M%S)"
+# Tag every matched_jobs row this run writes, so the final digest only lists this run's matches
+export PIPELINE_RUN_ID="run_${STAMP}_$$"
+log "Run id: $PIPELINE_RUN_ID"
 
 log "Step 1/2: Full lanes — ${FULL_PAGES} pages/keyword, Indeed ${INDEED_JOBS}/page (${DAYS:-1}d), LinkedIn ${LINKEDIN_JOBS}/page (${HOURS:-24}h)"
 run_source_lane "Indeed" "indeed" \
@@ -199,7 +202,7 @@ try:
     matched_jobs = get_collection("matched_jobs")
     today_start  = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
     scraped = jobs.count_documents({"created_at": {"$gte": today_start}})
-    matched = matched_jobs.count_documents({"matched_at": {"$gte": today_start}})
+    matched = matched_jobs.count_documents({"run_id": os.environ["PIPELINE_RUN_ID"]})
     print(f"{scraped} {matched}")
 except Exception as e:
     print("0 0")
@@ -208,15 +211,15 @@ EOF
 
 SCRAPED=$(echo "$STATS" | awk '{print $1}')
 MATCHED=$(echo "$STATS" | awk '{print $2}')
-log "Today: ${SCRAPED} jobs scraped, ${MATCHED} high-quality matches"
+log "Today: ${SCRAPED} jobs scraped; this run: ${MATCHED} high-quality matches"
 
-# Push today's matched jobs to Telegram only after both lanes finish
-log "Step 2/2: Pushing today's matches to Telegram..."
+# Push this run's matched jobs to Telegram only after both lanes finish
+log "Step 2/2: Pushing this run's matches to Telegram..."
 $PYTHON -c "
-import sys
+import os, sys
 sys.path.insert(0, 'src')
 from core.match_digest import push_todays_matched_jobs
-push_todays_matched_jobs()
+push_todays_matched_jobs(run_id=os.environ['PIPELINE_RUN_ID'])
 " >> "$LOG_DIR/telegram_push_$(date +%Y%m%d).log" 2>&1 \
   && log "✅ Telegram match digest sent" \
   || log "⚠️  WARNING: Telegram match digest failed (see logs/telegram_push_*.log)"

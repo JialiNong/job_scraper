@@ -91,6 +91,7 @@ def ensure_indexes():
         matched.create_index([("status", 1), ("applied_at", -1)])
         matched.create_index("source")
         matched.create_index("origin")
+        matched.create_index("run_id")
         matched.create_index("link")
 
         timeouts = db["timeout_jobs"]
