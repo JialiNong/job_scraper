@@ -1017,14 +1017,19 @@
       align-items: flex-start;
       gap: 16px;
     }
+    /* Expanded list row: left = job info / AI / description / actions / match,
+       right = progress / applicant # / notes / Q&A / highlights */
     .job-grid.layout-compact .card-split-match {
-      flex: 1 1 0;
+      flex: 1.25 1 0;
       min-width: 0;
     }
     .job-grid.layout-compact .card-split-track {
       flex: 1 1 0;
       min-width: 0;
+      padding-left: 16px;
+      border-left: 1px solid var(--border);
     }
+    .job-grid.layout-compact .card-split-track .progress-wrap { margin-top: 0; }
     .job-grid.layout-compact .card-split-track .highlights-wrap {
       margin-top: 0;
     }
@@ -1039,6 +1044,10 @@
     @media (max-width: 900px) {
       .job-grid.layout-compact .card-split {
         flex-direction: column;
+      }
+      .job-grid.layout-compact .card-split-track {
+        padding-left: 0;
+        border-left: 0;
       }
     }
 
@@ -1323,6 +1332,13 @@
       flex-shrink: 0;
     }
     .job-description[open] summary::before { content: "▾"; }
+    .jd-copy-btn {
+      margin-left: auto;
+      border: 1px solid var(--border); background: var(--surface);
+      color: var(--muted); border-radius: 6px; padding: 2px 8px;
+      font: inherit; font-size: .72rem; font-weight: 500; cursor: pointer;
+    }
+    .jd-copy-btn:hover { color: var(--text); border-color: var(--accent); }
     .job-description-body {
       margin-top: 10px;
       font-size: .78rem;
@@ -2435,6 +2451,81 @@
         flex: 1 1 100%;
       }
     }
+
+    /* ── Status chips: collapse on mobile (Active + current + More) ── */
+    .stats-more-toggle { display: none; font: inherit; color: var(--text); }
+    @media (max-width: 768px) {
+      .stats-more-toggle { display: flex; flex: 0 0 auto !important; color: var(--muted); }
+      .stats-bar:not(.stats-expanded) .stat-chip[data-status]:not([data-status="active"]):not(.active) {
+        display: none;
+      }
+      .stats-bar:not(.stats-expanded) .stat-chip[data-status] { flex: 1 1 0; }
+    }
+
+    /* ── Company filter chip (toolbar) ─────────────────────────────── */
+    .company-filter-chip {
+      display: inline-flex; align-items: center; gap: 6px;
+      border: 1px solid var(--accent); background: var(--surface2);
+      border-radius: 999px; padding: 4px 6px 4px 12px; font-size: .8rem;
+      max-width: 100%;
+    }
+    .company-filter-chip[hidden] { display: none; }
+    .company-filter-chip .cfc-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .company-filter-chip button {
+      border: 0; background: none; color: var(--muted); cursor: pointer;
+      font-size: 1rem; line-height: 1; padding: 0 4px;
+    }
+
+    /* ── Company history (seen this company before) ────────────────── */
+    .company-link {
+      background: none; border: 0; padding: 0; font: inherit; color: inherit;
+      cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px;
+    }
+    .company-link:hover { color: var(--accent); }
+    .company-seen-pill { border-color: var(--interview); }
+    .company-seen-pill.seen-rejected { border-color: var(--rejected); }
+    .company-history {
+      margin: 10px 0 4px;
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--interview);
+      border-radius: 8px;
+      background: var(--surface2);
+      padding: 8px 12px;
+      font-size: .78rem;
+    }
+    .company-history.seen-rejected { border-left-color: var(--rejected); }
+    .company-history .ch-head { font-weight: 600; margin-bottom: 4px; }
+    .company-history .ch-summary { color: var(--muted); font-weight: 400; }
+    .company-history ul { list-style: none; padding: 0; margin: 4px 0 6px; }
+    .company-history li {
+      display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap;
+      padding: 3px 0; border-top: 1px dashed var(--border);
+    }
+    .company-history li:first-child { border-top: 0; }
+    .company-history .ch-status { font-weight: 600; white-space: nowrap; }
+    .company-history .ch-status.st-rejected { color: var(--rejected); }
+    .company-history .ch-status.st-applied { color: var(--applied); }
+    .company-history .ch-status.st-interview { color: var(--interview); }
+    .company-history .ch-status.st-offer { color: var(--offer); }
+    .company-history .ch-title { flex: 1 1 160px; min-width: 0; }
+    .company-history .ch-dates { color: var(--muted); white-space: nowrap; }
+    .company-history .ch-all {
+      background: none; border: 0; padding: 0; color: var(--accent);
+      cursor: pointer; font: inherit; font-weight: 600;
+    }
+
+    /* ── Applicant position at apply time (LinkedIn) ───────────────── */
+    .applicant-pos-wrap {
+      margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+      font-size: .78rem;
+    }
+    .applicant-pos-wrap .ap-label { color: var(--muted); }
+    .applicant-pos-wrap input {
+      width: 90px; padding: 5px 8px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--surface); color: var(--text);
+      font: inherit;
+    }
+    .applicant-pos-wrap .ap-hint { color: var(--muted); font-size: .72rem; flex-basis: 100%; }
   </style>
 </head>
 <body>
@@ -2604,6 +2695,8 @@
     <span class="dot dot-duplicate"></span>
     <span>Duplicate <b id="cnt-duplicate">–</b></span>
   </div>
+  <button type="button" class="stat-chip stats-more-toggle" id="statsMoreToggle"
+          onclick="toggleStatsExpanded()" aria-expanded="false">More filters ▾</button>
 </div>
 
 <!-- ── Toolbar ─────────────────────────────────────────────────────── -->
@@ -2644,6 +2737,10 @@
     <button type="button" data-layout="compact" onclick="setLayout('compact')" title="Compact list">☰ List</button>
   </div>
   <button type="button" id="highlightsFilter" class="filter-highlights" onclick="toggleHighlightsFilter()" title="Show manually highlighted jobs only">★ Highlights</button>
+  <span class="company-filter-chip" id="companyFilterChip" hidden title="Showing every Tracker job at this company">
+    🏢 <span class="cfc-name" id="companyFilterName"></span>
+    <button type="button" onclick="clearCompanyFilter()" title="Clear company filter" aria-label="Clear company filter">×</button>
+  </span>
   <span class="count-label" id="countLabel"></span>
 </div>
 
@@ -2682,6 +2779,7 @@
 /* ── State ───────────────────────────────────────────────────────── */
 let currentStatusFilter = 'active';
 let highlightsOnly = false;
+let companyFilter = ''; // exact company (click a company name on a card)
 let debounceTimer = null;
 let dateDebounceTimer = null;
 let jobsAbortController = null;
@@ -3369,9 +3467,57 @@ function sizeHeatmapToWidth() {
 function setStatusFilter(status) {
   currentStatusFilter = status;
   currentPage = 1; // Reset to first page when filter changes
-  document.querySelectorAll('.stat-chip').forEach(el => {
+  document.querySelectorAll('.stat-chip[data-status]').forEach(el => {
     el.classList.toggle('active', el.dataset.status === status);
   });
+  setStatsExpanded(false); // mobile: fold the chip list after picking one
+  loadJobs();
+}
+
+function setStatsExpanded(expanded) {
+  const bar = document.getElementById('statsBar');
+  const btn = document.getElementById('statsMoreToggle');
+  if (!bar || !btn) return;
+  bar.classList.toggle('stats-expanded', expanded);
+  btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+  btn.textContent = expanded ? 'Fewer filters ▴' : 'More filters ▾';
+}
+
+function toggleStatsExpanded() {
+  setStatsExpanded(!document.getElementById('statsBar').classList.contains('stats-expanded'));
+}
+
+/* ── Company filter (click a company name) ───────────────────────── */
+function applyCompanyFilterUI() {
+  const chip = document.getElementById('companyFilterChip');
+  document.getElementById('companyFilterName').textContent = companyFilter;
+  chip.hidden = !companyFilter;
+}
+
+function filterByCompany(name) {
+  const company = String(name || '').trim();
+  if (!company) return;
+  companyFilter = company;
+  // Show every job ever seen at this company, whatever the other filters were.
+  document.getElementById('searchInput').value = '';
+  document.getElementById('sourceFilter').value = 'all';
+  document.getElementById('originFilter').value = 'all';
+  document.getElementById('countryFilter').value = 'all';
+  document.getElementById('timePreset').value = 'all';
+  document.getElementById('customDateGroup').classList.add('hidden-filter');
+  if (highlightsOnly) {
+    highlightsOnly = false;
+    document.getElementById('highlightsFilter').classList.remove('active');
+  }
+  applyCompanyFilterUI();
+  setStatusFilter('all');
+  window.scrollTo({ top: document.getElementById('statsBar').offsetTop, behavior: 'smooth' });
+}
+
+function clearCompanyFilter() {
+  companyFilter = '';
+  applyCompanyFilterUI();
+  currentPage = 1;
   loadJobs();
 }
 
@@ -3647,6 +3793,147 @@ function renderHighlightsBlock(job) {
   `;
 }
 
+/* ── Company history (other Tracker jobs at the same company) ────── */
+function companyHistoryStatus(item) {
+  const progress = item.progress || '';
+  if (progress === 'rejected') return { label: 'Rejected', cls: 'st-rejected' };
+  if (progress === 'interview') return { label: 'Interview', cls: 'st-interview' };
+  if (progress === 'offer') return { label: 'Offer', cls: 'st-offer' };
+  if (progress === 'applied') {
+    if (item.status === 'closed_no_reply') return { label: 'Applied · closed, no reply', cls: 'st-applied' };
+    return { label: 'Applied · no reply yet', cls: 'st-applied' };
+  }
+  return { label: STATUS_LABEL[item.status] || 'Not Applied', cls: '' };
+}
+
+function companyHistorySummary(history) {
+  const counts = {};
+  history.forEach(item => {
+    const { label } = companyHistoryStatus(item);
+    const key = label.startsWith('Applied') ? 'Applied (no reply)' : label;
+    counts[key] = (counts[key] || 0) + 1;
+  });
+  return Object.entries(counts).map(([k, n]) => `${n} ${k}`).join(' · ');
+}
+
+function companyHistoryFlags(history) {
+  const applied = history.some(h => h.progress);
+  const rejected = history.some(h => h.progress === 'rejected' || h.status === 'prev_rejected');
+  return { applied, rejected };
+}
+
+function companySeenPillHtml(job) {
+  const history = Array.isArray(job.company_history) ? job.company_history : [];
+  if (!history.length) return '';
+  const total = job.company_history_total || history.length;
+  const { applied, rejected } = companyHistoryFlags(history);
+  const icon = rejected ? '⛔' : applied ? '📨' : '🏢';
+  const title = `Seen ${total} other job(s) at this company: ${companyHistorySummary(history)}`;
+  return `<span class="meta-pill company-seen-pill${rejected ? ' seen-rejected' : ''}" title="${escHtml(title)}">${icon} ${total}× before</span>`;
+}
+
+function renderCompanyHistory(job) {
+  const history = Array.isArray(job.company_history) ? job.company_history : [];
+  if (!history.length) return '';
+  const total = job.company_history_total || history.length;
+  const { rejected } = companyHistoryFlags(history);
+  const rows = history.slice(0, 5).map(item => {
+    const st = companyHistoryStatus(item);
+    const dates = [];
+    if (item.applied_at) dates.push(`applied ${item.applied_at}`);
+    if (item.progress && item.progress !== 'applied' && item.last_step_at) {
+      dates.push(`${st.label.toLowerCase()} ${item.last_step_at}`);
+    }
+    if (!dates.length && item.matched_at) dates.push(`seen ${item.matched_at}`);
+    if (item.applicant_position) dates.push(`#${item.applicant_position} applicant`);
+    return `
+      <li>
+        <span class="ch-status ${st.cls}">${escHtml(st.label)}</span>
+        <span class="ch-title">${escHtml(item.title || '(No Title)')}</span>
+        <span class="ch-dates">${escHtml(dates.join(' · '))}</span>
+      </li>`;
+  }).join('');
+  const companyArg = escHtml(JSON.stringify(job.company || ''));
+  return `
+    <div class="company-history${rejected ? ' seen-rejected' : ''}" onclick="event.stopPropagation()">
+      <div class="ch-head">🏢 You've seen this company before — ${total} other job${total === 1 ? '' : 's'}
+        <span class="ch-summary">(${escHtml(companyHistorySummary(history))})</span>
+      </div>
+      <ul>${rows}</ul>
+      <button type="button" class="ch-all" onclick="filterByCompany(${companyArg})">Show all jobs at ${escHtml(job.company || '')} →</button>
+    </div>`;
+}
+
+/** Company name (click → filter to that company) + location. */
+function cardCompanyHtml(company, location) {
+  const name = String(company || '');
+  const link = name
+    ? `<button type="button" class="company-link" title="Show every Tracker job at this company"
+               onclick="event.stopPropagation(); filterByCompany(${escHtml(JSON.stringify(name))})">${escHtml(name)}</button>`
+    : '';
+  return link + (location ? ' · ' + escHtml(location) : '');
+}
+
+/* ── Applicant position at apply time (LinkedIn) ─────────────────── */
+function applicantPosPillHtml(job) {
+  const pos = job.applicant_position;
+  return `<span class="meta-pill applicant-pos-pill" data-applicant-pos-pill
+                title="You were roughly applicant #${pos || ''} when you applied"
+                ${pos ? '' : 'hidden'}>🙋 #${escHtml(pos || '')} at apply</span>`;
+}
+
+function renderApplicantPositionBlock(job) {
+  if (String(job.source || '').toLowerCase() !== 'linkedin') return '';
+  const id = job._id;
+  const scraped = job.applicants ? `When scraped: ${job.applicants}. ` : '';
+  return `
+    <div class="applicant-pos-wrap" data-id="${id}" onclick="event.stopPropagation()">
+      <span class="ap-label">🙋 Applicant # when I applied</span>
+      <input type="number" min="1" step="1" inputmode="numeric" class="applicant-pos-input"
+             value="${escHtml(job.applicant_position || '')}" placeholder="e.g. 25"
+             onkeydown="if(event.key==='Enter'){event.preventDefault();saveApplicantPosition('${id}');}" />
+      <button type="button" class="btn-save" onclick="saveApplicantPosition('${id}', this)">Save</button>
+      <span class="ap-hint">${escHtml(scraped)}Read the LinkedIn applicant count right after you apply.</span>
+    </div>`;
+}
+
+function setApplicantPositionUI(id, value) {
+  const card = document.getElementById(`card-${id}`);
+  if (!card) return;
+  const input = card.querySelector('.applicant-pos-input');
+  if (input) input.value = value || '';
+  const pill = card.querySelector('[data-applicant-pos-pill]');
+  if (pill) {
+    pill.hidden = !value;
+    pill.textContent = value ? `🙋 #${value} at apply` : '';
+    pill.title = value ? `You were roughly applicant #${value} when you applied` : '';
+  }
+}
+
+async function saveApplicantPosition(id, btn) {
+  const card = document.getElementById(`card-${id}`);
+  const input = card && card.querySelector('.applicant-pos-input');
+  if (!input) return;
+  const raw = input.value.trim();
+  try {
+    const res = await fetch(`/api/jobs/${id}/applicant-position`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ applicant_position: raw }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    setApplicantPositionUI(id, data.applicant_position);
+    if (btn) {
+      btn.textContent = 'Saved ✓';
+      setTimeout(() => { btn.textContent = 'Save'; }, 2000);
+    }
+    showToast(data.applicant_position ? `🙋 Saved: applicant #${data.applicant_position}` : '🙋 Applicant # cleared');
+  } catch (err) {
+    showToast('❌ ' + err.message, 'err');
+  }
+}
+
 /* ── Render card ─────────────────────────────────────────────────── */
 function renderCard(job) {
   const score  = formatScoreBadge(job);
@@ -3707,6 +3994,7 @@ function renderCard(job) {
         ${sourcePillHtml(job)}
         ${originPillHtml(job)}
         ${recBadge}
+        ${companySeenPillHtml(job)}
         <span class="row-highlights" data-row-highlights>${highlightBadges}</span>
         ${statusPillHtml(status, job.application_timeline)}
         <div class="score-badge ${scoreCls(hasAiScore(job) ? job.match_score : null)}">${score}</div>
@@ -3714,6 +4002,8 @@ function renderCard(job) {
     </div>
 
     <div class="card-body">
+     <div class="card-split">
+      <div class="card-split-match">
       <div class="card-header">
         <div class="card-title-block" data-id="${job._id}">
           <!-- View mode -->
@@ -3723,7 +4013,7 @@ function renderCard(job) {
               <button class="edit-info-btn" onclick="event.stopPropagation(); openEditInfo(this)" title="Edit title / company / location">✏️ Edit</button>
               <button class="delete-job-btn" onclick="event.stopPropagation(); deleteMatchedJob('${job._id}', this)" title="Delete this job permanently">🗑 Delete</button>
             </div>
-            <div class="card-company">${escHtml(job.company || '')}${job.location ? ' · ' + escHtml(job.location) : ''}</div>
+            <div class="card-company">${cardCompanyHtml(job.company, job.location)}</div>
           </div>
           <!-- Edit mode -->
           <div class="info-edit">
@@ -3748,14 +4038,22 @@ function renderCard(job) {
         ${recBadge}
         ${countryPillHtml(job)}
         ${job.matched_at ? `<span class="meta-pill">📅 ${job.matched_at}</span>` : ''}
-        ${job.applicants ? `<span class="meta-pill">👥 ${escHtml(job.applicants)}</span>` : ''}
+        ${job.applicants ? `<span class="meta-pill" title="Applicant count when the job was scraped">👥 ${escHtml(job.applicants)}</span>` : ''}
+        ${applicantPosPillHtml(job)}
       </div>
+
+      ${renderCompanyHistory(job)}
 
       ${job.recommend_reason ? `<div class="recommend-reason"><span class="recommend-reason-label">✦ Why AI recommends this</span>${escHtml(job.recommend_reason)}</div>` : ''}
       ${job.summary ? `<div class="card-summary">${escHtml(job.summary)}</div>` : ''}
 
       <details class="job-description" data-job-id="${job._id}" ontoggle="loadJobDescription(this)">
-        <summary><span>Original description</span></summary>
+        <summary>
+          <span>Original description</span>
+          <button type="button" class="jd-copy-btn" data-job-id="${job._id}"
+                  onclick="event.preventDefault(); event.stopPropagation(); copyJobDescription(this)"
+                  title="Copy the full original description">📋 Copy</button>
+        </summary>
         <div class="job-description-body" data-loaded="0">Expand to load…</div>
       </details>
 
@@ -3772,14 +4070,13 @@ function renderCard(job) {
         ${fetchBtn}
       </div>
 
-      <div class="card-split">
-        <div class="card-split-match">
           ${doSection}
           ${lookingSection}
           ${matchReasons ? `<ul style="font-size:.78rem;color:var(--muted);padding-left:16px;line-height:1.6;">${matchReasons}</ul>` : ''}
-        </div>
+      </div>
         <div class="card-split-track">
           ${renderProgressBlock(job)}
+          ${renderApplicantPositionBlock(job)}
           <div class="notes-wrap">
             <textarea
               class="notes-textarea"
@@ -3789,10 +4086,10 @@ function renderCard(job) {
             >${escHtml(job.notes || '')}</textarea>
             <button class="btn-save" data-id="${job._id}" onclick="saveNotes(this)">Save Notes</button>
           </div>
-          ${renderHighlightsBlock(job)}
           ${renderApplicationQa(job)}
+          ${renderHighlightsBlock(job)}
         </div>
-      </div>
+     </div>
     </div>
   `;
   return card;
@@ -4012,6 +4309,55 @@ async function loadJobDescription(detailsEl) {
   }
 }
 
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch (_) {
+    // Fallback for non-secure contexts / older browsers
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch (_) {}
+    ta.remove();
+    return ok;
+  }
+}
+
+/** Copy the full original JD (fetched if the panel was never opened). */
+async function copyJobDescription(btn) {
+  const jobId = btn.dataset.jobId;
+  const details = btn.closest('.job-description');
+  const body = details && details.querySelector('.job-description-body');
+  let text = body && body.dataset.loaded === '1' ? body.textContent : '';
+  try {
+    if (!text) {
+      const res = await fetch(`/api/jobs/${jobId}/description`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || 'Failed to load');
+      text = (data.description || '').trim();
+      if (text && body) {
+        body.textContent = text;
+        body.dataset.loaded = '1';
+      }
+    }
+    if (!text || text === 'No description saved.') {
+      showToast('⚠️ No description saved for this job', 'err');
+      return;
+    }
+    if (!(await copyText(text))) throw new Error('Clipboard blocked');
+    btn.textContent = '✓ Copied';
+    setTimeout(() => { btn.textContent = '📋 Copy'; }, 1500);
+    showToast(`📋 Copied description (${text.length} chars)`);
+  } catch (err) {
+    showToast('❌ Copy failed: ' + err.message, 'err');
+  }
+}
+
 function currentJobListParams() {
   const params = new URLSearchParams();
   const search = document.getElementById('searchInput').value.trim();
@@ -4025,6 +4371,7 @@ function currentJobListParams() {
   if (highlightsOnly) params.set('highlights', 'true');
   if (source !== 'all') params.set('source', source);
   if (search) params.set('q', search);
+  if (companyFilter) params.set('company', companyFilter);
   if (dates.from) params.set('date_from', dates.from);
   if (dates.to)   params.set('date_to',   dates.to);
   return params;
@@ -4265,6 +4612,8 @@ function refreshProgressUI(jobId, timeline, status) {
     const fakeJob = { _id: jobId, application_timeline: timeline, status };
     wrap.outerHTML = renderProgressBlock(fakeJob);
   }
+  // Back to Not Applied: the server cleared the applicant # with the record
+  if (status === 'pending' && !(timeline || []).length) setApplicantPositionUI(jobId, null);
 
   const pill = card.querySelector('[data-status-pill]');
   if (pill) {
@@ -4302,7 +4651,7 @@ async function saveTimeline(jobId, timeline) {
     application_timeline: data.application_timeline || timeline,
     applied_at: data.applied_at,
   }, currentStatusFilter)) {
-    loadJobs();
+    removeMatchedCardSilently(document.getElementById(`card-${jobId}`));
   }
   loadStats();
   loadJourney();
@@ -4401,7 +4750,8 @@ async function updateSideStatus(select) {
     const timeline = status === 'pending' ? [] : currentTimeline;
     refreshProgressUI(id, timeline, status);
     if (!jobMatchesStatusFilter({ status, application_timeline: timeline }, currentStatusFilter)) {
-      loadJobs();
+      // Fade this card out in place — no list reload, scroll position stays
+      removeMatchedCardSilently(document.getElementById(`card-${id}`));
     }
     showToast(`✅ Status updated to "${STATUS_LABEL[status]}"`);
     loadStats();
@@ -5096,14 +5446,9 @@ function removeMatchedCardSilently(card) {
     }
 
     // Bump local total label without refetch
+    totalJobs = Math.max(0, totalJobs - 1);
     const label = document.getElementById('countLabel');
-    if (label) {
-      const m = (label.textContent || '').match(/(\d+)/);
-      if (m) {
-        const next = Math.max(0, Number(m[1]) - 1);
-        label.textContent = `Total ${next}`;
-      }
-    }
+    if (label) label.textContent = `Page ${currentPage} of ${totalPages} (${totalJobs} total)`;
 
     // Empty state if grid has no cards left
     const grid = document.getElementById('jobGrid');
@@ -5150,8 +5495,8 @@ async function saveJobInfo(btn) {
     const view = block.querySelector('.info-view');
     const titleSpan = view.querySelector('.card-title-text');
     if (titleSpan) titleSpan.textContent = payload.title || '(No Title)';
-    view.querySelector('.card-company').textContent =
-      (payload.company || '') + (payload.location ? ' · ' + payload.location : '');
+    view.querySelector('.card-company').innerHTML =
+      cardCompanyHtml(payload.company, payload.location);
 
     // Sync compact-row fields
     const card = block.closest('.card');

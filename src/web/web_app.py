@@ -388,6 +388,98 @@ def combine_job_list_query(clauses: list) -> dict:
     return {"$and": parts}
 
 
+def company_match_clause(company: str) -> dict:
+    """Case-insensitive exact company match (ignores surrounding whitespace)."""
+    name = re.sub(r"\s+", " ", str(company or "")).strip()
+    if not name:
+        return {}
+    pattern = r"^\s*" + r"\s+".join(re.escape(part) for part in name.split(" ")) + r"\s*$"
+    return {"company": {"$regex": pattern, "$options": "i"}}
+
+
+def _company_key(company) -> str:
+    return re.sub(r"\s+", " ", str(company or "")).strip().casefold()
+
+
+COMPANY_HISTORY_LIMIT = 30
+
+
+def company_history_item(job: dict) -> dict:
+    """Short summary of one Tracker job, shown under 'Seen this company before'."""
+    def _fmt(value):
+        if isinstance(value, datetime):
+            return value.strftime("%Y-%m-%d")
+        return str(value or "")[:10]
+
+    timeline = _hydrate_timeline(job)
+    return {
+        "_id": str(job["_id"]),
+        "title": job.get("title") or "",
+        "status": job.get("status") or "pending",
+        "progress": application_progress(job) or "",
+        "applied_at": _fmt(job.get("applied_at")),
+        "matched_at": _fmt(job.get("matched_at")),
+        "last_step_at": _fmt(timeline[-1].get("at")) if timeline else "",
+        "source": job.get("source") or "",
+        "applicant_position": job.get("applicant_position"),
+    }
+
+
+def attach_company_history(jobs: list, collection=None) -> list:
+    """
+    Add `company_history` (other Tracker jobs at the same company, newest
+    first) to each serialized job. One query for the whole page.
+    """
+    names = {}
+    for job in jobs:
+        key = _company_key(job.get("company"))
+        if key:
+            names.setdefault(key, job.get("company"))
+    if not names:
+        for job in jobs:
+            job["company_history"] = []
+        return jobs
+
+    collection = collection if collection is not None else get_collection("matched_jobs")
+    clauses = [company_match_clause(name) for name in names.values()]
+    projection = {
+        "title": 1, "company": 1, "status": 1, "source": 1,
+        "applied_at": 1, "matched_at": 1, "updated_at": 1,
+        "application_timeline": 1, "applicant_position": 1,
+    }
+    by_company: dict = {}
+    for doc in collection.find({"$or": clauses}, projection).sort("matched_at", -1):
+        by_company.setdefault(_company_key(doc.get("company")), []).append(doc)
+
+    for job in jobs:
+        key = _company_key(job.get("company"))
+        others = [
+            d for d in by_company.get(key, [])
+            if str(d["_id"]) != str(job.get("_id"))
+        ]
+        job["company_history"] = [company_history_item(d) for d in others[:COMPANY_HISTORY_LIMIT]]
+        job["company_history_total"] = len(others)
+    return jobs
+
+
+def parse_applicant_position(raw) -> tuple:
+    """
+    Validate the 'I was applicant #N' value. Returns (value, error).
+    Empty / None clears the field.
+    """
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return None, None
+    if isinstance(raw, bool):
+        return None, "applicant_position must be a whole number"
+    try:
+        value = int(str(raw).strip().lstrip("#"))
+    except (TypeError, ValueError):
+        return None, "applicant_position must be a whole number"
+    if value < 1 or value > 100000:
+        return None, "applicant_position must be between 1 and 100000"
+    return value, None
+
+
 def chip_status_counts(jobs: list) -> dict:
     """
     Filter-chip counts.
@@ -485,6 +577,7 @@ def _status_update_fields(job: dict, new_status: str, now: datetime) -> dict:
     if new_status == "pending":
         update_fields["application_timeline"] = []
         update_fields["applied_at"] = None
+        update_fields["applicant_position"] = None
         return update_fields
     if new_status in APPLIED_STATUSES and not job.get("applied_at"):
         update_fields["applied_at"] = now
@@ -518,6 +611,7 @@ def _timeline_update_fields(job: dict, timeline: list, now: datetime) -> dict:
 
     if new_status == "pending":
         update_fields["applied_at"] = None
+        update_fields["applicant_position"] = None
     elif existing_applied:
         # Do not restamp a side-status job; allow an Applied-step edit otherwise
         if applied_event and prev_status not in SIDE_STATUSES:
@@ -596,6 +690,9 @@ def _serialize(job: dict) -> dict:
         ]
     # Ensure status always exists
     job.setdefault("status", "pending")
+    # "I was applicant #N" at apply time (LinkedIn); None for older records
+    pos, _err = parse_applicant_position(job.get("applicant_position"))
+    job["applicant_position"] = pos
     rec = normalize_recommended_by(job.get("recommended_by"))
     job["recommended_by"] = rec
     job["recommend_reason"] = str(job.get("recommend_reason") or "")
@@ -676,11 +773,12 @@ def timeouts():
 
 
 def _jobs_list_query_from_args(args) -> dict:
-    """Mongo query for Tracker list filters (status, source, origin, country, search, dates, highlights)."""
+    """Mongo query for Tracker list filters (status, source, origin, country, search, company, dates, highlights)."""
     status_filter = args.get("status")
     source_filter = args.get("source")
     country_filter = args.get("country")
     search_query = (args.get("q") or "").strip()
+    company_filter = (args.get("company") or "").strip()
     date_from = (args.get("date_from") or "").strip() or None
     date_to = (args.get("date_to") or "").strip() or None
     highlights_filter = (args.get("highlights") or "").strip().lower()
@@ -700,6 +798,8 @@ def _jobs_list_query_from_args(args) -> dict:
                 {"company": {"$regex": search_query, "$options": "i"}},
             ]
         })
+    if company_filter:
+        clauses.append(company_match_clause(company_filter))
     if date_from or date_to:
         time_filter: dict = {}
         start = _parse_filter_date(date_from)
@@ -746,7 +846,7 @@ def api_jobs():
         .skip(skip)
         .limit(page_size)
     )
-    jobs = [_serialize(j) for j in jobs]
+    jobs = attach_company_history([_serialize(j) for j in jobs], collection)
 
     return jsonify({
         "jobs": jobs,
@@ -1032,6 +1132,30 @@ def api_update_application_qa(job_id: str):
     return jsonify({"ok": True, "application_qa": cleaned})
 
 
+@app.route("/api/jobs/<job_id>/applicant-position", methods=["PATCH"])
+@login_required
+def api_update_applicant_position(job_id: str):
+    """Save 'I was applicant #N' (LinkedIn applicant count when you applied)."""
+    data = request.get_json(silent=True) or {}
+    value, error = parse_applicant_position(data.get("applicant_position"))
+    if error:
+        return jsonify({"error": error}), 400
+
+    try:
+        oid = ObjectId(job_id)
+    except Exception:
+        return jsonify({"error": "Invalid job ID"}), 400
+
+    collection = get_collection("matched_jobs")
+    result = collection.update_one(
+        {"_id": oid},
+        {"$set": {"applicant_position": value, "updated_at": datetime.now()}},
+    )
+    if result.matched_count == 0:
+        return jsonify({"error": "Job not found"}), 404
+    return jsonify({"ok": True, "applicant_position": value})
+
+
 @app.route("/api/jobs/<job_id>/info", methods=["PATCH"])
 @login_required
 def api_update_job_info(job_id: str):
@@ -1069,10 +1193,11 @@ def api_get_job(job_id: str):
     except Exception:
         return jsonify({"error": "Invalid job ID"}), 400
 
-    job = get_collection("matched_jobs").find_one({"_id": oid}, JOBS_LIST_PROJECTION)
+    collection = get_collection("matched_jobs")
+    job = collection.find_one({"_id": oid}, JOBS_LIST_PROJECTION)
     if not job:
         return jsonify({"error": "Job not found"}), 404
-    return jsonify(_serialize(job))
+    return jsonify(attach_company_history([_serialize(job)], collection)[0])
 
 
 @app.route("/api/jobs/<job_id>", methods=["DELETE"])
@@ -2599,11 +2724,24 @@ def main():
     parser.add_argument("--host", default="127.0.0.1", help="Host to bind")
     parser.add_argument("--port", "-p", type=int, default=5050, help="Port to listen on")
     parser.add_argument("--debug", action="store_true", help="Enable debug mode")
+    parser.add_argument(
+        "--reload",
+        action="store_true",
+        help="Restart the server automatically when a .py file changes (local dev)",
+    )
     args = parser.parse_args()
 
     print(f"\n🌐 Job Tracker starting at http://{args.host}:{args.port}")
+    if args.reload:
+        print("   Auto-reload on: saving a .py file restarts the server.")
     print("   Press Ctrl+C to stop.\n")
-    app.run(host=args.host, port=args.port, debug=args.debug)
+    # Reloader only (no interactive debugger) unless --debug is also given.
+    app.run(
+        host=args.host,
+        port=args.port,
+        debug=args.debug,
+        use_reloader=args.reload or args.debug,
+    )
 
 
 if __name__ == "__main__":

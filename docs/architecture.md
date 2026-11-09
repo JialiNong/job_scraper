@@ -73,7 +73,7 @@ There is **no scheduled job** (no cron / launchd) in this project. Runs are star
 | Command | What it does | Typical time |
 |---------|--------------|--------------|
 | `./scripts/run_jobs.sh [--days N] [--hours H] [--pages P]` | Indeed + LinkedIn lanes in parallel. Each source matches as soon as its scrape finishes, with Telegram pings; match-card digest after both lanes. Defaults: Indeed 1 day, LinkedIn 24h (or `days × 24` when `--days` is given), `FULL_MAX_PAGES` (3) pages per keyword on both platforms | 40–60 min at defaults |
-| `./scripts/start_ui.sh` | Start Job Tracker Web UI (default `:5050`) | — |
+| `./scripts/start_ui.sh` | Start Job Tracker Web UI (default `:5050`); runs with `--reload`, so saving a `.py` file restarts the server and templates hot-reload in the browser | — |
 
 Prefer `caffeinate -i` for manual runs so sleep does not interrupt Playwright:
 
@@ -282,9 +282,13 @@ Already-scored jobs are not rematched automatically. To re-score one: Unmatched 
 
 **Unmatched page (`/unmatched`):** any job below the match threshold can be marked **Can Apply** (`user_status=watchlist`). That copies it into `matched_jobs` as `pending` (does not overwrite an existing Tracker row) so it can be tracked or marked applied. This is a manual override when AI scoring was wrong; it is not limited to the 6–7 score band. Filter by hard-fail kind with the gate dropdown; each card shows the quoted reason plus the company / score breakdown.
 
-**Tracker Other statuses:** `unsuitable`, `closed`, `repost`, `duplicate` are overlays on a card. They do **not** clear `applied_at` or `application_timeline`; a job that was applied still shows its progress and still counts in funnel / Journey / Locations / daily-activity applied totals. Reset Not Applied (`pending`) is the explicit wipe: it clears the timeline and `applied_at` and is not counted as an application. `repost` is a manual mark when the same role was posted again as a new listing and does not need another application. `duplicate` marks a listing already tracked from another source (e.g. LinkedIn and Indeed for the same role). Tracker chips **Applied / Interview / Offer / Rejected** filter and count by that progress (latest timeline step, or `applied_at` / flat applied-like status when there is no timeline), not exclusively by the `status` field — so an Unsuitable card with an interview step still appears under Interview, with the overlay pill still visible. Overlay chips still filter by the side-status field.
+**Tracker Other statuses:** `unsuitable`, `closed`, `repost`, `duplicate` are overlays on a card. They do **not** clear `applied_at` or `application_timeline`; a job that was applied still shows its progress and still counts in funnel / Journey / Locations / daily-activity applied totals. Reset Not Applied (`pending`) is the explicit wipe: it clears the timeline, `applied_at` and `applicant_position` and is not counted as an application. `repost` is a manual mark when the same role was posted again as a new listing and does not need another application. `duplicate` marks a listing already tracked from another source (e.g. LinkedIn and Indeed for the same role). Tracker chips **Applied / Interview / Offer / Rejected** filter and count by that progress (latest timeline step, or `applied_at` / flat applied-like status when there is no timeline), not exclusively by the `status` field — so an Unsuitable card with an interview step still appears under Interview, with the overlay pill still visible. Overlay chips still filter by the side-status field.
 
 AI `special_match` / `special_match_reasons` are still written by the matcher for scoring (9–10 band) but are **not** shown as badges on the Tracker. Highlight badges on the matched-jobs page come only from the user-editable `highlights` list (`PATCH /api/jobs/<id>/highlights`).
+
+**Tracker company history:** `GET /api/jobs` (and `GET /api/jobs/<id>`) attach `company_history` / `company_history_total` to each job: the other `matched_jobs` rows with the same company (case-insensitive exact match, one query per page). Cards show a "N× before" pill and, when expanded, a "seen this company before" box with each earlier job's outcome (Rejected / Applied · no reply yet / Interview / Not Applied / side status). Clicking a company name sets the `company` list filter (`?company=`, exact match) and resets the other filters so every job at that company is listed.
+
+**Applicant position (LinkedIn):** `applicant_position` is a user-entered integer ("I was applicant #N when I applied"), saved with `PATCH /api/jobs/<id>/applicant-position`. It is separate from the scraped `applicants` text; scrapers and Log Job never write it.
 
 ---
 
