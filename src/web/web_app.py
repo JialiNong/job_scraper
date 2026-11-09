@@ -1578,7 +1578,8 @@ def api_stats_locations():
 
     Cities are normalized (street/postal lines fold into the city; "X near City"
     keeps X). Country-only / pure-remote labels count as Remote; a concrete city
-    still wins over a (Remote) work-mode tag.
+    still wins over a (Remote) work-mode tag. Only Germany + Remote locations
+    are listed; `total` still counts every application.
     """
     return jsonify(get_applied_location_stats())
 

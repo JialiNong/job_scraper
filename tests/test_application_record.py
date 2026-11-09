@@ -31,6 +31,7 @@ from core.db_mongo import (  # noqa: E402
     count_applied_applications,
     get_applied_job_keys,
     get_applied_location_stats,
+    is_germany_or_remote,
     resolve_applied_at,
 )
 
@@ -218,6 +219,30 @@ class StatsQueryTests(unittest.TestCase):
             result = get_applied_location_stats()
         self.assertEqual(result["total"], 3)
         self.assertEqual(sum(row["count"] for row in result["locations"]), 3)
+
+    def test_location_stats_germany_and_remote_only(self):
+        mock_col = MagicMock()
+        mock_col.find.return_value = [
+            {"location": "Berlin, Germany"},
+            {"location": "Amsterdam, Netherlands (hybrid)"},
+            {"location": "Sweden"},
+            {"location": "European Economic Area (Remote)"},
+            {"location": "Manching, Bavaria, Germany"},
+        ]
+        with patch.object(db_mongo, "get_collection", return_value=mock_col):
+            result = get_applied_location_stats()
+        names = {row["name"] for row in result["locations"]}
+        self.assertEqual(names, {"Berlin", "Remote", "Manching"})
+        self.assertEqual(result["total"], 5)
+
+    def test_is_germany_or_remote(self):
+        self.assertTrue(is_germany_or_remote("Stuttgart, Ulm or Berlin"))
+        self.assertTrue(is_germany_or_remote("EMEA (Remote)"))
+        self.assertTrue(is_germany_or_remote("Deutschland"))
+        self.assertFalse(is_germany_or_remote("The Hague, Netherlands"))
+        self.assertFalse(is_germany_or_remote("Remote, UK"))
+        self.assertTrue(is_germany_or_remote("Remote (UK, Ireland, Spain, Germany)"))
+        self.assertFalse(is_germany_or_remote("London"))
 
     def test_location_stats_use_application_query(self):
         mock_col = MagicMock()
