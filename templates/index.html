@@ -538,6 +538,12 @@
       min-height: 1.4em;
     }
     .cal-detail-date.muted { color: var(--muted); font-weight: 500; }
+    .cal-detail-link {
+      font-size: .78rem; font-weight: 600; color: var(--accent); text-decoration: none;
+    }
+    .cal-detail-link:hover { text-decoration: underline; }
+    .cal-detail-link[hidden] { display: none; }
+    .cal-cell.has-applied { cursor: pointer; }
     .cal-metrics {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -2517,8 +2523,9 @@
     .company-history .ch-dates { color: var(--muted); white-space: nowrap; }
     .company-history .ch-all {
       background: none; border: 0; padding: 0; color: var(--accent);
-      cursor: pointer; font: inherit; font-weight: 600;
+      cursor: pointer; font: inherit; font-weight: 600; text-decoration: none;
     }
+    .company-history .ch-all:hover { text-decoration: underline; }
 
     /* ── Applicant position at apply time (LinkedIn) ───────────────── */
     .applicant-pos-wrap {
@@ -2638,6 +2645,7 @@
           <div class="m-label">Applied (incl. rejected)</div>
         </div>
       </div>
+      <a class="cal-detail-link" id="calDetailLink" href="#" target="_blank" rel="noopener" hidden>View applications ↗</a>
     </div>
   </div>
 </div>
@@ -2752,6 +2760,10 @@
     🏢 <span class="cfc-name" id="companyFilterName"></span>
     <button type="button" onclick="clearCompanyFilter()" title="Clear company filter" aria-label="Clear company filter">×</button>
   </span>
+  <span class="company-filter-chip" id="appliedFilterChip" hidden title="Jobs applied or reapplied on this day">
+    📅 Applied <span class="cfc-name" id="appliedFilterName"></span>
+    <button type="button" onclick="clearAppliedFilter()" title="Clear applied-day filter" aria-label="Clear applied-day filter">×</button>
+  </span>
   <span class="count-label" id="countLabel"></span>
 </div>
 
@@ -2791,6 +2803,7 @@
 let currentStatusFilter = 'active';
 let highlightsOnly = false;
 let companyFilter = ''; // exact company (click a company name on a card)
+let appliedOnFilter = ''; // YYYY-MM-DD: jobs applied that day (heatmap → /?applied=…)
 let debounceTimer = null;
 let dateDebounceTimer = null;
 let jobsAbortController = null;
@@ -3342,6 +3355,14 @@ function showCalDetail(dateStr) {
   document.getElementById('cd-german').textContent  = d.german_filtered;
   document.getElementById('cd-matched').textContent = d.ai_matched;
   document.getElementById('cd-applied').textContent = d.applied;
+  const link = document.getElementById('calDetailLink');
+  link.hidden = !d.applied;
+  link.href = appliedDayUrl(dateStr);
+}
+
+/** Tracker URL listing the jobs applied (or reapplied) on one day. */
+function appliedDayUrl(dateStr) {
+  return `/?applied=${encodeURIComponent(dateStr)}`;
 }
 
 async function loadDailyStats() {
@@ -3421,7 +3442,15 @@ async function loadDailyStats() {
           btn.dataset.date = cell.date;
           btn.title = `${cell.date}: ${cell.data.title_clicked} clicked, ${cell.data.german_filtered} german, ${cell.data.ai_matched} matched, ${cell.data.applied} applied`;
           btn.addEventListener('mouseenter', () => showCalDetail(cell.date));
-          btn.addEventListener('click', () => showCalDetail(cell.date));
+          if (cell.data.applied) {
+            btn.classList.add('has-applied');
+            btn.title += ' · click to open that day\'s applications';
+          }
+          btn.addEventListener('click', () => {
+            showCalDetail(cell.date);
+            // Days with applications open them in a new tab
+            if (cell.data.applied) window.open(appliedDayUrl(cell.date), '_blank', 'noopener');
+          });
         }
         weekEl.appendChild(btn);
       });
@@ -3501,11 +3530,31 @@ function applyCompanyFilterUI() {
   chip.hidden = !companyFilter;
 }
 
-function filterByCompany(name) {
-  const company = String(name || '').trim();
-  if (!company) return;
-  companyFilter = company;
-  // Show every job ever seen at this company, whatever the other filters were.
+/** Tracker URL filtered to one company (opened in a new tab from company history). */
+function companyPageUrl(name) {
+  return `/?company=${encodeURIComponent(String(name || '').trim())}`;
+}
+
+/** Keep ?company= / ?applied= in the address bar so a refresh keeps the filter. */
+function syncFilterParams() {
+  const params = new URLSearchParams(location.search);
+  if (companyFilter) params.set('company', companyFilter);
+  else params.delete('company');
+  if (appliedOnFilter) params.set('applied', appliedOnFilter);
+  else params.delete('applied');
+  const qs = params.toString();
+  history.replaceState({}, '', qs ? `/?${qs}` : '/');
+  const parts = [companyFilter, appliedOnFilter && `Applied ${appliedOnFilter}`].filter(Boolean);
+  document.title = parts.length ? `${parts.join(' · ')} · Job Tracker` : 'Job Tracker';
+}
+
+function applyAppliedFilterUI() {
+  document.getElementById('appliedFilterName').textContent = appliedOnFilter;
+  document.getElementById('appliedFilterChip').hidden = !appliedOnFilter;
+}
+
+/** Reset the toolbar filters so a company / applied-day view is complete. */
+function resetToolbarFilters() {
   document.getElementById('searchInput').value = '';
   document.getElementById('sourceFilter').value = 'all';
   document.getElementById('originFilter').value = 'all';
@@ -3516,13 +3565,43 @@ function filterByCompany(name) {
     highlightsOnly = false;
     document.getElementById('highlightsFilter').classList.remove('active');
   }
+}
+
+function filterByCompany(name) {
+  const company = String(name || '').trim();
+  if (!company) return;
+  companyFilter = company;
+  syncFilterParams();
+  // Show every job ever seen at this company, whatever the other filters were.
+  resetToolbarFilters();
   applyCompanyFilterUI();
   setStatusFilter('all');
   window.scrollTo({ top: document.getElementById('statsBar').offsetTop, behavior: 'smooth' });
 }
 
+function filterByAppliedDay(dateStr) {
+  const day = String(dateStr || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return;
+  appliedOnFilter = day;
+  syncFilterParams();
+  // Every job applied that day, whatever its status is now
+  resetToolbarFilters();
+  applyAppliedFilterUI();
+  setStatusFilter('all');
+  window.scrollTo({ top: document.getElementById('statsBar').offsetTop, behavior: 'smooth' });
+}
+
+function clearAppliedFilter() {
+  appliedOnFilter = '';
+  syncFilterParams();
+  applyAppliedFilterUI();
+  currentPage = 1;
+  loadJobs();
+}
+
 function clearCompanyFilter() {
   companyFilter = '';
+  syncFilterParams();
   applyCompanyFilterUI();
   currentPage = 1;
   loadJobs();
@@ -3881,14 +3960,14 @@ function renderCompanyHistory(job) {
         <span class="ch-dates">${escHtml(dates.join(' · '))}</span>
       </li>`;
   }).join('');
-  const companyArg = escHtml(JSON.stringify(job.company || ''));
   return `
     <div class="company-history${rejected ? ' seen-rejected' : ''}" onclick="event.stopPropagation()">
       <div class="ch-head">🏢 You've seen this company before — ${total} other job${total === 1 ? '' : 's'}
         <span class="ch-summary">(${escHtml(companyHistorySummary(history))})</span>
       </div>
       <ul>${rows}</ul>
-      <button type="button" class="ch-all" onclick="filterByCompany(${companyArg})">Show all jobs at ${escHtml(job.company || '')} →</button>
+      <a class="ch-all" href="${escHtml(companyPageUrl(job.company))}" target="_blank" rel="noopener"
+         title="Open in a new tab">Show all jobs at ${escHtml(job.company || '')} ↗</a>
     </div>`;
 }
 
@@ -4400,6 +4479,7 @@ function currentJobListParams() {
   if (source !== 'all') params.set('source', source);
   if (search) params.set('q', search);
   if (companyFilter) params.set('company', companyFilter);
+  if (appliedOnFilter) params.set('applied_on', appliedOnFilter);
   if (dates.from) params.set('date_from', dates.from);
   if (dates.to)   params.set('date_to',   dates.to);
   return params;
@@ -5620,10 +5700,24 @@ function refreshAll() {
 });
 
 window.__pendingOpenJobId = consumeOpenJobId();
+const initialParams = new URLSearchParams(location.search);
+const initialCompany = (initialParams.get('company') || '').trim();
+const initialApplied = (initialParams.get('applied') || '').trim();
 
 setLayout(currentLayout);
 loadStats();
-loadJobs();
+// ?company=… / ?applied=YYYY-MM-DD → open straight into that view
+if (initialApplied) {
+  if (initialCompany) {
+    companyFilter = initialCompany;
+    applyCompanyFilterUI();
+  }
+  filterByAppliedDay(initialApplied);
+} else if (initialCompany) {
+  filterByCompany(initialCompany);
+} else {
+  loadJobs();
+}
 setTimeout(() => {
   loadJourney();
   loadLocationStats();

@@ -774,7 +774,7 @@ def timeouts():
 
 
 def _jobs_list_query_from_args(args) -> dict:
-    """Mongo query for Tracker list filters (status, source, origin, country, search, company, dates, highlights)."""
+    """Mongo query for Tracker list filters (status, source, origin, country, search, company, dates, applied day, highlights)."""
     status_filter = args.get("status")
     source_filter = args.get("source")
     country_filter = args.get("country")
@@ -782,6 +782,7 @@ def _jobs_list_query_from_args(args) -> dict:
     company_filter = (args.get("company") or "").strip()
     date_from = (args.get("date_from") or "").strip() or None
     date_to = (args.get("date_to") or "").strip() or None
+    applied_on = (args.get("applied_on") or "").strip()
     highlights_filter = (args.get("highlights") or "").strip().lower()
     origin_filter = normalize_origin(args.get("origin"))
     clauses = [jobs_status_filter_query(status_filter)]
@@ -811,6 +812,17 @@ def _jobs_list_query_from_args(args) -> dict:
             time_filter["$lte"] = end
         if time_filter:
             clauses.append({"matched_at": time_filter})
+    if applied_on:
+        # Same basis as the heatmap's Applied count: applied_at that day, or a
+        # Reapplied step that day
+        start = _parse_filter_date(applied_on)
+        end = _parse_filter_date(applied_on, end_of_day=True)
+        if start and end:
+            day = {"$gte": start, "$lte": end}
+            clauses.append({"$or": [
+                {"applied_at": day},
+                {"application_timeline": {"$elemMatch": {"step": "reapplied", "at": day}}},
+            ]})
     return combine_job_list_query(clauses)
 
 
