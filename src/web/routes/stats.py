@@ -1,4 +1,5 @@
 """Summary bar, funnel, heatmap, locations, and Application Journey."""
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
 from flask import Blueprint, jsonify, request
@@ -28,25 +29,50 @@ from web.status import (
 
 bp = Blueprint("stats", __name__)
 
+# Fields the Journey loop reads (incl. resolve_applied_at / reapplied_count).
+# Without a projection every applied job's full document (description, AI
+# breakdowns) came back from Atlas: ~2.6 MB for ~320 jobs vs ~80 KB.
+JOURNEY_PROJECTION = {
+    "company": 1,
+    "title": 1,
+    "status": 1,
+    "application_timeline": 1,
+    "applied_at": 1,
+    "updated_at": 1,
+    "matched_at": 1,
+}
+
 
 @bp.route("/api/stats")
 @login_required
 def api_stats():
     """Return status counts for the summary bar and pipeline funnel."""
     collection = get_collection("matched_jobs")
-    # Slim projection: progress chips use timeline / applied_at, not status alone
-    docs = list(collection.find(
-        {},
-        {"_id": 0, "status": 1, "applied_at": 1, "application_timeline.step": 1},
-    ))
+
+    def chip_docs():
+        # Slim projection: progress chips use timeline / applied_at, not status alone
+        return list(collection.find(
+            {},
+            {"_id": 0, "status": 1, "applied_at": 1, "application_timeline.step": 1},
+        ))
+
+    # The five reads are independent and each costs a round trip to Atlas:
+    # run them side by side (pymongo's client is thread-safe) instead of in a row.
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        docs_f = pool.submit(chip_docs)
+        # Same as Journey + Locations: APPLICATION_QUERY (keeps side-status applies)
+        applied_f = pool.submit(count_applied_applications)
+        scraper_f = pool.submit(get_scraper_stats)
+        unmatched_f = pool.submit(count_unmatched_jobs, threshold=MATCH_THRESHOLD)
+        timeouts_f = pool.submit(count_open_timeout_jobs)
+        docs = docs_f.result()
+        applied_total = applied_f.result()
+        scraper = scraper_f.result()
+        unmatched = unmatched_f.result()
+        timeouts_open = timeouts_f.result()
+
     by_status = chip_status_counts(docs)
     ai_matched = len(docs)
-    # Same as Journey + Locations: APPLICATION_QUERY (keeps side-status applies)
-    applied_total = count_applied_applications()
-
-    scraper = get_scraper_stats()
-    unmatched = count_unmatched_jobs(threshold=MATCH_THRESHOLD)
-    timeouts_open = count_open_timeout_jobs()
 
     return jsonify({
         # existing: matched-jobs filter chips
@@ -101,7 +127,7 @@ def api_journey():
       each showing the full step timeline (Applied → Invite → Rounds …)
     """
     collection = get_collection("matched_jobs")
-    jobs = list(collection.find(APPLICATION_QUERY))
+    jobs = list(collection.find(APPLICATION_QUERY, JOURNEY_PROJECTION))
 
     total_applied = 0
     first_applied = None

@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 # Before the web.* imports: some modules read env at import (MATCH_THRESHOLD)
 load_dotenv()
 
-from flask import Flask, url_for  # noqa: E402
+from flask import Flask, request, url_for  # noqa: E402
 from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 from core.db_mongo import ensure_indexes  # noqa: E402
 from web.auth import bp as auth_bp, login_manager  # noqa: E402
@@ -89,6 +89,24 @@ def _static_url_helper():
             version = 0
         return url_for("static", filename=filename, v=version)
     return {"static_url": static_url}
+
+
+_default_send_file_max_age = app.get_send_file_max_age
+
+
+def _send_file_max_age(filename):
+    """
+    Static files linked through static_url() carry ?v=<mtime>, so a changed
+    file always gets a new URL: let browsers keep those for a year instead of
+    revalidating every asset on each page load. Anything else keeps Flask's
+    default (revalidate).
+    """
+    if request.endpoint == "static" and request.args.get("v"):
+        return 31536000
+    return _default_send_file_max_age(filename)
+
+
+app.get_send_file_max_age = _send_file_max_age
 
 
 # Authentication setup (single user; see web/auth.py)
