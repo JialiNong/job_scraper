@@ -274,10 +274,10 @@ function rowChannelHtml(job) {
   /* jobs.created_at is set by the scrapers too, so inferred origin "manual"
      is not a Log job. The board source is the scraper channel. */
   if (BOARD_LABEL[src]) {
-    return `<span class="channel-chip ch-scraper" title="Found by the LinkedIn / Indeed scraper">Scraper</span>`;
+    return `<span class="channel-chip ch-scraper" title="Found by the LinkedIn / Indeed scraper">▸ Scraper</span>`;
   }
   if (src === 'manual') {
-    return `<span class="channel-chip ch-manual" title="Logged by hand via Log Job">Log job</span>`;
+    return `<span class="channel-chip ch-manual" title="Logged by hand via Log Job">● Log job</span>`;
   }
   return src ? `<span class="meta-pill source-pill">${escHtml(job.source || '')}</span>` : '';
 }

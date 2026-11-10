@@ -1263,11 +1263,11 @@ function sourceBadgeHtml(job) {
   return `<span class="meta-pill source-badge src-${escHtml(key)}" title="${escHtml(title)}">◆ ${escHtml(badge.label)}</span>`;
 }
 
-/* Agent rows already show the ✦ agent badge and API rows the ◆ source badge,
-   so only pipeline / manual get a pill. */
+/* Every channel chip uses a leading mark (✦ agent, ◆ API/ATS, ● Log job,
+   ▸ Scraper) so the four origins read as one label family. */
 const ORIGIN_PILL = {
-  pipeline: { label: 'Scraper', title: 'Found by the LinkedIn / Indeed scraper' },
-  manual:   { label: 'Log Job', title: 'Logged by hand via Log Job' },
+  pipeline: { label: '▸ Scraper', title: 'Found by the LinkedIn / Indeed scraper' },
+  manual:   { label: '● Log Job', title: 'Logged by hand via Log Job' },
 };
 
 function originPillHtml(job) {
@@ -1301,9 +1301,9 @@ function jobChannel(job) {
   const src = String(job.source || '').toLowerCase();
   const api = SOURCE_BADGE[src];
   if (api) return { cls: `ch-api ch-${src}`, label: `◆ ${api.label.replace(/ API$/, '')}`, title: api.title };
-  if (job.origin === 'manual') return { cls: 'ch-manual', label: 'Log job', title: ORIGIN_PILL.manual.title };
+  if (job.origin === 'manual') return { cls: 'ch-manual', label: '● Log job', title: ORIGIN_PILL.manual.title };
   if (job.origin === 'pipeline' || BOARD_LABEL[src]) {
-    return { cls: 'ch-scraper', label: ORIGIN_PILL.pipeline.label, title: ORIGIN_PILL.pipeline.title };
+    return { cls: 'ch-scraper', label: '▸ Scraper', title: ORIGIN_PILL.pipeline.title };
   }
   return src ? { cls: 'ch-other', label: src, title: '' } : null;
 }
