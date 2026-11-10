@@ -76,6 +76,7 @@ job_scraper/
 │   └── tools/                         # eval_matcher, generate_password_hash, log_recommended_jobs
 ├── evals/                             # Matcher evaluation set + baselines
 ├── tests/                             # Unit tests (python3 -m unittest discover -s tests)
+│   └── e2e/                           # Browser E2E tests for the web UI (./scripts/run_e2e.sh)
 ├── templates/                         # Web UI templates
 ├── logs/                              # Log output directory
 └── .env                               # Environment variables (not in git)
@@ -180,6 +181,32 @@ Execution order:
 Only one run at a time: a second `/jobs` while one is running is refused (`logs/pipeline.pid`).
 
 ---
+
+## Tests
+
+| What | Command | Time |
+|---|---|---|
+| Unit tests | `/opt/miniconda3/bin/python3 -m unittest discover -s tests` | < 1 s |
+| Browser E2E (web UI) | `./scripts/run_e2e.sh` (add `-v` for each test name) | ~20 s |
+
+**E2E** (`tests/e2e/`) starts a throwaway MongoDB on a random local port, the real
+web server (`src/web/web_app.py`), and headless Google Chrome, then clicks through
+login, application progress, Other status, notes, edit, delete, Unmatched → Can Apply,
+Timeouts → Add, Log Job (link only) and the agent API, checking MongoDB after each.
+Any uncaught JavaScript error fails the test.
+
+- It **never touches your real data**: the harness refuses to start unless the server
+  points at `127.0.0.1` + a database ending in `_e2e`, with AI / Telegram keys blank.
+- Needs `mongod` (`brew install mongodb/brew/mongodb-community`; no service needs to
+  run) and Playwright (already used by the scrapers; it drives your installed Chrome).
+- Seed data and fixed card ids live in `tests/e2e/harness.py`. When you change a
+  page's buttons or ids, update the selectors in `tests/e2e/test_tracker_e2e.py`.
+
+**Automatic run in Claude Code:** `.claude/settings.json` has a Stop hook
+(`scripts/e2e_hook.sh`). When Claude finishes a turn in which `src/web`, `src/core`,
+`templates` or `tests` changed, it runs unit + E2E tests; a failure is sent back to
+Claude to fix. Unchanged code is not re-run, and a given failure is reported once.
+Last full output: `logs/e2e_last.log`. Review or turn it off with `/hooks`.
 
 ## Configuration
 
