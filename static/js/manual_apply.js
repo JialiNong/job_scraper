@@ -88,7 +88,7 @@ async function lookupUrls(urls, { autoOpen = true } = {}) {
     const data = await res.json();
     if (seq !== _lookupSeq) return null;
     if (!res.ok) {
-      setBanner('error', '❌ ' + (data.error || 'Lookup failed'));
+      setBanner('error', '' + (data.error || 'Lookup failed'));
       return null;
     }
 
@@ -100,7 +100,7 @@ async function lookupUrls(urls, { autoOpen = true } = {}) {
     _lastLookupKey = key;
 
     if (!hits.length) {
-      setBanner('info', `✨ New URL(s) — not in DB yet. Use <strong>Scrape &amp; Log</strong> or <strong>Save Link Only</strong>.`);
+      setBanner('info', `New URL(s) — not in DB yet. Use <strong>Scrape &amp; Log</strong> or <strong>Save Link Only</strong>.`);
       return { hits, misses, results, trackerHits, promotableHits };
     }
 
@@ -114,13 +114,13 @@ async function lookupUrls(urls, { autoOpen = true } = {}) {
           ? ` <a class="btn-open" href="${esc(hit.open_path)}">Open card →</a>`
           : '';
         setBanner('info',
-          `⚠️ Already on Tracker without details: <strong>${esc(hit.title || 'job')}</strong>` +
+          `Already on Tracker without details: <strong>${esc(hit.title || 'job')}</strong>` +
           (hit.company ? ` · ${esc(hit.company)}` : '') +
           ` — use <strong>Scrape &amp; Log</strong> to fetch + AI, or Run AI on the card.${open}`);
         return { hits, misses, results, trackerHits, promotableHits };
       }
       setBanner('success',
-        `✅ Already in Tracker: <strong>${esc(hit.title || 'job')}</strong>` +
+        `Already in Tracker: <strong>${esc(hit.title || 'job')}</strong>` +
         (hit.company ? ` · ${esc(hit.company)}` : '') +
         ` — opening…`);
       if (hit.open_path) {
@@ -141,11 +141,11 @@ async function lookupUrls(urls, { autoOpen = true } = {}) {
     if (misses.length) {
       parts.push(`${misses.length} new`);
     }
-    setBanner('info', `⚠️ ${parts.join('. ')}.` + renderExistRows(hits));
+    setBanner('info', `${parts.join('. ')}.` + renderExistRows(hits));
     return { hits, misses, results, trackerHits, promotableHits };
   } catch (e) {
     if (seq !== _lookupSeq) return null;
-    setBanner('error', '❌ Lookup error: ' + e.message);
+    setBanner('error', 'Lookup error: ' + e.message);
     return null;
   }
 }
@@ -299,7 +299,7 @@ async function submitUrls({ linkOnly = false } = {}) {
     });
     const data = await res.json();
     if (!res.ok) {
-      setBanner('error', '❌ ' + (data.error || 'Failed to start'));
+      setBanner('error', '' + (data.error || 'Failed to start'));
       document.getElementById('submitBtn').disabled = false;
       document.getElementById('linkOnlyBtn').disabled = false;
       return;
@@ -307,7 +307,7 @@ async function submitUrls({ linkOnly = false } = {}) {
     // Start polling
     _pollTimer = setInterval(pollStatus, 1500);
   } catch(e) {
-    setBanner('error', '❌ Network error: ' + e.message);
+    setBanner('error', 'Network error: ' + e.message);
     document.getElementById('submitBtn').disabled = false;
     document.getElementById('linkOnlyBtn').disabled = false;
   }
@@ -335,7 +335,7 @@ async function pollStatus() {
     // Update counter
     const skipCount = data.skip_count || 0;
     document.getElementById('logCounter').textContent =
-      `✅ ${data.done_count}  ⏭️ ${skipCount}  ❌ ${data.fail_count}`;
+      `${data.done_count} saved, ${skipCount} skipped, ${data.fail_count} failed`;
 
     if (!data.running) {
       clearInterval(_pollTimer);
@@ -354,19 +354,19 @@ async function pollStatus() {
       if (data.fail_count > 0) parts.push(`${data.fail_count} failed`);
       if (data.done_count === 0 && (data.fail_count > 0 || hasFatal) && skipCount === 0) {
         const fatalLine = (data.log || []).find(l => /Fatal error|Cannot open Chrome/.test(l));
-        setBanner('error', `❌ ${fatalLine || `All ${data.fail_count || 1} URL(s) failed. Check the log above.`}`);
+        setBanner('error', `${fatalLine || `All ${data.fail_count || 1} URL(s) failed. Check the log above.`}`);
       } else if (data.done_count === 0 && skipCount > 0 && data.fail_count === 0) {
-        setBanner('error', `⚠️ All ${skipCount} URL(s) already on Tracker — nothing saved.`);
+        setBanner('error', `All ${skipCount} URL(s) already on Tracker — nothing saved.`);
       } else if (data.done_count === 0 && !parts.length) {
-        setBanner('error', `❌ Nothing was saved. Check the log above — scrape/AI may have aborted.`);
+        setBanner('error', `Nothing was saved. Check the log above — scrape/AI may have aborted.`);
       } else if (parts.length && savedPartial && data.fail_count === 0) {
         const link = ` <a href="/" style="color:var(--accent)">View Matched →</a>`;
-        setBanner('info', `⚠️ Done — ${parts.join(', ')}. Details were incomplete (link saved; use Run AI later).${link}`);
+        setBanner('info', `Done — ${parts.join(', ')}. Details were incomplete (link saved; use Run AI later).${link}`);
       } else if (parts.length) {
         const link = data.done_count > 0
           ? ` <a href="/" style="color:var(--accent)">View Matched →</a>`
           : '';
-        setBanner('success', `✅ Done — ${parts.join(', ')}.${link}`);
+        setBanner('success', `Done — ${parts.join(', ')}.${link}`);
       }
     }
   } catch(e) {

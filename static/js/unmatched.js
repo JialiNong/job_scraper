@@ -92,19 +92,19 @@ async function updateUnmatchedStatus(select) {
 
     if (userStatus === 'watchlist') {
       if (data.copy_error) {
-        showToast(`⚠️ Marked but failed to copy to Matched: ${data.copy_error}`, 'err');
+        showToast(`Marked but failed to copy to Matched: ${data.copy_error}`, 'err');
       } else {
-        showToast('⭐ Marked as "Can Apply" — added to Matched Jobs');
+        showToast('Marked as "Can Apply" — added to Matched Jobs');
       }
     } else {
-      showToast('✅ Mark removed');
+      showToast('Mark removed');
     }
 
     // If in watchlist-only mode, reload to reflect removal
     if (watchlistOnly && userStatus !== 'watchlist') loadJobs();
     else loadWatchlistCount();
   } catch (err) {
-    showToast('❌ Mark failed', 'err');
+    showToast('Mark failed', 'err');
   }
 }
 
@@ -142,7 +142,7 @@ function postedPillHtml(job) {
     : days < 30 ? `${days}d ago`
     : days < 365 ? `${Math.floor(days / 30)}mo ago`
     : `${Math.floor(days / 365)}y ago`;
-  return `<span class="meta-pill" title="Published by the employer on ${escHtml(raw)}">🗓 Posted ${rel}</span>`;
+  return `<span class="meta-pill" title="Published by the employer on ${escHtml(raw)}">Posted ${rel}</span>`;
 }
 
 function formatDate(date) {
@@ -297,7 +297,7 @@ function renderCard(job) {
     ? `<span class="meta-pill gate-pill${gate === 'stack' ? ' gate-stack' : ''}">${escHtml(gateLabel(gate))}</span>`
     : '';
   const openLink = job.link
-    ? `<a class="row-open" href="${escHtml(job.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open ↗</a>`
+    ? `<a class="row-open" href="${escHtml(job.link)}" target="_blank" rel="noopener" onclick="event.stopPropagation()">Open</a>`
     : '';
 
   const card = document.createElement('div');
@@ -311,7 +311,7 @@ function renderCard(job) {
         <div class="row-company">${escHtml(job.company || '')}</div>
       </div>
       <div class="row-meta">
-        ${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">📍 ${escHtml(job.location)}</span>` : ''}
+        ${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">${escHtml(job.location)}</span>` : ''}
         ${gatePill}
         ${sourceBadgeHtml(job) || `<span class="meta-pill source-pill">${escHtml(job.source || '')}</span>`}
         <span class="status-pill ${statusCls}" data-status-pill>${statusLabel}</span>
@@ -332,12 +332,12 @@ function renderCard(job) {
       <div class="card-meta">
         ${sourceBadgeHtml(job) || `<span class="meta-pill source-pill">${escHtml(job.source || '')}</span>`}
         ${gatePill}
-        ${job.matched_at ? `<span class="meta-pill">📅 ${escHtml(job.matched_at)}</span>` : ''}
+        ${job.matched_at ? `<span class="meta-pill" title="Matched on">Matched ${escHtml(job.matched_at)}</span>` : ''}
         ${postedPillHtml(job)}
         ${job.recommendation ? `<span class="meta-pill">${escHtml(job.recommendation)}</span>` : ''}
       </div>
 
-      ${reason ? `<div class="reason-box"><strong>Rejection Reason</strong>${escHtml(reason)}</div>` : ''}
+      ${reason ? `<div class="reason-box"><strong>Why it was rejected</strong>${escHtml(reason)}</div>` : ''}
       ${summary && summary !== reason ? `<div class="card-summary">${escHtml(summary)}</div>` : ''}
       ${!hasAnalysis ? `<div class="card-summary">This match has not saved detailed analysis yet. Run matcher again to write full analysis.</div>` : ''}
 
@@ -363,8 +363,8 @@ function renderUnmatchedStatusSelect(job) {
       <select class="status-select${userStatus === 'watchlist' ? ' s-watchlist' : ''}"
               data-id="${job._id}"
               onchange="updateUnmatchedStatus(this)">
-        <option value=""    ${userStatus === ''          ? 'selected' : ''}>📋 Unmarked</option>
-        <option value="watchlist" ${userStatus === 'watchlist' ? 'selected' : ''}>⭐ Can Apply</option>
+        <option value=""    ${userStatus === ''          ? 'selected' : ''}>Not marked</option>
+        <option value="watchlist" ${userStatus === 'watchlist' ? 'selected' : ''}>Can apply</option>
       </select>
     </div>`;
 }
@@ -397,6 +397,7 @@ function renderPager(data) {
 
 async function loadJobs() {
   const grid = document.getElementById('jobGrid');
+  if (window.updateFilterCount) updateFilterCount();
   const search = document.getElementById('searchInput').value.trim();
   const source = document.getElementById('sourceFilter').value;
   const gate = document.getElementById('gateFilter').value;

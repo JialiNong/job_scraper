@@ -1,122 +1,124 @@
+{% from "_shell.html" import fonts, sidebar %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Log Job · Job Tracker</title>
+  {{ fonts() }}
   <link rel="stylesheet" href="{{ static_url('css/base.css') }}" />
   <link rel="stylesheet" href="{{ static_url('css/manual_apply.css') }}" />
 </head>
 <body>
+<div class="app">
+{{ sidebar('log') }}
 
-<header>
-  <a class="logo" href="/">📋 Job Tracker</a>
-  <div class="header-actions">
-    <a class="nav-btn" href="/">✅ Matched</a>
-    <a class="nav-btn" href="/unmatched">🔍 Unmatched</a>
-    <a class="nav-btn" href="/timeouts">⏱ Timeouts</a>
-    <a class="nav-btn" href="/logout" style="border-color: var(--muted);">Logout</a>
-  </div>
-</header>
-
+<main class="main">
 <div class="page">
-  <h1>📝 Log Manually Job</h1>
-  <p class="subtitle">
-    Paste one job URL per line (LinkedIn, Indeed, or any company careers page).<br>
-    If the URL is already in the Tracker, paste opens that card; submit with <strong>Applied</strong> updates it.<br>
-    <strong>Scrape &amp; Log</strong> uses debug Chrome + AI when available. If Indeed blocks or Chrome is down,
-    the URL is still saved — you will see a warning, not a silent miss.<br>
-    Default status is <strong>Not Applied</strong> — switch to Applied when you already applied.
-  </p>
-
-  <!-- Status + optional applied date -->
-  <div class="options-row">
-    <div class="option-group">
-      <label for="jobStatus">Status</label>
-      <select id="jobStatus" class="option-input" onchange="onStatusChange()">
-        <option value="pending" selected>Not Applied</option>
-        <option value="applied">Applied</option>
-      </select>
-    </div>
-    <div id="appliedDateGroup">
-      <label for="appliedDate">📅 Applied on</label>
-      <input type="date" id="appliedDate" class="option-input" />
-      <span class="option-hint">(Leave blank to default to today)</span>
-    </div>
-    <div class="option-group">
-      <label for="recommendedBy">Recommended by AI agent</label>
-      <select id="recommendedBy" class="option-input">
-        <option value="" selected>None</option>
-        <option value="claude">Claude</option>
-        <option value="cursor">Cursor</option>
-        <option value="gemini">Gemini</option>
-        <option value="gpt">GPT</option>
-      </select>
+  <div class="page-head">
+    <div>
+      <h1>Log a job</h1>
+      <p class="subtitle">
+        Paste one job URL per line: LinkedIn, Indeed, or any company careers page.
+        If a URL is already on the Tracker, pasting it opens that card, and submitting with <strong>Applied</strong> updates it.
+      </p>
     </div>
   </div>
 
-  <div class="options-row identity-row">
-    <div class="option-group">
-      <label for="jobTitle">Job title</label>
-      <input type="text" id="jobTitle" class="option-input option-text" maxlength="200" placeholder="Optional" autocomplete="off" />
+  <section class="form-panel" aria-label="Job details">
+    <!-- Status + optional applied date -->
+    <div class="options-row">
+      <div class="option-group">
+        <label for="jobStatus">Status</label>
+        <select id="jobStatus" class="option-input" onchange="onStatusChange()">
+          <option value="pending" selected>Not Applied</option>
+          <option value="applied">Applied</option>
+        </select>
+      </div>
+      <div id="appliedDateGroup">
+        <label for="appliedDate">Applied on</label>
+        <input type="date" id="appliedDate" class="option-input" />
+        <span class="option-hint">Leave blank for today</span>
+      </div>
+      <div class="option-group">
+        <label for="recommendedBy">Recommended by AI agent</label>
+        <select id="recommendedBy" class="option-input">
+          <option value="" selected>None</option>
+          <option value="claude">Claude</option>
+          <option value="cursor">Cursor</option>
+          <option value="gemini">Gemini</option>
+          <option value="gpt">GPT</option>
+        </select>
+      </div>
     </div>
-    <div class="option-group">
-      <label for="jobCompany">Company name</label>
-      <input type="text" id="jobCompany" class="option-input option-text" maxlength="160" placeholder="Optional" autocomplete="off" />
-    </div>
-    <div class="option-group">
-      <label for="jobLocation">Location / address</label>
-      <input type="text" id="jobLocation" class="option-input option-text" maxlength="200" placeholder="Optional" autocomplete="off" />
-    </div>
-  </div>
 
-  <textarea
-    id="urlBox"
-    class="url-box"
-    placeholder="https://www.linkedin.com/jobs/view/1234567890/
+    <div class="options-row identity-row">
+      <div class="option-group">
+        <label for="jobTitle">Job title</label>
+        <input type="text" id="jobTitle" class="option-input option-text" maxlength="200" placeholder="Optional" autocomplete="off" />
+      </div>
+      <div class="option-group">
+        <label for="jobCompany">Company name</label>
+        <input type="text" id="jobCompany" class="option-input option-text" maxlength="160" placeholder="Optional" autocomplete="off" />
+      </div>
+      <div class="option-group">
+        <label for="jobLocation">Location / address</label>
+        <input type="text" id="jobLocation" class="option-input option-text" maxlength="200" placeholder="Optional" autocomplete="off" />
+      </div>
+    </div>
+
+    <div class="option-group url-group">
+      <label for="urlBox">Job URLs</label>
+      <textarea
+        id="urlBox"
+        class="url-box"
+        placeholder="https://www.linkedin.com/jobs/view/1234567890/
 https://de.indeed.com/viewjob?jk=abcdef123456
 https://careers.example.com/jobs/frontend-engineer"
-  ></textarea>
+      ></textarea>
+    </div>
 
-  <div class="btn-row">
-    <button id="submitBtn" class="btn btn-primary" onclick="submitUrls({ linkOnly: false })">
-      🚀 Scrape &amp; Log Job
-    </button>
-    <button id="linkOnlyBtn" class="btn btn-secondary" onclick="submitUrls({ linkOnly: true })">
-      📎 Save Link Only
-    </button>
-    <button id="clearBtn" class="btn btn-clear" type="button" onclick="clearForm()">
-      🗑 Clear
-    </button>
-  </div>
+    <div class="btn-row">
+      <button id="submitBtn" class="btn btn-primary" onclick="submitUrls({ linkOnly: false })">
+        Scrape &amp; Log Job
+      </button>
+      <button id="linkOnlyBtn" class="btn btn-secondary" onclick="submitUrls({ linkOnly: true })">
+        Save Link Only
+      </button>
+      <button id="clearBtn" class="btn btn-clear" type="button" onclick="clearForm()">
+        Clear
+      </button>
+    </div>
+  </section>
 
   <div id="statusBanner" class="status-banner"></div>
 
   <div id="logWrap" class="log-wrap">
     <div class="log-header">
-      <span>Live Progress</span>
-      <span id="logCounter" style="color:var(--text)"></span>
+      <span>Live progress</span>
+      <span id="logCounter"></span>
     </div>
     <div id="logBody" class="log-body"></div>
   </div>
 
-  <div class="tip">
-    <strong>💡 Tips</strong><br>
-    • Paste a URL that is already in Matched — the Tracker opens that card automatically.<br>
-    • Submit with <strong>Applied</strong> to mark an existing Tracker card applied (notes/timeline stay).<br>
-    • Optional <strong>Job title / Company / Location</strong> are saved on the Tracker card (works with Save Link Only). Later scrape or Fetch job details will not overwrite a field you typed unless you left it blank.<br>
-    • Optional <strong>Recommended by AI agent</strong> tags the Tracker card (Claude / Cursor / Gemini / GPT). Agent-recommended cards get <strong>Fetch job details</strong> (scrape only, no AI).<br>
-    • <strong>Save Link Only</strong>: no Chrome needed; card shows AI pending until you click <strong>Run AI</strong> or <strong>Fetch job details</strong> on Tracker.<br>
-    • <strong>Scrape &amp; Log</strong>: opens the job page in debug Chrome, saves details, and runs AI. LinkedIn uses the <code>/jobs/view/ID</code> page (not a 24h search). If the URL is already a link-only Tracker card, this refreshes it in place. If Indeed blocks or Chrome is missing, a new URL is still saved as a stub.<br>
-    • LinkedIn: <code>https://www.linkedin.com/jobs/view/JOB_ID/</code><br>
-    • Indeed: <code>https://de.indeed.com/viewjob?jk=JOB_KEY</code><br>
-    • Other sites: paste the job detail URL — main content is extracted automatically.<br>
-    • You can also run from the terminal:<br>
-    &nbsp;&nbsp;<code>python src/scrapers/manual_apply_scraper.py "URL1" "URL2"</code><br>
-    &nbsp;&nbsp;<code>python src/scrapers/manual_apply_scraper.py --link-only "URL1"</code><br>
-    &nbsp;&nbsp;<code>python src/scrapers/manual_apply_scraper.py --status applied "URL1"</code><br>
-    &nbsp;&nbsp;<code>python src/scrapers/manual_apply_scraper.py --file my_urls.txt</code>
-  </div>
+  <details class="tip">
+    <summary>How logging works</summary>
+    <ul>
+      <li><strong>Scrape &amp; Log</strong> opens the job page in debug Chrome, saves the details and runs AI. LinkedIn uses the <code>/jobs/view/ID</code> page. If the URL is already a link-only Tracker card, this refreshes it in place. If Indeed blocks or Chrome is down, a new URL is still saved, and you see a warning.</li>
+      <li><strong>Save Link Only</strong> needs no Chrome. The card waits for AI until you click <strong>Run AI</strong> or <strong>Fetch job details</strong> on the Tracker.</li>
+      <li>Default status is <strong>Not Applied</strong>. Switch to Applied when you already applied; notes and timeline on an existing card stay.</li>
+      <li><strong>Job title / Company / Location</strong> are saved on the Tracker card (also with Save Link Only). A later scrape only fills fields you left blank.</li>
+      <li><strong>Recommended by AI agent</strong> tags the card (Claude, Cursor, Gemini, GPT). Agent-recommended cards get <strong>Fetch job details</strong> (scrape only, no AI).</li>
+      <li>URL formats: LinkedIn <code>https://www.linkedin.com/jobs/view/JOB_ID/</code>, Indeed <code>https://de.indeed.com/viewjob?jk=JOB_KEY</code>, other sites: the job detail URL.</li>
+    </ul>
+    <p>From the terminal:</p>
+    <pre><code>python src/scrapers/manual_apply_scraper.py "URL1" "URL2"
+python src/scrapers/manual_apply_scraper.py --link-only "URL1"
+python src/scrapers/manual_apply_scraper.py --status applied "URL1"
+python src/scrapers/manual_apply_scraper.py --file my_urls.txt</code></pre>
+  </details>
+</div>
+</main>
 </div>
 
 <script src="{{ static_url('js/manual_apply.js') }}"></script>

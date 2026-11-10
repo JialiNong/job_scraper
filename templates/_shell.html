@@ -1,0 +1,37 @@
+{# Shared page chrome. Import with:
+     {% from "_shell.html" import fonts, sidebar %}
+   sidebar(active) can wrap extra sidebar content with {% call sidebar('tracker') %}…{% endcall %}. #}
+
+{% macro fonts() -%}
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&display=swap" />
+{%- endmacro %}
+
+{% macro sidebar(active) -%}
+<aside class="side">
+  <a class="brand" href="/">Job Tracker</a>
+  <nav class="nav" aria-label="Pages">
+    <a href="/" {% if active == 'tracker' %}aria-current="page"{% endif %}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 14h8"/></svg>Tracker
+    </a>
+    <a href="/manual-apply" {% if active == 'log' %}aria-current="page"{% endif %}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Log a job
+    </a>
+    <a href="/timeouts" {% if active == 'timeouts' %}aria-current="page"{% endif %}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Timeouts
+      <b class="nav-count" id="timeoutNavCount"></b>
+    </a>
+    <a href="/unmatched" {% if active == 'unmatched' %}aria-current="page"{% endif %}>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h6"/></svg>Unmatched
+      <b class="nav-count" id="unmatchedNavCount"></b>
+    </a>
+  </nav>
+  {% if caller %}<div class="side-extra">{{ caller() }}</div>{% endif %}
+  <a class="side-logout" href="/logout">Log out</a>
+</aside>
+{%- endmacro %}
+
+{% macro search_icon() -%}
+<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+{%- endmacro %}

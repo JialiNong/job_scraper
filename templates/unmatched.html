@@ -1,95 +1,116 @@
+{% from "_shell.html" import fonts, sidebar, search_icon %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Unmatched Jobs · Job Tracker</title>
+  {{ fonts() }}
   <link rel="stylesheet" href="{{ static_url('css/base.css') }}" />
   <link rel="stylesheet" href="{{ static_url('css/job_list.css') }}" />
   <link rel="stylesheet" href="{{ static_url('css/unmatched.css') }}" />
 </head>
 <body>
+<div class="app">
+{{ sidebar('unmatched') }}
 
-<header>
-  <a class="logo" href="/unmatched">💼 Unmatched Jobs</a>
-  <div class="header-actions">
-    <a class="nav-btn" href="/manual-apply">📝 Log Job</a>
-    <a class="nav-btn" href="/timeouts">⏱ Timeouts</a>
-    <a class="nav-btn" href="/">← Back to Matched Jobs</a>
-    <button class="btn-save" onclick="loadJobs()">↻ Refresh</button>
-    <a class="nav-btn" href="/logout" style="border-color: var(--muted);">Logout</a>
+<main class="main">
+  <div class="page-head">
+    <div>
+      <h1>Unmatched jobs</h1>
+      <p>Jobs the gates or the AI turned down. Mark one as Can apply to copy it to the Tracker.</p>
+    </div>
+    <div class="page-actions">
+      <button class="ui-btn" onclick="loadJobs()">Refresh</button>
+    </div>
   </div>
-</header>
 
-<div class="toolbar">
-  <input type="search" id="searchInput" placeholder="🔍 Search jobs / company / rejection reason…" oninput="debounceLoad()" />
-  <select id="sourceFilter" onchange="goPage(1)">
-    <option value="all">All Sources</option>
-    <option value="linkedin">LinkedIn</option>
-    <option value="indeed">Indeed</option>
-    <option value="ats">ATS</option>
-    <option value="arbeitnow">Arbeitnow API</option>
-    <option value="arbeitsagentur">Bundesagentur</option>
-    <option value="adzuna">Adzuna API</option>
-  </select>
-  <select id="gateFilter" onchange="goPage(1)">
-    <option value="all">All gates</option>
-    <option value="german">German required</option>
-    <option value="stack">Non-JS backend required</option>
-    <option value="not_web_dev">Not web development</option>
-    <option value="leadership">Leadership role</option>
-    <option value="backend_heavy">Backend-heavy</option>
-    <option value="too_many_years">Too many years</option>
-    <option value="contract_or_location">Contract / location</option>
-    <option value="incomplete_desc">Unusable JD</option>
-    <option value="scored">Scored below threshold</option>
-    <option value="ai_ml">AI/ML reject (old runs)</option>
-  </select>
-  <div class="watchlist-chip" id="watchlistChip" onclick="toggleWatchlistFilter()">
-    <span class="watchlist-dot"></span>
-    <span>⭐ Can Apply</span>
-    <b class="watchlist-count" id="watchlistCount"></b>
+  <div class="toolbar">
+    <label class="search">{{ search_icon() }}
+      <input type="search" id="searchInput" placeholder="Search title, company or rejection reason" aria-label="Search title, company or rejection reason" oninput="debounceLoad()" />
+    </label>
+    <div class="filter-pop">
+      <button type="button" class="ui-btn" id="filterBtn" aria-expanded="false" aria-controls="filterPop" onclick="toggleFilterPop(event)">Filters</button>
+      <div class="pop" id="filterPop" hidden>
+        <label>Source
+          <select id="sourceFilter" onchange="goPage(1)">
+            <option value="all">All Sources</option>
+            <option value="linkedin">LinkedIn</option>
+            <option value="indeed">Indeed</option>
+            <option value="ats">ATS</option>
+            <option value="arbeitnow">Arbeitnow API</option>
+            <option value="arbeitsagentur">Bundesagentur</option>
+            <option value="adzuna">Adzuna API</option>
+          </select>
+        </label>
+        <label>Why it was rejected
+          <select id="gateFilter" onchange="goPage(1)">
+            <option value="all">All gates</option>
+            <option value="german">German required</option>
+            <option value="stack">Non-JS backend required</option>
+            <option value="not_web_dev">Not web development</option>
+            <option value="leadership">Leadership role</option>
+            <option value="backend_heavy">Backend-heavy</option>
+            <option value="too_many_years">Too many years</option>
+            <option value="contract_or_location">Contract / location</option>
+            <option value="incomplete_desc">Unusable JD</option>
+            <option value="scored">Scored below threshold</option>
+            <option value="ai_ml">AI/ML reject (old runs)</option>
+          </select>
+        </label>
+        <label>Matched
+          <select id="timePreset" onchange="onTimePresetChange()">
+            <option value="all">All Time</option>
+            <option value="today">Today</option>
+            <option value="3">Last 3 Days</option>
+            <option value="7">Last 7 Days</option>
+            <option value="30">Last 30 Days</option>
+            <option value="custom">Custom Time</option>
+          </select>
+        </label>
+        <div class="filter-group hidden-filter" id="customDateGroup">
+          <input type="date" id="dateFrom" aria-label="From date" />
+          <span>to</span>
+          <input type="date" id="dateTo" aria-label="To date" />
+        </div>
+        <label>Score
+          <select id="scorePreset" onchange="onScorePresetChange()">
+            <option value="all">All Scores</option>
+            <option value="0-3">0–3 Hard Reject</option>
+            <option value="4-6">4–6 Weak Match</option>
+            <option value="custom">Custom Score</option>
+          </select>
+        </label>
+        <div class="filter-group hidden-filter" id="customScoreGroup">
+          <input type="number" id="scoreMin" min="0" max="6.9" step="0.5" placeholder="Min" aria-label="Minimum score" onchange="goPage(1)" />
+          <span>–</span>
+          <input type="number" id="scoreMax" min="0" max="6.9" step="0.5" placeholder="Max" aria-label="Maximum score" onchange="goPage(1)" />
+        </div>
+      </div>
+    </div>
+    <button type="button" class="watchlist-chip" id="watchlistChip" onclick="toggleWatchlistFilter()">
+      <span class="watchlist-dot"></span>
+      <span>Can apply</span>
+      <b class="watchlist-count" id="watchlistCount"></b>
+    </button>
+    <div class="layout-toggle" id="layoutToggle">
+      <button type="button" data-layout="compact" onclick="setLayout('compact')" title="Compact list">List</button>
+      <button type="button" data-layout="cards" onclick="setLayout('cards')" title="Card layout">Cards</button>
+    </div>
+    <span class="count-label" id="countLabel"></span>
   </div>
-  <select id="timePreset" onchange="onTimePresetChange()">
-    <option value="all">All Time</option>
-    <option value="today">Today</option>
-    <option value="3">Last 3 Days</option>
-    <option value="7">Last 7 Days</option>
-    <option value="30">Last 30 Days</option>
-    <option value="custom">Custom Time</option>
-  </select>
-  <div class="filter-group hidden-filter" id="customDateGroup">
-    <input type="date" id="dateFrom" />
-    <span>to</span>
-    <input type="date" id="dateTo" />
+
+  <div class="job-grid" id="jobGrid">
+    <div class="spinner"></div>
   </div>
-  <select id="scorePreset" onchange="onScorePresetChange()">
-    <option value="all">All Scores</option>
-    <option value="0-3">0–3 Hard Reject</option>
-    <option value="4-6">4–6 Weak Match</option>
-    <option value="custom">Custom Score</option>
-  </select>
-  <div class="filter-group hidden-filter" id="customScoreGroup">
-    <input type="number" id="scoreMin" min="0" max="6.9" step="0.5" placeholder="Min" onchange="goPage(1)" />
-    <span>–</span>
-    <input type="number" id="scoreMax" min="0" max="6.9" step="0.5" placeholder="Max" onchange="goPage(1)" />
-  </div>
-  <div class="layout-toggle" id="layoutToggle">
-    <button type="button" data-layout="cards" onclick="setLayout('cards')" title="Card layout">▦ Cards</button>
-    <button type="button" data-layout="compact" onclick="setLayout('compact')" title="Compact list">☰ List</button>
-  </div>
-  <span class="count-label" id="countLabel"></span>
+
+  <div class="pager" id="pager"></div>
+</main>
 </div>
 
-<div class="job-grid" id="jobGrid">
-  <div class="spinner"></div>
-</div>
-
-<div class="pager" id="pager"></div>
-
-<!-- ── Toast ───────────────────────────────────────────────────────── -->
 <div class="toast" id="toast"></div>
 
+<script src="{{ static_url('js/shell.js') }}"></script>
 <script src="{{ static_url('js/unmatched.js') }}"></script>
 </body>
 </html>

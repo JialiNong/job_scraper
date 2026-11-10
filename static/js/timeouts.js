@@ -17,7 +17,7 @@ async function loadJobs() {
   const params = new URLSearchParams({ source, review_status: status });
   const res = await fetch('/api/timeout-jobs?' + params.toString());
   const data = await res.json();
-  document.getElementById('countLabel').textContent = `Total ${data.total}`;
+  document.getElementById('countLabel').textContent = `${data.total} ${data.total === 1 ? 'job' : 'jobs'}`;
   const list = document.getElementById('list');
   if (!data.jobs.length) {
     list.innerHTML = '<div class="empty">No timeout jobs in this filter. New ones appear after the next scrape.</div>';
@@ -33,7 +33,7 @@ async function loadJobs() {
           ${job.location ? `<span>${esc(job.location)}</span>` : ''}
           ${job.keyword ? `<span>q=${esc(job.keyword)}</span>` : ''}
           ${job.created_at ? `<span>${esc(job.created_at)}</span>` : ''}
-          <span>×${esc(job.timeout_count)}</span>
+          <span>Timed out ${esc(job.timeout_count)}×</span>
         </div>
       </div>
       <div class="actions">

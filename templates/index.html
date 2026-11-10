@@ -1,270 +1,287 @@
+{% from "_shell.html" import fonts, sidebar, search_icon %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Job Tracker</title>
+  {{ fonts() }}
   <link rel="stylesheet" href="{{ static_url('css/base.css') }}" />
   <link rel="stylesheet" href="{{ static_url('css/job_list.css') }}" />
   <link rel="stylesheet" href="{{ static_url('css/index.css') }}" />
 </head>
 <body>
+<div class="app">
 
-<!-- ── Header ──────────────────────────────────────────────────────── -->
-<header>
-  <a class="logo" href="/">💼 Job Tracker</a>
-  <div class="header-actions">
-    <a class="nav-btn" href="/manual-apply">📝 Log Job</a>
-    <a class="nav-btn" href="/timeouts">⏱ Timeouts <b id="timeoutNavCount"></b></a>
-    <a class="nav-btn" href="/unmatched">Unmatched Jobs <b id="unmatchedNavCount"></b></a>
-    <button id="refreshBtn" class="btn-save" onclick="refreshAll()">↻ Refresh</button>
-    <a class="nav-btn" href="/logout" style="border-color: var(--muted);">Logout</a>
+{% call sidebar('tracker') %}
+  <div class="side-label">Status</div>
+  <!-- ── Status filter (side statuses fold under "Show more") ──────── -->
+  <div class="stats-bar" id="statsBar">
+    <button type="button" class="stat-chip active" data-status="active" onclick="setStatusFilter('active')" title="Not Applied, Applied, Interview, Offer and Rejected — hides Unsuitable, Closed, Repost and other side statuses">
+      <span class="dot dot-active"></span><span class="chip-label">Active</span><b id="cnt-active">–</b>
+    </button>
+    <button type="button" class="stat-chip" data-status="pending" onclick="setStatusFilter('pending')">
+      <span class="dot dot-pending"></span><span class="chip-label">Not applied</span><b id="cnt-pending">–</b>
+    </button>
+    <button type="button" class="stat-chip" data-status="applied" onclick="setStatusFilter('applied')">
+      <span class="dot dot-applied"></span><span class="chip-label">Applied</span><b id="cnt-applied">–</b>
+    </button>
+    <button type="button" class="stat-chip" data-status="interview" onclick="setStatusFilter('interview')">
+      <span class="dot dot-interview"></span><span class="chip-label">Interview</span><b id="cnt-interview">–</b>
+    </button>
+    <button type="button" class="stat-chip" data-status="offer" onclick="setStatusFilter('offer')">
+      <span class="dot dot-offer"></span><span class="chip-label">Offer</span><b id="cnt-offer">–</b>
+    </button>
+    <button type="button" class="stat-chip" data-status="rejected" onclick="setStatusFilter('rejected')">
+      <span class="dot dot-rejected"></span><span class="chip-label">Rejected</span><b id="cnt-rejected">–</b>
+    </button>
+    <button type="button" class="stat-chip stat-side" data-status="all" onclick="setStatusFilter('all')">
+      <span class="dot dot-all"></span><span class="chip-label">All jobs</span><b id="cnt-all">–</b>
+    </button>
+    <button type="button" class="stat-chip stat-side" data-status="unsuitable" onclick="setStatusFilter('unsuitable')">
+      <span class="dot dot-unsuitable"></span><span class="chip-label">Unsuitable</span><b id="cnt-unsuitable">–</b>
+    </button>
+    <button type="button" class="stat-chip stat-side" data-status="closed" onclick="setStatusFilter('closed')">
+      <span class="dot dot-closed"></span><span class="chip-label">Closed</span><b id="cnt-closed">–</b>
+    </button>
+    <button type="button" class="stat-chip stat-side" data-status="closed_no_reply" onclick="setStatusFilter('closed_no_reply')">
+      <span class="dot dot-closed_no_reply"></span><span class="chip-label">Closed, no reply</span><b id="cnt-closed_no_reply">–</b>
+    </button>
+    <button type="button" class="stat-chip stat-side" data-status="prev_rejected" onclick="setStatusFilter('prev_rejected')">
+      <span class="dot dot-prev_rejected"></span><span class="chip-label">Rejected before</span><b id="cnt-prev_rejected">–</b>
+    </button>
+    <button type="button" class="stat-chip stat-side" data-status="too_many_questions" onclick="setStatusFilter('too_many_questions')">
+      <span class="dot dot-too_many_questions"></span><span class="chip-label">Skipped, long form</span><b id="cnt-too_many_questions">–</b>
+    </button>
+    <button type="button" class="stat-chip stat-side" data-status="repost" onclick="setStatusFilter('repost')">
+      <span class="dot dot-repost"></span><span class="chip-label">Repost</span><b id="cnt-repost">–</b>
+    </button>
+    <button type="button" class="stat-chip stat-side" data-status="duplicate" onclick="setStatusFilter('duplicate')">
+      <span class="dot dot-duplicate"></span><span class="chip-label">Duplicate</span><b id="cnt-duplicate">–</b>
+    </button>
+    <button type="button" class="stats-more-toggle" id="statsMoreToggle"
+            onclick="toggleStatsExpanded()" aria-expanded="false">Show more statuses</button>
   </div>
-</header>
+{% endcall %}
 
-<!-- ── Pipeline funnel ─────────────────────────────────────────────── -->
-<div class="funnel-bar" id="funnelBar">
-  <div class="funnel-step f-clicked">
-    <div class="funnel-num" id="f-clicked">–</div>
-    <div class="funnel-label">Title Passed · Clicked</div>
-  </div>
-  <div class="funnel-sep">▸</div>
-  <div class="funnel-step f-german">
-    <div class="funnel-num" id="f-german">–</div>
-    <div class="funnel-label">German Filtered</div>
-  </div>
-  <div class="funnel-sep">▸</div>
-  <div class="funnel-step f-matched">
-    <div class="funnel-num" id="f-matched">–</div>
-    <div class="funnel-label">AI Matched</div>
-  </div>
-  <div class="funnel-sep">▸</div>
-  <div class="funnel-step f-applied">
-    <div class="funnel-num" id="f-applied">–</div>
-    <div class="funnel-label">Applied · Incl. Rejected</div>
-  </div>
-</div>
+<main class="main">
 
-<!-- ── Application Journey ─────────────────────────────────────────── -->
-<div class="journey-section" id="journeySection">
-  <div class="journey-title">Application Journey <span>timelines</span></div>
-  <div id="journeyRoot">
-    <div class="journey-empty">Loading…</div>
-  </div>
-</div>
-
-<!-- ── Locations + Daily Activity (same row) ──────────────────────── -->
-<div class="dash-row" id="dashRow">
-<div class="loc-section" id="locSection">
-  <div class="loc-header">
-    <div class="loc-title">Applied Locations <span>hover for count</span></div>
-    <div class="loc-subtitle" id="locSubtitle">Applied · rejected · interview · offer</div>
-  </div>
-  <div class="loc-bubbles" id="locBubbles">
-    <div class="loc-empty">Loading…</div>
-  </div>
-</div>
-
-<div class="cal-section" id="calSection">
-  <div class="cal-header">
-    <div class="cal-title">Daily Activity <span>last 3 months</span></div>
-    <div class="cal-legend">
-      Less
-      <span class="swatch l0" style="background:#1a1d27"></span>
-      <span class="swatch" style="background:#1e3a5f"></span>
-      <span class="swatch" style="background:#2563eb66"></span>
-      <span class="swatch" style="background:#3b82f6"></span>
-      <span class="swatch" style="background:#6c8cff"></span>
-      More
+  <div class="page-head">
+    <div class="tabs" role="tablist" aria-label="Tracker views">
+      <button type="button" role="tab" id="tabJobs" aria-selected="true" aria-controls="jobsView" onclick="showTrackerView('jobs')">Jobs</button>
+      <button type="button" role="tab" id="tabOverview" aria-selected="false" aria-controls="overviewView" onclick="showTrackerView('overview')">Overview</button>
+    </div>
+    <div class="page-actions">
+      <button id="refreshBtn" class="ui-btn" onclick="refreshAll()">Refresh</button>
     </div>
   </div>
-  <div class="cal-body">
-    <div class="cal-wrap">
-      <div class="cal-dow" aria-hidden="true">
-        <span class="spacer"></span>
-        <span></span>
-        <span>Mon</span>
-        <span></span>
-        <span>Wed</span>
-        <span></span>
-        <span>Fri</span>
-        <span></span>
+
+  <!-- ── Pipeline rail ─────────────────────────────────────────────── -->
+  <section class="funnel-bar" id="funnelBar" aria-label="Pipeline">
+    <div class="rail-head">
+      <span class="rail-total" id="f-clicked">–</span>
+      <span class="rail-total-label">jobs opened after the title check. The bar below is all of them, to scale.</span>
+    </div>
+    <!-- To scale: each part's width is its share of all opened jobs.
+         Applied sits inside AI matched (every applied job was matched). -->
+    <div class="rail-bar" id="railBar">
+      <div class="seg seg-german" data-key="german">
+        <div class="seg-label"><span class="funnel-num" id="f-german">–</span><span class="funnel-label">Skipped, not in English</span><span class="funnel-pct" id="fp-german"></span></div>
       </div>
-      <div class="cal-months" id="calMonths"></div>
-    </div>
-    <div class="cal-detail" id="calDetail">
-      <div class="cal-detail-date muted" id="calDetailDate">Hover or click a day</div>
-      <div class="cal-metrics">
-        <div class="cal-metric m-clicked">
-          <div class="m-num" id="cd-clicked">–</div>
-          <div class="m-label">Title Clicked</div>
-        </div>
-        <div class="cal-metric m-german">
-          <div class="m-num" id="cd-german">–</div>
-          <div class="m-label">German Filtered</div>
-        </div>
-        <div class="cal-metric m-matched">
-          <div class="m-num" id="cd-matched">–</div>
-          <div class="m-label">AI Matched</div>
-        </div>
-        <div class="cal-metric m-applied">
-          <div class="m-num" id="cd-applied">–</div>
-          <div class="m-label">Applied (incl. rejected)</div>
+      <div class="seg seg-english" data-key="english">
+        <div class="seg-label"><span class="funnel-num" id="f-english">–</span><span class="funnel-label">In English, not matched</span><span class="funnel-pct" id="fp-english"></span></div>
+      </div>
+      <div class="seg seg-matched" data-key="matched">
+        <div class="seg-label"><span class="funnel-num" id="f-matched">–</span><span class="funnel-label">AI matched</span><span class="funnel-pct" id="fp-matched"></span></div>
+        <div class="seg seg-applied" data-key="applied">
+          <div class="seg-label"><span class="funnel-num" id="f-applied">–</span><span class="funnel-label">Applied (incl. rejected)</span><span class="funnel-pct" id="fp-applied"></span></div>
         </div>
       </div>
-      <a class="cal-detail-link" id="calDetailLink" href="#" target="_blank" rel="noopener" hidden>View applications ↗</a>
+    </div>
+    <!-- Labels of parts too narrow to hold their own text -->
+    <div class="rail-outside" id="railOutside"></div>
+  </section>
+
+  <!-- ── Jobs view ─────────────────────────────────────────────────── -->
+  <div id="jobsView" class="tracker-view" role="tabpanel" aria-labelledby="tabJobs">
+
+    <div class="toolbar">
+      <label class="search">{{ search_icon() }}
+        <input type="search" id="searchInput" placeholder="Search title or company" aria-label="Search title or company" oninput="debounceLoad()" />
+      </label>
+      <div class="filter-pop">
+        <button type="button" class="ui-btn" id="filterBtn" aria-expanded="false" aria-controls="filterPop" onclick="toggleFilterPop(event)">Filters</button>
+        <div class="pop" id="filterPop" hidden>
+          <label>Source
+            <select id="sourceFilter" onchange="loadJobs()">
+              <option value="all">All Sources</option>
+              <option value="linkedin">LinkedIn</option>
+              <option value="indeed">Indeed</option>
+              <option value="ats">ATS</option>
+              <option value="arbeitnow">Arbeitnow API</option>
+              <option value="arbeitsagentur">Bundesagentur</option>
+              <option value="adzuna">Adzuna API</option>
+            </select>
+          </label>
+          <label>Added by
+            <select id="originFilter" onchange="currentPage = 1; loadJobs()" title="How the job got onto the Tracker">
+              <option value="all">All Origins</option>
+              <option value="pipeline">Scraper</option>
+              <option value="api">API sources</option>
+              <option value="manual">Log Job (manual)</option>
+              <option value="agent">AI agent</option>
+            </select>
+          </label>
+          <label>Region
+            <select id="countryFilter" onchange="currentPage = 1; loadJobs()">
+              <option value="germany" selected>Germany</option>
+              <option value="europe">Europe (excl. Germany)</option>
+              <option value="remote">Remote (global)</option>
+              <option value="all">All Countries</option>
+            </select>
+          </label>
+          <label>Matched
+            <select id="timePreset" onchange="onTimePresetChange()">
+              <option value="all">All Time</option>
+              <option value="today">Today</option>
+              <option value="3">Last 3 Days</option>
+              <option value="7">Last 7 Days</option>
+              <option value="30">Last 30 Days</option>
+              <option value="custom">Custom Time</option>
+            </select>
+          </label>
+          <div class="filter-group hidden-filter" id="customDateGroup">
+            <input type="date" id="dateFrom" aria-label="From date" />
+            <span>to</span>
+            <input type="date" id="dateTo" aria-label="To date" />
+          </div>
+        </div>
+      </div>
+      <button type="button" id="highlightsFilter" class="filter-highlights" onclick="toggleHighlightsFilter()" title="Show manually highlighted jobs only">★ Highlights</button>
+      <button type="button" class="ui-btn batch-fetch-btn" id="selectModeBtn" onclick="toggleSelectMode()" title="Show checkboxes to pick jobs for Delete / Fetch details / Run AI">Select jobs</button>
+      <div class="layout-toggle" id="layoutToggle">
+        <button type="button" data-layout="compact" onclick="setLayout('compact')" title="List with a details panel">List</button>
+        <button type="button" data-layout="cards" onclick="setLayout('cards')" title="Card layout">Cards</button>
+      </div>
+      <span class="company-filter-chip" id="companyFilterChip" hidden title="Showing every Tracker job at this company">
+        <span class="cfc-name" id="companyFilterName"></span>
+        <button type="button" onclick="clearCompanyFilter()" title="Clear company filter" aria-label="Clear company filter">×</button>
+      </span>
+      <span class="company-filter-chip" id="appliedFilterChip" hidden title="Jobs applied or reapplied on this day">
+        Applied <span class="cfc-name" id="appliedFilterName"></span>
+        <button type="button" onclick="clearAppliedFilter()" title="Clear applied-day filter" aria-label="Clear applied-day filter">×</button>
+      </span>
+      <span class="count-label" id="countLabel"></span>
+    </div>
+
+    <!-- Floating action bar, shown while "Select jobs" is on -->
+    <div class="batch-fetch-bar" id="batchFetchBar">
+      <span class="batch-fetch-meta" id="batchFetchMeta">0 selected</span>
+      <button type="button" class="batch-fetch-btn select-mode-only" id="selectAllVisibleBtn" onclick="selectAllVisible()" title="Select every card on this page (for Delete selected)">Select all on page</button>
+      <button type="button" class="batch-fetch-btn" id="selectVisibleBtn" onclick="selectVisibleRecommended()" title="Select missing-detail / fetchable cards on this page">Select visible</button>
+      <button type="button" class="batch-fetch-btn" id="selectMissingBtn" onclick="selectMissingDetails()" title="Select jobs that still need details (all pages, current filters — including Applied)">Select missing details</button>
+      <button type="button" class="batch-fetch-btn" id="selectMissingAiBtn" onclick="selectMissingAi()" title="Select jobs with no AI result yet (all pages, current filters), then Run AI for selected">Select missing AI result</button>
+      <button type="button" class="batch-fetch-btn" id="clearFetchSelectBtn" onclick="clearFetchSelection()">Clear selection</button>
+      <span class="batch-sep" aria-hidden="true"></span>
+      <button type="button" class="btn-fetch-details" id="fetchSelectedBtn" onclick="fetchDetailsForSelected()" disabled title="Scrape title, company, location, and description only (no AI)">Fetch details</button>
+      <button type="button" class="btn-run-ai" id="runAiSelectedBtn" onclick="runAiForSelected()" disabled title="Scrape details if missing, then run AI matching">Run AI match</button>
+      <button type="button" class="batch-fetch-btn batch-delete-btn select-mode-only" id="deleteSelectedBtn" onclick="deleteSelectedJobs()" disabled title="Permanently delete every selected job">Delete</button>
+    </div>
+    <div class="batch-fetch-banner" id="batchFetchBanner" hidden></div>
+    <div class="batch-fetch-progress" id="batchFetchProgress" hidden></div>
+
+    <!-- ── Job list ──────────────────────────────────────────────────── -->
+    <div class="job-grid" id="jobGrid">
+      <div class="spinner"></div>
+    </div>
+
+    <div class="pagination" id="pagination" style="display: none;">
+      <button type="button" id="prevPage" onclick="prevPage()" class="pagination-btn">Previous</button>
+      <span id="pageInfo" class="page-info">Page 1 of 1</span>
+      <button type="button" id="nextPage" onclick="nextPage()" class="pagination-btn">Next</button>
     </div>
   </div>
-</div>
-</div>
 
-<!-- ── Stats bar ───────────────────────────────────────────────────── -->
-<div class="stats-bar" id="statsBar">
-  <div class="stat-chip active" data-status="active" onclick="setStatusFilter('active')" title="Not Applied, Applied, Interview, Offer and Rejected — hides Unsuitable, Closed, Repost and other side statuses">
-    <span class="dot dot-active"></span>
-    <span>Active <b id="cnt-active">–</b></span>
-  </div>
-  <div class="stat-chip" data-status="all"   onclick="setStatusFilter('all')">
-    <span class="dot dot-all"></span>
-    <span>All <b id="cnt-all">–</b></span>
-  </div>
-  <div class="stat-chip" data-status="pending"   onclick="setStatusFilter('pending')">
-    <span class="dot dot-pending"></span>
-    <span>Not Applied <b id="cnt-pending">–</b></span>
-  </div>
-  <div class="stat-chip" data-status="applied"   onclick="setStatusFilter('applied')">
-    <span class="dot dot-applied"></span>
-    <span>Applied <b id="cnt-applied">–</b></span>
-  </div>
-  <div class="stat-chip" data-status="interview" onclick="setStatusFilter('interview')">
-    <span class="dot dot-interview"></span>
-    <span>Interview <b id="cnt-interview">–</b></span>
-  </div>
-  <div class="stat-chip" data-status="offer" onclick="setStatusFilter('offer')">
-    <span class="dot dot-offer"></span>
-    <span>Offer <b id="cnt-offer">–</b></span>
-  </div>
-  <div class="stat-chip" data-status="rejected"  onclick="setStatusFilter('rejected')">
-    <span class="dot dot-rejected"></span>
-    <span>Rejected <b id="cnt-rejected">–</b></span>
-  </div>
-  <div class="stat-chip" data-status="unsuitable" onclick="setStatusFilter('unsuitable')">
-    <span class="dot dot-unsuitable"></span>
-    <span>Unsuitable <b id="cnt-unsuitable">–</b></span>
-  </div>
-  <div class="stat-chip" data-status="closed" onclick="setStatusFilter('closed')">
-    <span class="dot dot-closed"></span>
-    <span>Closed <b id="cnt-closed">–</b></span>
-  </div>
-  <div class="stat-chip" data-status="closed_no_reply" onclick="setStatusFilter('closed_no_reply')">
-    <span class="dot dot-closed_no_reply"></span>
-    <span>Closed · No Reply <b id="cnt-closed_no_reply">–</b></span>
-  </div>
-  <div class="stat-chip" data-status="prev_rejected" onclick="setStatusFilter('prev_rejected')">
-    <span class="dot dot-prev_rejected"></span>
-    <span>Prev. Rejected <b id="cnt-prev_rejected">–</b></span>
-  </div>
-  <div class="stat-chip" data-status="too_many_questions" onclick="setStatusFilter('too_many_questions')">
-    <span class="dot dot-too_many_questions"></span>
-    <span>Skipped · Long Form <b id="cnt-too_many_questions">–</b></span>
-  </div>
-  <div class="stat-chip" data-status="repost" onclick="setStatusFilter('repost')">
-    <span class="dot dot-repost"></span>
-    <span>Repost <b id="cnt-repost">–</b></span>
-  </div>
-  <div class="stat-chip" data-status="duplicate" onclick="setStatusFilter('duplicate')">
-    <span class="dot dot-duplicate"></span>
-    <span>Duplicate <b id="cnt-duplicate">–</b></span>
-  </div>
-  <button type="button" class="stat-chip stats-more-toggle" id="statsMoreToggle"
-          onclick="toggleStatsExpanded()" aria-expanded="false">More filters ▾</button>
-</div>
+  <!-- ── Overview view ─────────────────────────────────────────────── -->
+  <div id="overviewView" class="tracker-view overview" role="tabpanel" aria-labelledby="tabOverview" hidden>
 
-<!-- ── Toolbar ─────────────────────────────────────────────────────── -->
-<div class="toolbar">
-  <input type="search" id="searchInput" placeholder="🔍 Search jobs / company…" oninput="debounceLoad()" />
-  <select id="sourceFilter" onchange="loadJobs()">
-    <option value="all">All Sources</option>
-    <option value="linkedin">LinkedIn</option>
-    <option value="indeed">Indeed</option>
-    <option value="ats">ATS</option>
-    <option value="arbeitnow">Arbeitnow API</option>
-    <option value="arbeitsagentur">Bundesagentur</option>
-    <option value="adzuna">Adzuna API</option>
-  </select>
-  <select id="originFilter" onchange="currentPage = 1; loadJobs()" title="How the job got onto the Tracker">
-    <option value="all">All Origins</option>
-    <option value="pipeline">Scraper</option>
-    <option value="api">API sources</option>
-    <option value="manual">Log Job (manual)</option>
-    <option value="agent">AI agent</option>
-  </select>
-  <select id="countryFilter" onchange="currentPage = 1; loadJobs()">
-    <option value="germany" selected>Germany</option>
-    <option value="europe">Europe (excl. Germany)</option>
-    <option value="remote">Remote (global)</option>
-    <option value="all">All Countries</option>
-  </select>
-  <select id="timePreset" onchange="onTimePresetChange()">
-    <option value="all">All Time</option>
-    <option value="today">Today</option>
-    <option value="3">Last 3 Days</option>
-    <option value="7">Last 7 Days</option>
-    <option value="30">Last 30 Days</option>
-    <option value="custom">Custom Time</option>
-  </select>
-  <div class="filter-group hidden-filter" id="customDateGroup">
-    <input type="date" id="dateFrom" />
-    <span>to</span>
-    <input type="date" id="dateTo" />
+    <div class="cal-section panel" id="calSection">
+      <div class="cal-header">
+        <h2 class="cal-title">Daily activity <span>last 3 months</span></h2>
+        <div class="cal-legend">
+          Less
+          <span class="swatch l0"></span>
+          <span class="swatch l1"></span>
+          <span class="swatch l2"></span>
+          <span class="swatch l3"></span>
+          <span class="swatch l4"></span>
+          More
+        </div>
+      </div>
+      <div class="cal-body">
+        <div class="cal-wrap">
+          <div class="cal-dow" aria-hidden="true">
+            <span class="spacer"></span>
+            <span></span>
+            <span>Mon</span>
+            <span></span>
+            <span>Wed</span>
+            <span></span>
+            <span>Fri</span>
+            <span></span>
+          </div>
+          <div class="cal-months" id="calMonths"></div>
+        </div>
+        <div class="cal-detail" id="calDetail">
+          <div class="cal-detail-date muted" id="calDetailDate">Hover or click a day</div>
+          <div class="cal-metrics">
+            <div class="cal-metric m-clicked">
+              <div class="m-num" id="cd-clicked">–</div>
+              <div class="m-label">Opened</div>
+            </div>
+            <div class="cal-metric m-german">
+              <div class="m-num" id="cd-german">–</div>
+              <div class="m-label">Not in English</div>
+            </div>
+            <div class="cal-metric m-matched">
+              <div class="m-num" id="cd-matched">–</div>
+              <div class="m-label">AI matched</div>
+            </div>
+            <div class="cal-metric m-applied">
+              <div class="m-num" id="cd-applied">–</div>
+              <div class="m-label">Applied (incl. rejected)</div>
+            </div>
+          </div>
+          <a class="cal-detail-link" id="calDetailLink" href="#" target="_blank" rel="noopener" hidden>View applications</a>
+        </div>
+      </div>
+    </div>
+
+    <div class="journey-section panel" id="journeySection">
+      <h2 class="journey-title">Application journey <span>one line per company</span></h2>
+      <div id="journeyRoot">
+        <div class="journey-empty">Loading…</div>
+      </div>
+    </div>
+
+    <div class="loc-section panel" id="locSection">
+      <div class="loc-header">
+        <h2 class="loc-title">Where you applied <span>hover for count</span></h2>
+        <div class="loc-subtitle" id="locSubtitle">Applied, rejected, interview and offer</div>
+      </div>
+      <div class="loc-bubbles" id="locBubbles">
+        <div class="loc-empty">Loading…</div>
+      </div>
+    </div>
   </div>
-  <div class="layout-toggle" id="layoutToggle">
-    <button type="button" data-layout="cards" onclick="setLayout('cards')" title="Card layout">▦ Cards</button>
-    <button type="button" data-layout="compact" onclick="setLayout('compact')" title="Compact list">☰ List</button>
-  </div>
-  <button type="button" id="highlightsFilter" class="filter-highlights" onclick="toggleHighlightsFilter()" title="Show manually highlighted jobs only">★ Highlights</button>
-  <span class="company-filter-chip" id="companyFilterChip" hidden title="Showing every Tracker job at this company">
-    🏢 <span class="cfc-name" id="companyFilterName"></span>
-    <button type="button" onclick="clearCompanyFilter()" title="Clear company filter" aria-label="Clear company filter">×</button>
-  </span>
-  <span class="company-filter-chip" id="appliedFilterChip" hidden title="Jobs applied or reapplied on this day">
-    📅 Applied <span class="cfc-name" id="appliedFilterName"></span>
-    <button type="button" onclick="clearAppliedFilter()" title="Clear applied-day filter" aria-label="Clear applied-day filter">×</button>
-  </span>
-  <span class="count-label" id="countLabel"></span>
-</div>
 
-<div class="batch-fetch-bar" id="batchFetchBar">
-  <span class="batch-fetch-label">Selected jobs</span>
-  <button type="button" class="batch-fetch-btn" id="selectModeBtn" onclick="toggleSelectMode()" title="Show checkboxes to pick jobs for Delete / Fetch details / Run AI">☑ Select jobs</button>
-  <button type="button" class="batch-fetch-btn select-mode-only" id="selectAllVisibleBtn" onclick="selectAllVisible()" title="Select every card on this page (for Delete selected)">Select all on page</button>
-  <button type="button" class="batch-fetch-btn" id="selectVisibleBtn" onclick="selectVisibleRecommended()" title="Select missing-detail / fetchable cards on this page">Select visible</button>
-  <button type="button" class="batch-fetch-btn" id="selectMissingBtn" onclick="selectMissingDetails()" title="Select jobs that still need details (all pages, current filters — including Applied)">Select missing details</button>
-  <button type="button" class="batch-fetch-btn" id="selectMissingAiBtn" onclick="selectMissingAi()" title="Select jobs with no AI result yet (all pages, current filters), then Run AI for selected">Select missing AI result</button>
-  <button type="button" class="batch-fetch-btn" id="clearFetchSelectBtn" onclick="clearFetchSelection()">Clear selection</button>
-  <button type="button" class="btn-fetch-details" id="fetchSelectedBtn" onclick="fetchDetailsForSelected()" disabled title="Scrape title, company, location, and description only (no AI)">📥 Fetch details for selected</button>
-  <button type="button" class="btn-run-ai" id="runAiSelectedBtn" onclick="runAiForSelected()" disabled title="Scrape details if missing, then run AI matching">🤖 Run AI for selected</button>
-  <button type="button" class="batch-fetch-btn batch-delete-btn select-mode-only" id="deleteSelectedBtn" onclick="deleteSelectedJobs()" disabled title="Permanently delete every selected job">🗑 Delete selected</button>
-  <span class="batch-fetch-meta" id="batchFetchMeta">0 selected</span>
-</div>
-<div class="batch-fetch-banner" id="batchFetchBanner" hidden></div>
-<div class="batch-fetch-progress" id="batchFetchProgress" hidden></div>
-
-<!-- ── Job grid ────────────────────────────────────────────────────── -->
-<div class="job-grid" id="jobGrid">
-  <div class="spinner"></div>
-</div>
-
-<!-- ── Pagination controls ─────────────────────────────────────────── -->
-<div class="pagination" id="pagination" style="display: none;">
-  <button type="button" id="prevPage" onclick="prevPage()" class="pagination-btn">← Prev</button>
-  <span id="pageInfo" class="page-info">Page 1 of 1</span>
-  <button type="button" id="nextPage" onclick="nextPage()" class="pagination-btn">Next →</button>
+</main>
 </div>
 
 <!-- ── Toast ───────────────────────────────────────────────────────── -->
 <div class="toast" id="toast"></div>
 
+<script src="{{ static_url('js/shell.js') }}"></script>
 <script src="{{ static_url('js/index.js') }}"></script>
 </body>
 </html>

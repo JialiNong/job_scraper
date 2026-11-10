@@ -1,42 +1,46 @@
+{% from "_shell.html" import fonts, sidebar %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Scrape Timeouts · Job Tracker</title>
+  {{ fonts() }}
   <link rel="stylesheet" href="{{ static_url('css/base.css') }}" />
   <link rel="stylesheet" href="{{ static_url('css/timeouts.css') }}" />
 </head>
 <body>
-  <header>
-    <a class="logo" href="/timeouts">⏱ Scrape Timeouts</a>
-    <div class="header-actions">
-      <a class="nav-btn" href="/">✅ Matched</a>
-      <a class="nav-btn" href="/unmatched">Unmatched</a>
-      <a class="nav-btn" href="/manual-apply">📝 Log Job</a>
-      <a class="nav-btn" href="/logout" style="border-color: var(--muted);">Logout</a>
+<div class="app">
+  {{ sidebar('timeouts') }}
+
+  <main class="main">
+    <div class="page-head">
+      <div>
+        <h1>Scrape timeouts</h1>
+        <p class="hint">The title passed the scrape gates, but the job description did not load. Open the link, then add it to the Tracker as Not Applied if it is a real match.</p>
+      </div>
     </div>
-  </header>
 
-  <div class="toolbar">
-    <select id="sourceFilter" onchange="loadJobs()">
-      <option value="all">All sources</option>
-      <option value="indeed">Indeed</option>
-      <option value="linkedin">LinkedIn</option>
-    </select>
-    <select id="statusFilter" onchange="loadJobs()">
-      <option value="open">Open</option>
-      <option value="added">Added to Tracker</option>
-      <option value="dismissed">Dismissed</option>
-      <option value="all">All</option>
-    </select>
-    <p class="hint">Title passed the scrape gates, but the JD panel did not load. Open the link, then add it to Tracker as Not Applied if it is a real match.</p>
-    <span class="count-label" id="countLabel"></span>
-  </div>
+    <div class="toolbar">
+      <select id="sourceFilter" onchange="loadJobs()" aria-label="Source">
+        <option value="all">All sources</option>
+        <option value="indeed">Indeed</option>
+        <option value="linkedin">LinkedIn</option>
+      </select>
+      <select id="statusFilter" onchange="loadJobs()" aria-label="Review status">
+        <option value="open">Open</option>
+        <option value="added">Added to Tracker</option>
+        <option value="dismissed">Dismissed</option>
+        <option value="all">All</option>
+      </select>
+      <span class="count-label" id="countLabel"></span>
+    </div>
 
-  <div class="list" id="list"></div>
-  <div class="toast" id="toast"></div>
+    <div class="list" id="list"></div>
+  </main>
+</div>
+<div class="toast" id="toast"></div>
 
-  <script src="{{ static_url('js/timeouts.js') }}"></script>
+<script src="{{ static_url('js/timeouts.js') }}"></script>
 </body>
 </html>

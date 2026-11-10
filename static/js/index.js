@@ -89,8 +89,30 @@ function setLayout(mode) {
 function toggleCardExpand(rowEl) {
   if (currentLayout !== 'compact') return;
   const card = rowEl.closest('.card');
-  if (card) card.classList.toggle('expanded');
+  if (!card) return;
+  const open = !card.classList.contains('expanded');
+  collapseOtherCards(card);
+  card.classList.toggle('expanded', open);
 }
+
+/* List layout shows the open card's body as a details panel: keep one open */
+function collapseOtherCards(keep) {
+  document.querySelectorAll('#jobGrid .card.expanded').forEach(c => {
+    if (c !== keep) c.classList.remove('expanded');
+  });
+}
+
+function closeCardPanel(btn) {
+  btn.closest('.card')?.classList.remove('expanded');
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape' || currentLayout !== 'compact') return;
+  if (document.querySelector('.tl-modal-backdrop')) return;
+  const tag = (document.activeElement?.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  collapseOtherCards(null);
+});
 
 /* ── Toast ───────────────────────────────────────────────────────── */
 function showToast(msg, type = 'ok', ms = 2500) {
@@ -110,11 +132,11 @@ async function loadStats() {
     document.getElementById('cnt-all').textContent = data.total;
     const unmatchedEl = document.getElementById('unmatchedNavCount');
     if (unmatchedEl) {
-      unmatchedEl.textContent = typeof data.unmatched === 'number' ? `(${data.unmatched})` : '';
+      unmatchedEl.textContent = typeof data.unmatched === 'number' ? String(data.unmatched) : '';
     }
     const timeoutEl = document.getElementById('timeoutNavCount');
     if (timeoutEl) {
-      timeoutEl.textContent = typeof data.timeouts === 'number' ? `(${data.timeouts})` : '';
+      timeoutEl.textContent = typeof data.timeouts === 'number' ? String(data.timeouts) : '';
     }
     for (const [status, cnt] of Object.entries(data.by_status)) {
       const el = document.getElementById(`cnt-${status}`);
@@ -133,8 +155,98 @@ async function loadStats() {
       document.getElementById('f-german').textContent  = data.funnel.german_filtered;
       document.getElementById('f-matched').textContent = data.funnel.ai_matched;
       document.getElementById('f-applied').textContent = data.funnel.applied;
+      sizeFunnelRail(data.funnel);
     }
   } catch (_) {}
+}
+
+/* Pipeline rail: one bar, to scale, where the full width is every opened job.
+   Parts: not in English | in English, not matched | AI matched (Applied inside it).
+   Every percentage is a share of all opened jobs, same as the widths. */
+function sizeFunnelRail(funnel) {
+  const opened = Number(funnel.title_clicked) || 0;
+  const german = Number(funnel.german_filtered) || 0;
+  const matched = Number(funnel.ai_matched) || 0;
+  const applied = Math.min(Number(funnel.applied) || 0, matched);
+  // Manually logged / API jobs can push "matched" past the English count:
+  // clamp so the parts never go negative, and scale to their sum.
+  const englishRest = Math.max(opened - german - matched, 0);
+  const total = german + englishRest + matched;
+
+  const fmt = (n) => n.toLocaleString('en-US');
+  const pct = (n) => {
+    if (!total) return '';
+    const p = (n / total) * 100;
+    return `${p > 0 && p < 10 ? p.toFixed(1) : Math.round(p)}% of opened`;
+  };
+  const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+  set('f-clicked', fmt(opened));
+  set('f-german', fmt(german));      set('fp-german', pct(german));
+  set('f-english', fmt(englishRest)); set('fp-english', pct(englishRest));
+  set('f-matched', fmt(matched));    set('fp-matched', pct(matched));
+  set('f-applied', fmt(applied));    set('fp-applied', pct(applied));
+
+  const bar = document.getElementById('railBar');
+  if (!bar) return;
+  const share = (n, of) => (of ? `${(n / of) * 100}%` : '0%');
+  const seg = (key) => bar.querySelector(`.seg[data-key="${key}"]`);
+  seg('german').style.width = share(german, total);
+  seg('english').style.width = share(englishRest, total);
+  seg('matched').style.width = share(matched, total);
+  // Applied is drawn inside the matched part, so its width is relative to matched
+  seg('applied').style.width = share(applied, matched);
+  ['german', 'english', 'matched', 'applied'].forEach(key => {
+    const n = { german, english: englishRest, matched, applied }[key];
+    seg(key).hidden = n === 0;
+  });
+  requestAnimationFrame(placeRailLabels);
+}
+
+/* A part too narrow for its text shows the text under the bar instead */
+function placeRailLabels() {
+  const bar = document.getElementById('railBar');
+  const outside = document.getElementById('railOutside');
+  if (!bar || !outside) return;
+  outside.innerHTML = '';
+  bar.querySelectorAll('.seg').forEach(s => s.classList.remove('narrow'));
+  bar.querySelectorAll('.seg').forEach(s => {
+    if (s.hidden) return;
+    const label = s.querySelector(':scope > .seg-label');
+    // Room for the label: the part's width, minus the Applied block nested in it
+    const inner = s.querySelector(':scope > .seg');
+    const room = s.clientWidth - (inner && !inner.hidden ? inner.offsetWidth : 0);
+    const need = Math.max(...[...label.children].map(c => c.offsetWidth)) + 24; // + label padding
+    if (need <= room) return;
+    s.classList.add('narrow');
+    const item = document.createElement('div');
+    item.className = `rail-out rail-out-${s.dataset.key}`;
+    const clone = label.cloneNode(true);
+    clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+    item.innerHTML = '<span class="sw"></span>';
+    item.append(...clone.childNodes);
+    outside.appendChild(item);
+  });
+}
+
+// Web fonts change text widths once they arrive
+document.fonts?.ready.then(() => placeRailLabels());
+
+window.addEventListener('resize', () => {
+  clearTimeout(placeRailLabels._t);
+  placeRailLabels._t = setTimeout(placeRailLabels, 120);
+});
+
+/* ── Jobs / Overview tabs ────────────────────────────────────────── */
+function showTrackerView(view) {
+  const overview = view === 'overview';
+  document.getElementById('jobsView').hidden = overview;
+  document.getElementById('overviewView').hidden = !overview;
+  document.getElementById('tabJobs').setAttribute('aria-selected', String(!overview));
+  document.getElementById('tabOverview').setAttribute('aria-selected', String(overview));
+  if (overview) {
+    // Heatmap and bubbles measure their width; re-measure now they are visible
+    requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+  }
 }
 
 /* ── Application Journey ─────────────────────────────────────────── */
@@ -349,11 +461,12 @@ async function loadJourney() {
 /* ── Applied location bubbles ────────────────────────────────────── */
 /* Same hues as the funnel / daily-activity numbers, washed to glass. */
 const LOC_BUBBLE_COLORS = [
-  { fill: 'rgba(108, 140, 255, .72)', ink: '#f8fafc' }, // blue   — clicked
-  { fill: 'rgba(239, 68, 68, .68)',   ink: '#f8fafc' }, // red    — german
-  { fill: 'rgba(245, 158, 11, .74)',  ink: '#f8fafc' }, // orange — matched
-  { fill: 'rgba(251, 191, 36, .82)',  ink: '#1c1408' }, // yellow — highlight
-  { fill: 'rgba(34, 197, 94, .68)',   ink: '#f8fafc' }, // green  — applied
+  // Theme tokens from base.css, so the bubbles follow light / dark mode
+  { fill: 'color-mix(in srgb, var(--accent) 80%, transparent)',    ink: 'var(--surface)' },
+  { fill: 'color-mix(in srgb, var(--applied) 80%, transparent)',   ink: 'var(--surface)' },
+  { fill: 'color-mix(in srgb, var(--interview) 82%, transparent)', ink: 'var(--surface)' },
+  { fill: 'color-mix(in srgb, var(--hl) 92%, transparent)',        ink: 'var(--hl-ink)' },
+  { fill: 'color-mix(in srgb, var(--offer) 80%, transparent)',     ink: 'var(--surface)' },
 ];
 
 function packLocationBubbles(items, width, height) {
@@ -717,7 +830,7 @@ function setStatsExpanded(expanded) {
   if (!bar || !btn) return;
   bar.classList.toggle('stats-expanded', expanded);
   btn.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-  btn.textContent = expanded ? 'Fewer filters ▴' : 'More filters ▾';
+  btn.textContent = expanded ? 'Show fewer statuses' : 'Show more statuses';
 }
 
 function toggleStatsExpanded() {
@@ -776,8 +889,9 @@ function filterByCompany(name) {
   // Show every job ever seen at this company, whatever the other filters were.
   resetToolbarFilters();
   applyCompanyFilterUI();
+  showTrackerView('jobs');
   setStatusFilter('all');
-  window.scrollTo({ top: document.getElementById('statsBar').offsetTop, behavior: 'smooth' });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function filterByAppliedDay(dateStr) {
@@ -788,8 +902,9 @@ function filterByAppliedDay(dateStr) {
   // Every job applied that day, whatever its status is now
   resetToolbarFilters();
   applyAppliedFilterUI();
+  showTrackerView('jobs');
   setStatusFilter('all');
-  window.scrollTo({ top: document.getElementById('statsBar').offsetTop, behavior: 'smooth' });
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function clearAppliedFilter() {
@@ -872,7 +987,7 @@ function postedPillHtml(job) {
     : days < 30 ? `${days}d ago`
     : days < 365 ? `${Math.floor(days / 30)}mo ago`
     : `${Math.floor(days / 365)}y ago`;
-  return `<span class="meta-pill" title="Published by the employer on ${escHtml(raw)}">🗓 Posted ${rel}</span>`;
+  return `<span class="meta-pill" title="Published by the employer on ${escHtml(raw)}">Posted ${rel}</span>`;
 }
 
 function formatDate(date) {
@@ -1106,7 +1221,7 @@ function renderHighlightsBlock(job) {
   }).join('');
   return `
     <div class="highlights-wrap" data-id="${id}" id="highlights-${id}" onclick="event.stopPropagation()">
-      <div class="highlights-label">★ Highlights (manual)</div>
+      <div class="highlights-label">Highlights</div>
       <div class="highlights-chips" data-chips>${renderHighlightChips(highlights)}</div>
       <div class="highlights-add-row">
         ${presets}
@@ -1152,9 +1267,8 @@ function companySeenPillHtml(job) {
   if (!history.length) return '';
   const total = job.company_history_total || history.length;
   const { applied, rejected } = companyHistoryFlags(history);
-  const icon = rejected ? '⛔' : applied ? '📨' : '🏢';
-  const title = `Seen ${total} other job(s) at this company: ${companyHistorySummary(history)}`;
-  return `<span class="meta-pill company-seen-pill${rejected ? ' seen-rejected' : ''}" title="${escHtml(title)}">${icon} ${total}× before</span>`;
+    const title = `Seen ${total} other job(s) at this company: ${companyHistorySummary(history)}`;
+  return `<span class="meta-pill company-seen-pill${rejected ? ' seen-rejected' : ''}" title="${escHtml(title)}">Seen ${total}× before</span>`;
 }
 
 function renderCompanyHistory(job) {
@@ -1180,7 +1294,7 @@ function renderCompanyHistory(job) {
   }).join('');
   return `
     <div class="company-history${rejected ? ' seen-rejected' : ''}" onclick="event.stopPropagation()">
-      <div class="ch-head">🏢 You've seen this company before — ${total} other job${total === 1 ? '' : 's'}
+      <div class="ch-head">You've seen this company before — ${total} other job${total === 1 ? '' : 's'}
         <span class="ch-summary">(${escHtml(companyHistorySummary(history))})</span>
       </div>
       <ul>${rows}</ul>
@@ -1204,7 +1318,7 @@ function applicantPosPillHtml(job) {
   const pos = job.applicant_position;
   return `<span class="meta-pill applicant-pos-pill" data-applicant-pos-pill
                 title="You were roughly applicant #${pos || ''} when you applied"
-                ${pos ? '' : 'hidden'}>🙋 #${escHtml(pos || '')} at apply</span>`;
+                ${pos ? '' : 'hidden'}>#${escHtml(pos || '')} at apply</span>`;
 }
 
 function renderApplicantPositionBlock(job) {
@@ -1213,7 +1327,7 @@ function renderApplicantPositionBlock(job) {
   const scraped = job.applicants ? `When scraped: ${job.applicants}. ` : '';
   return `
     <div class="applicant-pos-wrap" data-id="${id}" onclick="event.stopPropagation()">
-      <span class="ap-label">🙋 Applicant # when I applied</span>
+      <span class="ap-label">Applicant # when I applied</span>
       <input type="number" min="1" step="1" inputmode="numeric" class="applicant-pos-input"
              value="${escHtml(job.applicant_position || '')}" placeholder="e.g. 25"
              onkeydown="if(event.key==='Enter'){event.preventDefault();saveApplicantPosition('${id}');}" />
@@ -1230,7 +1344,7 @@ function setApplicantPositionUI(id, value) {
   const pill = card.querySelector('[data-applicant-pos-pill]');
   if (pill) {
     pill.hidden = !value;
-    pill.textContent = value ? `🙋 #${value} at apply` : '';
+    pill.textContent = value ? `#${value} at apply` : '';
     pill.title = value ? `You were roughly applicant #${value} when you applied` : '';
   }
 }
@@ -1253,9 +1367,9 @@ async function saveApplicantPosition(id, btn) {
       btn.textContent = 'Saved ✓';
       setTimeout(() => { btn.textContent = 'Save'; }, 2000);
     }
-    showToast(data.applicant_position ? `🙋 Saved: applicant #${data.applicant_position}` : '🙋 Applicant # cleared');
+    showToast(data.applicant_position ? `Saved: applicant #${data.applicant_position}` : 'Applicant # cleared');
   } catch (err) {
-    showToast('❌ ' + err.message, 'err');
+    showToast('' + err.message, 'err');
   }
 }
 
@@ -1273,7 +1387,7 @@ function renderCard(job) {
   const highlights = normalizeHighlights(job.highlights);
   const highlightBadges = highlightBadgesHtml(highlights);
   const runAiCls = aiHint ? 'btn-run-ai ai-pending-btn' : 'btn-run-ai';
-  const runAiLabel = aiHint ? '🤖 Run AI' : '🤖 Re-run AI';
+  const runAiLabel = aiHint ? 'Run AI' : 'Re-run AI';
   const recBadge = recommendedByBadge(job);
   const recKey = String(job.recommended_by || '').toLowerCase();
   const missing = isMissingDetails(job);
@@ -1286,7 +1400,7 @@ function renderCard(job) {
         <button type="button" class="btn-fetch-details" data-id="${job._id}"
                 onclick="event.stopPropagation(); fetchJobDetails('${job._id}', this)"
                 title="Scrape title, company, location, and description (no AI matching)">
-          📥 Fetch job details
+          Fetch job details
         </button>` : '';
   const selectBox = `
     <label class="card-select-wrap" onclick="event.stopPropagation()" title="${fetchable ? 'Select for batch Fetch details / Run AI / Delete' : 'Select for batch Delete'}">
@@ -1315,7 +1429,7 @@ function renderCard(job) {
       </div>
       <div class="row-meta">
         ${countryPillHtml(job)}
-        ${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">📍 ${escHtml(job.location)}</span>` : ''}
+        ${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">${escHtml(job.location)}</span>` : ''}
         ${sourcePillHtml(job)}
         ${originPillHtml(job)}
         ${recBadge}
@@ -1327,6 +1441,7 @@ function renderCard(job) {
     </div>
 
     <div class="card-body">
+     <button type="button" class="panel-close" onclick="event.stopPropagation(); closeCardPanel(this)" aria-label="Close details" title="Close (Esc)">×</button>
      <div class="card-split">
       <div class="card-split-match">
       <div class="card-header">
@@ -1335,8 +1450,8 @@ function renderCard(job) {
           <div class="info-view">
             <div class="card-title">
               <span class="card-title-text">${escHtml(job.title || '(No Title)')}</span>
-              <button class="edit-info-btn" onclick="event.stopPropagation(); openEditInfo(this)" title="Edit title / company / location">✏️ Edit</button>
-              <button class="delete-job-btn" onclick="event.stopPropagation(); deleteMatchedJob('${job._id}', this)" title="Delete this job permanently">🗑 Delete</button>
+              <button class="edit-info-btn" onclick="event.stopPropagation(); openEditInfo(this)" title="Edit title / company / location">Edit</button>
+              <button class="delete-job-btn" onclick="event.stopPropagation(); deleteMatchedJob('${job._id}', this)" title="Delete this job permanently">Delete</button>
             </div>
             <div class="card-company">${cardCompanyHtml(job.company, job.location)}</div>
           </div>
@@ -1362,15 +1477,15 @@ function renderCard(job) {
         ${originPillHtml(job)}
         ${recBadge}
         ${countryPillHtml(job)}
-        ${job.matched_at ? `<span class="meta-pill">📅 ${job.matched_at}</span>` : ''}
+        ${job.matched_at ? `<span class="meta-pill" title="Matched on">Matched ${job.matched_at}</span>` : ''}
         ${postedPillHtml(job)}
-        ${job.applicants ? `<span class="meta-pill" title="Applicant count when the job was scraped">👥 ${escHtml(job.applicants)}</span>` : ''}
+        ${job.applicants ? `<span class="meta-pill" title="Applicant count when the job was scraped">Applicants: ${escHtml(job.applicants)}</span>` : ''}
         ${applicantPosPillHtml(job)}
       </div>
 
       ${renderCompanyHistory(job)}
 
-      ${job.recommend_reason ? `<div class="recommend-reason"><span class="recommend-reason-label">✦ Why AI recommends this</span>${escHtml(job.recommend_reason)}</div>` : ''}
+      ${job.recommend_reason ? `<div class="recommend-reason"><span class="recommend-reason-label">Why AI recommends this</span>${escHtml(job.recommend_reason)}</div>` : ''}
       ${job.summary ? `<div class="card-summary">${escHtml(job.summary)}</div>` : ''}
 
       <details class="job-description" data-job-id="${job._id}" ontoggle="loadJobDescription(this)">
@@ -1378,7 +1493,7 @@ function renderCard(job) {
           <span>Original description</span>
           <button type="button" class="jd-copy-btn" data-job-id="${job._id}"
                   onclick="event.preventDefault(); event.stopPropagation(); copyJobDescription(this)"
-                  title="Copy the full original description">📋 Copy</button>
+                  title="Copy the full original description">Copy</button>
         </summary>
         <div class="job-description-body" data-loaded="0">Expand to load…</div>
       </details>
@@ -1386,7 +1501,7 @@ function renderCard(job) {
       <div class="card-actions-row">
         <a class="btn-apply ${isAppliedLike(status, job.application_timeline) ? 'btn-applied' : ''}"
            href="${escHtml(job.link || '#')}" target="_blank" rel="noopener">
-          ${isAppliedLike(status, job.application_timeline) ? '🔗 View Detail' : '🚀 Apply Now'}
+          ${isAppliedLike(status, job.application_timeline) ? 'View posting' : 'Apply'}
         </a>
         <button type="button" class="${runAiCls}" data-id="${job._id}"
                 onclick="event.stopPropagation(); runAiForJob('${job._id}', this)"
@@ -1601,14 +1716,14 @@ function renderProgressBlock(job) {
         <span class="progress-side-label">Other</span>
         <select class="status-side-select" data-id="${id}" onchange="updateSideStatus(this)">
           <option value="" ${!sideVal ? 'selected' : ''}>—</option>
-          <option value="unsuitable" ${sideVal==='unsuitable' ? 'selected':''}>🚫 Unsuitable</option>
-          <option value="closed" ${sideVal==='closed' ? 'selected':''}>🔒 Closed (before applying)</option>
-          <option value="closed_no_reply" ${sideVal==='closed_no_reply' ? 'selected':''}>📭 Closed after applying · no reply</option>
-          <option value="prev_rejected" ${sideVal==='prev_rejected' ? 'selected':''}>⛔ Rejected before · skip this time</option>
-          <option value="too_many_questions" ${sideVal==='too_many_questions' ? 'selected':''}>📝 Good fit · too many required questions, skipped</option>
-          <option value="repost" ${sideVal==='repost' ? 'selected':''}>🔁 Repost</option>
-          <option value="duplicate" ${sideVal==='duplicate' ? 'selected':''}>📎 Duplicate</option>
-          <option value="pending">📋 Reset Not Applied</option>
+          <option value="unsuitable" ${sideVal==='unsuitable' ? 'selected':''}>Unsuitable</option>
+          <option value="closed" ${sideVal==='closed' ? 'selected':''}>Closed (before applying)</option>
+          <option value="closed_no_reply" ${sideVal==='closed_no_reply' ? 'selected':''}>Closed after applying, no reply</option>
+          <option value="prev_rejected" ${sideVal==='prev_rejected' ? 'selected':''}>Rejected before, skip this time</option>
+          <option value="too_many_questions" ${sideVal==='too_many_questions' ? 'selected':''}>Good fit, too many required questions</option>
+          <option value="repost" ${sideVal==='repost' ? 'selected':''}>Repost</option>
+          <option value="duplicate" ${sideVal==='duplicate' ? 'selected':''}>Duplicate</option>
+          <option value="pending">Reset Not Applied</option>
         </select>
       </div>
     </div>
@@ -1672,15 +1787,15 @@ async function copyJobDescription(btn) {
       }
     }
     if (!text || text === 'No description saved.') {
-      showToast('⚠️ No description saved for this job', 'err');
+      showToast('No description saved for this job', 'err');
       return;
     }
     if (!(await copyText(text))) throw new Error('Clipboard blocked');
-    btn.textContent = '✓ Copied';
-    setTimeout(() => { btn.textContent = '📋 Copy'; }, 1500);
-    showToast(`📋 Copied description (${text.length} chars)`);
+    btn.textContent = 'Copied';
+    setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+    showToast(`Copied description (${text.length} chars)`);
   } catch (err) {
-    showToast('❌ Copy failed: ' + err.message, 'err');
+    showToast('Copy failed: ' + err.message, 'err');
   }
 }
 
@@ -1706,6 +1821,7 @@ function currentJobListParams() {
 
 async function loadJobs() {
   const grid   = document.getElementById('jobGrid');
+  if (window.updateFilterCount) updateFilterCount();
 
   if (jobsAbortController) jobsAbortController.abort();
   jobsAbortController = new AbortController();
@@ -1806,6 +1922,7 @@ function openMatchedCard(card) {
   if (!card) return;
   expandDateGroupForCard(card);
   if (currentLayout === 'compact') {
+    collapseOtherCards(card);
     card.classList.add('expanded');
   }
   card.classList.add('open-flash');
@@ -1953,7 +2070,7 @@ function refreshProgressUI(jobId, timeline, status) {
   if (btn) {
     const appliedLike = isAppliedLike(status, timeline);
     btn.classList.toggle('btn-applied', appliedLike);
-    btn.innerHTML = appliedLike ? '🔗 View Detail' : '🚀 Apply Now';
+    btn.innerHTML = appliedLike ? 'View posting' : 'Apply';
   }
 }
 
@@ -2006,9 +2123,9 @@ async function addTimelineStep(jobId, step) {
   timeline.push({ step, at });
   try {
     await saveTimeline(jobId, timeline);
-    showToast(`✅ Recorded ${label} · ${at}`);
+    showToast(`Recorded ${label} · ${at}`);
   } catch (err) {
-    showToast('❌ Failed to update progress: ' + (err.message || 'unknown error'), 'err');
+    showToast('Failed to update progress: ' + (err.message || 'unknown error'), 'err');
   }
 }
 
@@ -2027,9 +2144,9 @@ async function editTimelineStep(jobId, index) {
   timeline[index] = { ...ev, at };
   try {
     await saveTimeline(jobId, timeline);
-    showToast(`✅ Updated ${label} · ${at}`);
+    showToast(`Updated ${label} · ${at}`);
   } catch (err) {
-    showToast('❌ Failed to update time', 'err');
+    showToast('Failed to update time', 'err');
   }
 }
 
@@ -2050,7 +2167,7 @@ async function undoTimelineStep(jobId) {
     await saveTimeline(jobId, timeline);
     showToast(`↩ Undid ${TIMELINE_LABEL[removed.step] || removed.step}`);
   } catch (err) {
-    showToast('❌ Undo failed', 'err');
+    showToast('Undo failed', 'err');
   }
 }
 
@@ -2080,13 +2197,13 @@ async function updateSideStatus(select) {
       // Fade this card out in place — no list reload, scroll position stays
       removeMatchedCardSilently(document.getElementById(`card-${id}`));
     }
-    showToast(`✅ Status updated to "${STATUS_LABEL[status]}"`);
+    showToast(`Status updated to "${STATUS_LABEL[status]}"`);
     loadStats();
     loadJourney();
     loadLocationStats();
     loadDailyStats();
   } catch (err) {
-    showToast('❌ Status update failed', 'err');
+    showToast('Status update failed', 'err');
   }
 }
 
@@ -2135,7 +2252,7 @@ function setSelectMode(on) {
   const btn = document.getElementById('selectModeBtn');
   if (btn) {
     btn.classList.toggle('active', on);
-    btn.textContent = on ? '✕ Done selecting' : '☑ Select jobs';
+    btn.textContent = on ? 'Done selecting' : 'Select jobs';
   }
   if (!on) clearFetchSelection();
 }
@@ -2196,7 +2313,7 @@ async function selectMissingAcrossPages({ cardSelector, param, noun, icon }) {
     const res = await fetch('/api/fetch-details/ids?' + params.toString());
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
-      showToast('❌ ' + (data.error || `Could not list ${noun} jobs`), 'err');
+      showToast('' + (data.error || `Could not list ${noun} jobs`), 'err');
       return;
     }
     (data.ids || []).forEach(id => selectedFetchIds.add(id));
@@ -2210,10 +2327,10 @@ async function selectMissingAcrossPages({ cardSelector, param, noun, icon }) {
     updateBatchFetchUI();
     const extra = selectedFetchIds.size - document.querySelectorAll('.card-select:checked').length;
     if (extra > 0) {
-      showToast(`${icon} ${selectedFetchIds.size} ${noun} job(s) selected (${extra} on other pages)`);
+      showToast(`${selectedFetchIds.size} ${noun} job(s) selected (${extra} on other pages)`);
     }
   } catch (err) {
-    showToast('❌ ' + (err.message || `Could not list ${noun} jobs`), 'err');
+    showToast('' + (err.message || `Could not list ${noun} jobs`), 'err');
   }
 }
 
@@ -2253,13 +2370,13 @@ function renderBatchProgress(data) {
   const mode = data.mode || fetchBatchMode || 'fetch';
   const rows = (data.results || []).map(r => {
     const cls = r.ok ? 'bf-ok' : 'bf-err';
-    const mark = r.ok ? '✅' : '❌';
+    const mark = r.ok ? '✓' : '✗';
     const score = r.match_score != null && r.match_score !== ''
       ? ` · ${escHtml(String(r.match_score))}/10`
       : '';
     const err = r.error ? ` — ${escHtml(r.error)}` : '';
     const gate = r.ok && r.match_gate && r.match_gate !== 'scored'
-      ? ` — ⛔ stopped at ${escHtml(GATE_LABELS[r.match_gate] || r.match_gate)}, not scored`
+      ? ` — stopped at ${escHtml(GATE_LABELS[r.match_gate] || r.match_gate)}, not scored`
       : '';
     const via = r.ok && r.used_stored_jd ? ' · stored JD' : '';
     return `<div class="${cls}">${mark} ${escHtml(r.title || r.id)}${score}${via}${gate}${err}</div>`;
@@ -2292,8 +2409,8 @@ async function startSelectedChromeBatch(mode) {
   updateBatchFetchUI();
   showToast(
     isAi
-      ? '🤖 Run AI for selected jobs — stored JDs go straight to AI; missing ones are scraped in debug Chrome'
-      : '📥 Fetching details for selected jobs — needs debug Chrome'
+      ? 'Run AI for selected jobs — stored JDs go straight to AI; missing ones are scraped in debug Chrome'
+      : 'Fetching details for selected jobs — needs debug Chrome'
   );
   try {
     if ('Notification' in window && Notification.permission === 'default') {
@@ -2380,16 +2497,16 @@ async function fetchJobDetails(jobId, btn) {
   const originalLabel = btn.textContent;
   btn.disabled = true;
   btn.textContent = '⏳ Fetching…';
-  showToast('📥 Fetching job details — needs debug Chrome');
+  showToast('Fetching job details — needs debug Chrome');
 
   try {
     const res = await fetch(`/api/jobs/${jobId}/fetch-details`, { method: 'POST' });
     const data = await res.json().catch(() => ({}));
     if (!res.ok || !data.ok) {
-      showToast('❌ ' + (data.error || 'Failed to fetch job details'), 'err');
+      showToast('' + (data.error || 'Failed to fetch job details'), 'err');
       return;
     }
-    showToast('✅ Job details updated');
+    showToast('Job details updated');
     try {
       const jobRes = await fetch(`/api/jobs/${jobId}`);
       if (jobRes.ok) {
@@ -2402,7 +2519,7 @@ async function fetchJobDetails(jobId, btn) {
       }
     } catch (_) {}
   } catch (err) {
-    showToast('❌ ' + (err.message || 'Network error'), 'err');
+    showToast('' + (err.message || 'Network error'), 'err');
   } finally {
     btn.disabled = false;
     btn.textContent = originalLabel;
@@ -2438,14 +2555,14 @@ async function runAiForJob(jobId, btn) {
     const startRes = await fetch(`/api/jobs/${jobId}/run-ai`, { method: 'POST' });
     const startData = await startRes.json().catch(() => ({}));
     if (!startRes.ok) {
-      showToast('❌ ' + (startData.error || 'Failed to start Run AI'), 'err');
+      showToast('' + (startData.error || 'Failed to start Run AI'), 'err');
       btn.disabled = false;
       btn.textContent = originalLabel;
       return;
     }
     showToast(startData.uses_stored_jd
-      ? '🤖 Run AI started — using the stored JD (no Chrome)'
-      : '🤖 Run AI started — scraping the JD, needs debug Chrome');
+      ? 'Run AI started — using the stored JD (no Chrome)'
+      : 'Run AI started — scraping the JD, needs debug Chrome');
 
     const poll = async () => {
       try {
@@ -2458,10 +2575,10 @@ async function runAiForJob(jobId, btn) {
         if (data.ok) {
           const gate = data.match_gate || '';
           if (gate && gate !== 'scored') {
-            showToast(`⛔ Hard fail: ${GATE_LABELS[gate] || gate} — see the card for the quoted reason.`, 'err');
+            showToast(`Hard fail: ${GATE_LABELS[gate] || gate} — see the card for the quoted reason.`, 'err');
           } else {
             const score = data.match_score != null ? ` score ${data.match_score}/10` : '';
-            showToast(`✅ AI done${score}`);
+            showToast(`AI done${score}`);
           }
           // Refresh this card from API so score / summary update in place
           try {
@@ -2480,19 +2597,19 @@ async function runAiForJob(jobId, btn) {
             loadJobs();
           }
         } else {
-          showToast('❌ Run AI failed: ' + (data.error || 'unknown'), 'err');
+          showToast('Run AI failed: ' + (data.error || 'unknown'), 'err');
           btn.disabled = false;
           btn.textContent = originalLabel;
         }
       } catch (e) {
-        showToast('❌ Run AI status error', 'err');
+        showToast('Run AI status error', 'err');
         btn.disabled = false;
         btn.textContent = originalLabel;
       }
     };
     setTimeout(poll, 1200);
   } catch (e) {
-    showToast('❌ Network error starting Run AI', 'err');
+    showToast('Network error starting Run AI', 'err');
     btn.disabled = false;
     btn.textContent = originalLabel;
   }
@@ -2514,9 +2631,9 @@ async function saveNotes(btn) {
     btn.textContent = 'Saved ✓';
     btn.classList.add('saved');
     setTimeout(() => { btn.textContent = 'Save Notes'; btn.classList.remove('saved'); }, 2000);
-    showToast('📝 Notes saved');
+    showToast('Notes saved');
   } catch (err) {
-    showToast('❌ Notes save failed', 'err');
+    showToast('Notes save failed', 'err');
   }
 }
 
@@ -2577,7 +2694,7 @@ async function addHighlightTag(id, tag) {
   } catch (err) {
     jobHighlights[id] = current;
     refreshHighlightsUI(id);
-    showToast('❌ Highlight save failed', 'err');
+    showToast('Highlight save failed', 'err');
   }
 }
 
@@ -2609,7 +2726,7 @@ async function removeHighlight(btn) {
   } catch (err) {
     jobHighlights[id] = current;
     refreshHighlightsUI(id);
-    showToast('❌ Highlight remove failed', 'err');
+    showToast('Highlight remove failed', 'err');
   }
 }
 
@@ -2649,9 +2766,9 @@ async function saveApplicationQa(btn) {
     btn.textContent = 'Saved ✓';
     btn.classList.add('saved');
     setTimeout(() => { btn.textContent = 'Save Q&A'; btn.classList.remove('saved'); }, 2000);
-    showToast('💬 Application Q&A saved');
+    showToast('Application Q&A saved');
   } catch (err) {
-    showToast('❌ Q&A save failed', 'err');
+    showToast('Q&A save failed', 'err');
   }
 }
 
@@ -2699,9 +2816,9 @@ async function deleteSelectedJobs() {
         delete jobTimelines[id];
       });
     }
-    showToast(`🗑 ${deleted} job(s) deleted`);
+    showToast(`${deleted} job(s) deleted`);
   } catch (err) {
-    showToast(`❌ ${err.message || 'Delete failed'}${deleted ? ` (${deleted} deleted before the error)` : ''}`, 'err');
+    showToast(`${err.message || 'Delete failed'}${deleted ? ` (${deleted} deleted before the error)` : ''}`, 'err');
   }
   clearFetchSelection();
   await loadJobs();
@@ -2742,10 +2859,10 @@ async function deleteMatchedJob(jobId, btn) {
     loadJourney();
     loadLocationStats();
     loadDailyStats();
-    showToast('🗑 Job deleted');
+    showToast('Job deleted');
   } catch (err) {
     if (btn) btn.disabled = false;
-    showToast(`❌ ${err.message || 'Delete failed'}`, 'err');
+    showToast(`${err.message || 'Delete failed'}`, 'err');
   }
 }
 
@@ -2835,7 +2952,7 @@ async function saveJobInfo(btn) {
       if (rowCompany) rowCompany.textContent = payload.company || '';
       if (rowLoc) {
         if (payload.location) {
-          rowLoc.textContent = '📍 ' + payload.location;
+          rowLoc.textContent = payload.location;
           rowLoc.title = payload.location;
           rowLoc.style.display = '';
         } else {
@@ -2847,7 +2964,7 @@ async function saveJobInfo(btn) {
           const loc = document.createElement('span');
           loc.className = 'row-loc';
           loc.title = payload.location;
-          loc.textContent = '📍 ' + payload.location;
+          loc.textContent = payload.location;
           meta.insertBefore(loc, meta.firstChild);
         }
       }
@@ -2856,9 +2973,9 @@ async function saveJobInfo(btn) {
     // Switch back to view mode
     view.style.display = '';
     block.querySelector('.info-edit').classList.remove('active');
-    showToast('✅ Job info updated');
+    showToast('Job info updated');
   } catch (err) {
-    showToast('❌ Update failed', 'err');
+    showToast('Update failed', 'err');
   } finally {
     btn.disabled    = false;
     btn.textContent = '✓ Save';
