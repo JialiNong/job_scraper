@@ -1282,6 +1282,12 @@
     }
     .source-pill { text-transform: capitalize; }
     .source-pill.site-pill { text-transform: none; }
+    /* API source badges (src/sources/): one colour per source, like the ✦ agent badge */
+    .meta-pill.source-badge { text-transform: none; font-weight: 600; }
+    .meta-pill.src-ats            { background: #042f2e; color: #5eead4; border-color: #14b8a655; }
+    .meta-pill.src-arbeitsagentur { background: #450a0a; color: #fca5a5; border-color: #ef444455; }
+    .meta-pill.src-arbeitnow      { background: #172554; color: #93c5fd; border-color: #3b82f655; }
+    .meta-pill.src-adzuna         { background: #422006; color: #fcd34d; border-color: #f59e0b55; }
     .meta-pill.origin-pipeline { color: #7dd3fc; border-color: #0ea5e944; }
     .meta-pill.origin-manual   { color: #86efac; border-color: #22c55e44; }
 
@@ -2706,10 +2712,10 @@
     <option value="all">All Sources</option>
     <option value="linkedin">LinkedIn</option>
     <option value="indeed">Indeed</option>
-    <option value="ats">Company site (ATS)</option>
-    <option value="arbeitnow">Arbeitnow</option>
+    <option value="ats">ATS</option>
+    <option value="arbeitnow">Arbeitnow API</option>
     <option value="arbeitsagentur">Bundesagentur</option>
-    <option value="adzuna">Adzuna</option>
+    <option value="adzuna">Adzuna API</option>
   </select>
   <select id="originFilter" onchange="currentPage = 1; loadJobs()" title="How the job got onto the Tracker">
     <option value="all">All Origins</option>
@@ -3736,15 +3742,28 @@ function sourcePillHtml(job) {
       ? `<span class="meta-pill source-pill site-pill" title="${escHtml(job.link || '')}">${escHtml(host)}</span>`
       : '';
   }
-  const label = SOURCE_PILL_LABEL[source.toLowerCase()] || source;
-  return `<span class="meta-pill source-pill">${escHtml(label)}</span>`;
+  const badge = sourceBadgeHtml(job);
+  if (badge) return badge;
+  return `<span class="meta-pill source-pill">${escHtml(source)}</span>`;
 }
 
-/* API sources (src/sources/): readable names for the stored jobs.source key */
-const SOURCE_PILL_LABEL = {
-  ats: 'company site',
-  arbeitsagentur: 'bundesagentur',
+/* API sources (src/sources/): coloured badge per source so it is clear where a job came from */
+const SOURCE_BADGE = {
+  ats:            { label: 'ATS',           title: 'Company careers page (ATS board)' },
+  arbeitsagentur: { label: 'Bundesagentur', title: 'Bundesagentur für Arbeit Jobsuche API' },
+  arbeitnow:      { label: 'Arbeitnow API', title: 'Arbeitnow job board API' },
+  adzuna:         { label: 'Adzuna API',    title: 'Adzuna job search API' },
 };
+
+function sourceBadgeHtml(job) {
+  const key = String(job.source || '').toLowerCase();
+  const badge = SOURCE_BADGE[key];
+  if (!badge) return '';
+  let host = '';
+  try { host = new URL(job.link || '').hostname.replace(/^www\./, ''); } catch (e) {}
+  const title = badge.title + (host ? ` · ${host}` : '');
+  return `<span class="meta-pill source-badge src-${escHtml(key)}" title="${escHtml(title)}">◆ ${escHtml(badge.label)}</span>`;
+}
 
 /* Agent rows already show the ✦ agent badge, so only pipeline / manual get a pill. */
 const ORIGIN_PILL = {

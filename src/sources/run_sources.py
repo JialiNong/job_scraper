@@ -41,10 +41,10 @@ SOURCES = {
 # Adzuna is opt-in (--sources …,adzuna): its key is paid beyond 25 trial calls
 DEFAULT_SOURCES = ["arbeitnow", "arbeitsagentur", "ats"]
 SOURCE_LABELS = {
-    "arbeitnow": "Arbeitnow",
+    "arbeitnow": "Arbeitnow API",
     "arbeitsagentur": "Bundesagentur",
-    "adzuna": "Adzuna",
-    "ats": "Company ATS",
+    "adzuna": "Adzuna API",
+    "ats": "ATS",
 }
 
 

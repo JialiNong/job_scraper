@@ -256,6 +256,12 @@
       color: var(--muted);
     }
     .source-pill { text-transform: capitalize; }
+    /* API source badges (src/sources/): one colour per source, like the ✦ agent badge */
+    .meta-pill.source-badge { text-transform: none; font-weight: 600; }
+    .meta-pill.src-ats            { background: #042f2e; color: #5eead4; border-color: #14b8a655; }
+    .meta-pill.src-arbeitsagentur { background: #450a0a; color: #fca5a5; border-color: #ef444455; }
+    .meta-pill.src-arbeitnow      { background: #172554; color: #93c5fd; border-color: #3b82f655; }
+    .meta-pill.src-adzuna         { background: #422006; color: #fcd34d; border-color: #f59e0b55; }
     .gate-pill { background: #3f2a16; color: #fdba74; }
     .gate-pill.gate-stack { background: #3f2a16; color: #fdba74; }
     .row-open {
@@ -559,10 +565,10 @@
     <option value="all">All Sources</option>
     <option value="linkedin">LinkedIn</option>
     <option value="indeed">Indeed</option>
-    <option value="ats">Company site (ATS)</option>
-    <option value="arbeitnow">Arbeitnow</option>
+    <option value="ats">ATS</option>
+    <option value="arbeitnow">Arbeitnow API</option>
     <option value="arbeitsagentur">Bundesagentur</option>
-    <option value="adzuna">Adzuna</option>
+    <option value="adzuna">Adzuna API</option>
   </select>
   <select id="gateFilter" onchange="goPage(1)">
     <option value="all">All gates</option>
@@ -623,6 +629,23 @@
 <div class="toast" id="toast"></div>
 
 <script>
+/* API sources (src/sources/): coloured badge per source so it is clear where a job came from */
+const SOURCE_BADGE = {
+  ats:            { label: 'ATS',           title: 'Company careers page (ATS board)' },
+  arbeitsagentur: { label: 'Bundesagentur', title: 'Bundesagentur für Arbeit Jobsuche API' },
+  arbeitnow:      { label: 'Arbeitnow API', title: 'Arbeitnow job board API' },
+  adzuna:         { label: 'Adzuna API',    title: 'Adzuna job search API' },
+};
+
+function sourceBadgeHtml(job) {
+  const key = String(job.source || '').toLowerCase();
+  const badge = SOURCE_BADGE[key];
+  if (!badge) return '';
+  let host = '';
+  try { host = new URL(job.link || '').hostname.replace(/^www\./, ''); } catch (e) {}
+  const title = badge.title + (host ? ` · ${host}` : '');
+  return `<span class="meta-pill source-badge src-${escHtml(key)}" title="${escHtml(title)}">◆ ${escHtml(badge.label)}</span>`;
+}
 let currentPage = 1;
 let debounceTimer = null;
 let dateDebounceTimer = null;
@@ -902,7 +925,7 @@ function renderCard(job) {
       <div class="row-meta">
         ${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">📍 ${escHtml(job.location)}</span>` : ''}
         ${gatePill}
-        <span class="meta-pill source-pill">${escHtml(job.source || '')}</span>
+        ${sourceBadgeHtml(job) || `<span class="meta-pill source-pill">${escHtml(job.source || '')}</span>`}
         <span class="status-pill ${statusCls}" data-status-pill>${statusLabel}</span>
         ${openLink}
         <div class="score-badge ${scoreCls(score)}">${score.toFixed(1)}</div>
@@ -919,7 +942,7 @@ function renderCard(job) {
       </div>
 
       <div class="card-meta">
-        <span class="meta-pill source-pill">${escHtml(job.source || '')}</span>
+        ${sourceBadgeHtml(job) || `<span class="meta-pill source-pill">${escHtml(job.source || '')}</span>`}
         ${gatePill}
         ${job.matched_at ? `<span class="meta-pill">📅 ${escHtml(job.matched_at)}</span>` : ''}
         ${job.recommendation ? `<span class="meta-pill">${escHtml(job.recommendation)}</span>` : ''}

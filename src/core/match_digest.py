@@ -34,10 +34,10 @@ STATUS_LABELS = {
 # Display names for the API sources (src/sources/). LinkedIn / Indeed cards keep
 # their original format: .title() label, no company line.
 SOURCE_LABELS = {
-    "arbeitnow": "Arbeitnow",
+    "arbeitnow": "Arbeitnow API",
     "arbeitsagentur": "Bundesagentur",
-    "adzuna": "Adzuna",
-    "ats": "Company site",
+    "adzuna": "Adzuna API",
+    "ats": "ATS",
 }
 
 
