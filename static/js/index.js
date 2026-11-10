@@ -10,7 +10,8 @@ let dateDebounceTimer = null;
 let jobsAbortController = null;
 const SEARCH_DEBOUNCE_MS = 600; // wait until typing pauses before searching
 // Touch screens cannot hover: copy says "tap" there
-const POINT_VERB = window.matchMedia?.('(hover: none)').matches ? 'tap' : 'hover';
+const TOUCH_UI = !!window.matchMedia?.('(hover: none)').matches;
+const POINT_VERB = TOUCH_UI ? 'tap' : 'hover';
 document.querySelectorAll('[data-point-verb]').forEach(el => { el.textContent = POINT_VERB; });
 // Chips (/api/stats) and Overview (journey / heatmap / locations) wait for
 // the first job list, so on a cold server /api/jobs gets Atlas first.
@@ -688,6 +689,10 @@ window.addEventListener('resize', () => {
 /* ── Activity calendar heatmap ───────────────────────────────────── */
 let calDaysByDate = {};
 let calSelectedDate = null;
+// Phone: single tap shows the day panel; double-tap opens that day's applications.
+let calLastTapAt = 0;
+let calLastTapDate = '';
+const CAL_DOUBLE_TAP_MS = 400;
 
 function calActivityScore(d) {
   return (d.title_clicked || 0) + (d.ai_matched || 0) + (d.applied || 0);
@@ -808,17 +813,38 @@ async function loadDailyStats() {
           const score = calActivityScore(cell.data);
           btn.classList.add('l' + calLevel(score, maxScore));
           btn.dataset.date = cell.date;
-          btn.title = `${cell.date}: ${cell.data.title_clicked} clicked, ${cell.data.german_filtered} german, ${cell.data.ai_matched} matched, ${cell.data.applied} applied`;
+          const statsTitle = `${cell.date}: ${cell.data.title_clicked} clicked, ${cell.data.german_filtered} german, ${cell.data.ai_matched} matched, ${cell.data.applied} applied`;
           btn.addEventListener('mouseenter', () => showCalDetail(cell.date));
-          if (cell.data.applied) {
-            btn.classList.add('has-applied');
-            btn.title += ' · click to open that day\'s applications';
+          if (cell.data.applied) btn.classList.add('has-applied');
+          if (TOUCH_UI) {
+            btn.title = cell.data.applied
+              ? `${statsTitle} · tap for details, double-tap for applications`
+              : `${statsTitle} · tap for details`;
+            btn.addEventListener('click', () => {
+              showCalDetail(cell.date);
+              const now = Date.now();
+              if (
+                cell.data.applied
+                && calLastTapDate === cell.date
+                && now - calLastTapAt < CAL_DOUBLE_TAP_MS
+              ) {
+                calLastTapAt = 0;
+                calLastTapDate = '';
+                filterByAppliedDay(cell.date);
+                return;
+              }
+              calLastTapAt = now;
+              calLastTapDate = cell.date;
+            });
+          } else {
+            btn.title = cell.data.applied
+              ? `${statsTitle} · click to open that day's applications`
+              : statsTitle;
+            btn.addEventListener('click', () => {
+              showCalDetail(cell.date);
+              if (cell.data.applied) window.open(appliedDayUrl(cell.date), '_blank', 'noopener');
+            });
           }
-          btn.addEventListener('click', () => {
-            showCalDetail(cell.date);
-            // Days with applications open them in a new tab
-            if (cell.data.applied) window.open(appliedDayUrl(cell.date), '_blank', 'noopener');
-          });
         }
         weekEl.appendChild(btn);
       });

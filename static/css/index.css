@@ -593,6 +593,11 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   color: var(--text);
 }
 .cal-title span { color: var(--muted); font: 400 .82rem var(--f-body); margin-left: 8px; }
+.cal-hint-touch { display: none; }
+@media (hover: none) {
+  .cal-hint-hover { display: none; }
+  .cal-hint-touch { display: inline; }
+}
 .cal-legend {
   display: flex; align-items: center; gap: 5px;
   font-size: .68rem; color: var(--muted);
