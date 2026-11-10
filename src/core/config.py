@@ -218,6 +218,11 @@ ATS_CONFIG = {
     "max_workers": 8,
 }
 
+# API sources: skip ads the employer published longer ago than this.
+# Company ATS boards list every open role, some up to a year old.
+# Jobs without a publish date are kept.
+API_MAX_POSTING_AGE_DAYS = 90
+
 
 # ===== Match-stage company blocklist =====
 # Aggregators / job boards that often appear as the scraped "company".

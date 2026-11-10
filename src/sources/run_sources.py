@@ -29,6 +29,7 @@ from dotenv import load_dotenv  # noqa: E402
 load_dotenv()
 
 from sources import adzuna, arbeitnow, arbeitsagentur, ats  # noqa: E402
+from core.config import API_MAX_POSTING_AGE_DAYS  # noqa: E402
 from sources.base import ingest  # noqa: E402
 
 # name → (module, keyword-less feed?)
@@ -61,6 +62,7 @@ def _summary_line(name: str, stats: Counter, error: str | None) -> str:
         ("cross_source_duplicate", "dup of other board"),
         ("german_filtered", "non-English"),
         ("not_germany", "outside DE"),
+        ("too_old", f"posted >{API_MAX_POSTING_AGE_DAYS}d ago"),
     ):
         if stats.get(key):
             parts.append(f"{stats[key]} {text}")

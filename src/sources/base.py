@@ -17,10 +17,14 @@ from __future__ import annotations
 import re
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Callable, Iterable, Optional
 
-from core.config import API_TITLE_EXCLUDE_EXTRA, FEED_TITLE_INCLUDE_PATTERNS
+from core.config import (
+    API_MAX_POSTING_AGE_DAYS,
+    API_TITLE_EXCLUDE_EXTRA,
+    FEED_TITLE_INCLUDE_PATTERNS,
+)
 from core.dedup import dedup_key, find_cross_source_duplicate
 from core.scraper_utils import (
     description_save_flags,
@@ -99,6 +103,14 @@ def is_api_title_excluded(title: str) -> bool:
     return is_title_excluded(title) or bool(_API_EXCLUDE_RE.search(title or ""))
 
 
+def is_too_old(job: SourceJob, now: Optional[datetime] = None,
+               max_days: int = API_MAX_POSTING_AGE_DAYS) -> bool:
+    """True when the employer published the ad more than max_days ago (no date → keep)."""
+    if not job.posted_at or not max_days:
+        return False
+    return job.posted_at < (now or datetime.now()) - timedelta(days=max_days)
+
+
 def location_ok(job: SourceJob) -> bool:
     if job.location_policy == "none" or not job.location:
         return True
@@ -154,6 +166,9 @@ def ingest(
             continue
         seen.add(key)
 
+        if is_too_old(job):
+            stats["too_old"] += 1
+            continue
         if not location_ok(job):
             stats["not_germany"] += 1
             continue
