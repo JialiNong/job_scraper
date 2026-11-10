@@ -12,8 +12,8 @@ const SEARCH_DEBOUNCE_MS = 600; // wait until typing pauses before searching
 // Touch screens cannot hover: copy says "tap" there
 const POINT_VERB = window.matchMedia?.('(hover: none)').matches ? 'tap' : 'hover';
 document.querySelectorAll('[data-point-verb]').forEach(el => { el.textContent = POINT_VERB; });
-// The Overview widgets (journey, heatmap, locations) wait for the first job
-// list, so on a cold server the list gets the database connections first.
+// Chips (/api/stats) and Overview (journey / heatmap / locations) wait for
+// the first job list, so on a cold server /api/jobs gets Atlas first.
 // Never hold them back for more than a few seconds.
 let resolveListReady;
 const listReady = new Promise(resolve => { resolveListReady = resolve; });
@@ -3101,16 +3101,20 @@ function escHtml(str) {
 }
 
 /* ── Init ────────────────────────────────────────────────────────── */
-function refreshAll() {
-  // Critical path first (chips + job list), then heavier widgets
-  loadStats();
-  loadJobs().finally(loadOverviewData);
-}
-
 function loadOverviewData() {
   loadJourney();
   loadLocationStats();
   loadDailyStats();
+}
+
+function loadAfterJobList() {
+  loadStats();
+  loadOverviewData();
+}
+
+function refreshAll() {
+  // Job list first; chips + Overview after so they do not race /api/jobs.
+  loadJobs().finally(loadAfterJobList);
 }
 
 // Auto-refresh the page when templates or static JS/CSS change (no server restart needed).
@@ -3155,7 +3159,6 @@ const initialCompany = (initialParams.get('company') || '').trim();
 const initialApplied = (initialParams.get('applied') || '').trim();
 
 setLayout(currentLayout);
-loadStats();
 // ?company=… / ?applied=YYYY-MM-DD → open straight into that view
 if (initialApplied) {
   if (initialCompany) {
@@ -3168,4 +3171,5 @@ if (initialApplied) {
 } else {
   loadJobs();
 }
-listReady.then(loadOverviewData);
+// Chips + Overview after the first list (or the 4s safety timeout)
+listReady.then(loadAfterJobList);
