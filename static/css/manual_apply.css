@@ -1,42 +1,5 @@
 /* Log Job page (templates/manual_apply.html) styles */
-:root {
-  --green:    #22c55e;
-  --red:      #ef4444;
-  --yellow:   #f59e0b;
-}
-
 /* ── header ── */
-.logo { font-size: 1.1rem; font-weight: 700; letter-spacing: .03em; color: var(--accent); text-decoration: none; flex-shrink: 0; }
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  overflow-y: hidden;
-  min-width: 0;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-.header-actions::-webkit-scrollbar { display: none; }
-.nav-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text);
-  padding: 6px 14px;
-  font-size: .82rem;
-  font-weight: 600;
-  font-family: inherit;
-  line-height: 1.2;
-  text-decoration: none;
-  cursor: pointer;
-  white-space: nowrap;
-  flex-shrink: 0;
-  transition: border-color .15s, color .15s;
-}
-.nav-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* ── main layout ── */
 .page { max-width: 780px; margin: 0 auto; padding: 32px 24px 80px; }
@@ -131,8 +94,8 @@ h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 6px; }
   border: 1px solid transparent;
 }
 .status-banner.running  { background: #1e2a45; border-color: var(--accent); color: var(--accent); display: flex; align-items: center; gap: 8px; }
-.status-banner.success  { background: #0e2e1a; border-color: var(--green);  color: var(--green);  display: block; }
-.status-banner.error    { background: #2e0e0e; border-color: var(--red);    color: var(--red);    display: block; }
+.status-banner.success  { background: #0e2e1a; border-color: var(--success);  color: var(--success);  display: block; }
+.status-banner.error    { background: #2e0e0e; border-color: var(--danger);    color: var(--danger);    display: block; }
 .status-banner.info     { background: #1e2a45; border-color: var(--accent); color: var(--text); display: block; font-weight: 500; }
 .status-banner a { color: var(--accent); font-weight: 700; text-decoration: none; }
 .status-banner a:hover { text-decoration: underline; }
@@ -195,8 +158,8 @@ h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 6px; }
   line-height: 1.6;
   color: var(--muted);
 }
-.log-body .ok   { color: var(--green); }
-.log-body .err  { color: var(--red); }
+.log-body .ok   { color: var(--success); }
+.log-body .err  { color: var(--danger); }
 .log-body .info { color: var(--accent); }
 .log-body .head { color: var(--text); font-weight: 700; }
 
@@ -224,44 +187,11 @@ h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 6px; }
 /* ── Mobile Responsive Styles ───────────────────────────────────── */
 @media (max-width: 768px) {
   /* Same single-row scroll as Matched header-actions */
-  header {
-    padding: 12px;
-    height: auto;
-    min-height: 56px;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-
-  .logo {
-    font-size: 1rem;
-    width: 100%;
-    padding-bottom: 8px;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .header-actions {
-    width: 100%;
-    display: flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    gap: 8px;
-    -webkit-overflow-scrolling: touch;
-    scrollbar-width: none;
-  }
-
-  .header-actions::-webkit-scrollbar { display: none; }
-
-  .nav-btn {
-    padding: 8px 16px;
-    font-size: 0.8rem;
-    flex: 0 0 auto;
-    flex-shrink: 0;
-    white-space: nowrap;
-  }
-
+  
+  
+  
+  
+  
   .page {
     padding: 20px 12px 60px;
   }
@@ -328,10 +258,4 @@ h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 6px; }
     font-size: 1.2rem;
   }
 
-  .nav-btn {
-    font-size: 0.7rem;
-    padding: 5px 8px;
-    white-space: nowrap;
-    flex-shrink: 0;
   }
-}

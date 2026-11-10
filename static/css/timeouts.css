@@ -1,11 +1,5 @@
 /* Timeouts page (templates/timeouts.html) styles */
-:root {
-  --ok: #22c55e;
-  --danger: #ef4444;
-}
-.logo { font-size: 1.1rem; font-weight: 700; color: var(--accent); text-decoration: none; }
-.header-actions { display: flex; align-items: center; gap: 10px; }
-.nav-btn, .btn {
+.btn {
   display: inline-flex; align-items: center; gap: 6px;
   background: var(--surface);
   border: 1px solid var(--border);
@@ -17,9 +11,9 @@
   text-decoration: none;
   cursor: pointer;
 }
-.nav-btn:hover, .btn:hover { border-color: var(--accent); color: var(--accent); }
-.btn-ok { border-color: #22c55e55; color: var(--ok); }
-.btn-ok:hover { border-color: var(--ok); }
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+.btn-ok { border-color: #22c55e55; color: var(--success); }
+.btn-ok:hover { border-color: var(--success); }
 .btn-mute { color: var(--muted); }
 .toolbar {
   display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
@@ -67,23 +61,10 @@
 
 /* ── Mobile Responsive Styles ───────────────────────────────────── */
 @media (max-width: 768px) {
-  header {
-    padding: 8px 12px;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-
-  .logo {
-    font-size: 1rem;
-  }
-
-  .header-actions {
-    width: 100%;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
-
-  .nav-btn, .btn {
+  
+  
+  
+  .btn {
     padding: 6px 10px;
     font-size: 0.75rem;
   }
@@ -140,11 +121,8 @@
 }
 
 @media (max-width: 400px) {
-  .logo {
-    font-size: 0.95rem;
-  }
-
-  .nav-btn, .btn {
+  
+  .btn {
     font-size: 0.7rem;
     padding: 5px 8px;
   }

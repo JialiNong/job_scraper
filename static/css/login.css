@@ -1,10 +1,6 @@
 /* Login page (templates/login.html) styles */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-:root {
-  --error:     #ef4444;
-}
-
 body {
   background: var(--bg);
   color: var(--text);
@@ -26,7 +22,7 @@ body {
   box-shadow: 0 8px 32px rgba(0,0,0,.3);
 }
 
-.logo {
+.login-logo {
   font-size: 1.5rem;
   font-weight: 700;
   color: var(--accent);
@@ -93,10 +89,10 @@ input:focus {
 
 .error-message {
   background: rgba(239, 68, 68, 0.1);
-  border: 1px solid var(--error);
+  border: 1px solid var(--danger);
   border-radius: 8px;
   padding: 12px;
-  color: var(--error);
+  color: var(--danger);
   font-size: 0.85rem;
   margin-bottom: 20px;
   text-align: center;
@@ -108,7 +104,7 @@ input:focus {
     padding: 30px 24px;
   }
 
-  .logo {
+  .login-logo {
     font-size: 1.3rem;
   }
 
