@@ -43,9 +43,9 @@ jobs:
       AI_MODEL: ${{ secrets.AI_MODEL }}
       MATCH_THRESHOLD: ${{ secrets.MATCH_THRESHOLD }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -53,6 +53,26 @@ jobs:
 
       - name: Install dependencies
         run: pip install -r requirements-sources.txt
+
+      - name: Check required secrets
+        # Prints only set/missing + length, never the values
+        env:
+          USER_PROFILE_MD: ${{ secrets.USER_PROFILE_MD }}
+          VAR_USER_PROFILE_MD: ${{ vars.USER_PROFILE_MD }}
+        run: |
+          missing=0
+          for v in USER_PROFILE_MD MONGO_URI OPENAI_API_KEY TELEGRAM_BOT_TOKEN TELEGRAM_CHAT_ID; do
+            val="${!v}"
+            if [ -n "$val" ]; then echo "OK      $v (${#val} chars)"
+            else echo "MISSING $v"; missing=1; fi
+          done
+          if [ -n "$VAR_USER_PROFILE_MD" ]; then
+            echo "::warning::USER_PROFILE_MD exists as a Variable, not a Secret. Add it under the Secrets tab instead."
+          fi
+          if [ "$missing" = 1 ]; then
+            echo "::error::Missing secrets above. They must be Repository secrets (Settings → Secrets and variables → Actions → Secrets tab), not Environment secrets or Variables."
+            exit 1
+          fi
 
       - name: Write CV for the matcher (docs/user_profile.md is gitignored)
         env:
