@@ -238,7 +238,14 @@ class TrackerE2E(unittest.TestCase):
 
     # ── every page loads without JS errors ───────────────────────────────
 
-    def test_all_pages_load_without_js_errors(self):
+    def assert_page_styled(self, page, path):
+        """The page's external stylesheet (static/css/*.css) loaded and has rules."""
+        rules = page.evaluate("""() => [...document.styleSheets]
+            .filter(s => (s.href || '').includes('/static/css/'))
+            .reduce((n, s) => n + s.cssRules.length, 0)""")
+        self.assertGreater(rules, 0, f"{path}: static stylesheet missing or empty")
+
+    def test_all_pages_load_styled_without_js_errors(self):
         for path, marker in (
             ("/", "#jobGrid .card"),
             ("/unmatched", f"#card-{UNMATCHED_ID}"),
@@ -249,6 +256,15 @@ class TrackerE2E(unittest.TestCase):
                 self.page.goto(self.base + path)
                 self.page.locator(marker).first.wait_for(state="attached")
                 self.page.wait_for_load_state("networkidle")
+                self.assert_page_styled(self.page, path)
+
+    def test_login_page_styled_before_login(self):
+        ctx = self.browser.new_context()  # no session cookie
+        page = ctx.new_page()
+        page.goto(self.base + "/login")
+        page.wait_for_load_state("networkidle")
+        self.assert_page_styled(page, "/login")
+        ctx.close()
 
 
 if __name__ == "__main__":

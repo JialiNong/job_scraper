@@ -75,7 +75,7 @@ job_scraper/
 │   ├── db/cleanup_excluded_titles.py  # One-off DB cleanup by title blacklist
 │   └── tools/                         # eval_matcher, generate_password_hash, log_recommended_jobs
 ├── evals/                             # Matcher evaluation set + baselines
-├── static/                            # Page JS/CSS (css/index.css, js/index.js for the Tracker)
+├── static/                            # Page JS/CSS: css/<page>.css + js/<page>.js per template
 ├── tests/                             # Unit tests (python3 -m unittest discover -s tests)
 │   └── e2e/                           # Browser E2E tests for the web UI (./scripts/run_e2e.sh)
 ├── templates/                         # Web UI templates
