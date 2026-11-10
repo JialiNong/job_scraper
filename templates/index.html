@@ -3657,6 +3657,23 @@ function nextPage() {
 }
 
 /* ── Date helpers ────────────────────────────────────────────────── */
+// Employer's publish date (API sources: ATS boards, Bundesagentur …)
+function postedPillHtml(job) {
+  const raw = String(job.posted_at || '').slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) return '';
+  const [y, m, d] = raw.split('-').map(Number);
+  const posted = new Date(y, m - 1, d);
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Math.round((today - posted) / 86400000);
+  const rel = days <= 0 ? 'today'
+    : days === 1 ? 'yesterday'
+    : days < 30 ? `${days}d ago`
+    : days < 365 ? `${Math.floor(days / 30)}mo ago`
+    : `${Math.floor(days / 365)}y ago`;
+  return `<span class="meta-pill" title="Published by the employer on ${escHtml(raw)}">🗓 Posted ${rel}</span>`;
+}
+
 function formatDate(date) {
   const y = date.getFullYear();
   const m = String(date.getMonth() + 1).padStart(2, '0');
@@ -4145,6 +4162,7 @@ function renderCard(job) {
         ${recBadge}
         ${countryPillHtml(job)}
         ${job.matched_at ? `<span class="meta-pill">📅 ${job.matched_at}</span>` : ''}
+        ${postedPillHtml(job)}
         ${job.applicants ? `<span class="meta-pill" title="Applicant count when the job was scraped">👥 ${escHtml(job.applicants)}</span>` : ''}
         ${applicantPosPillHtml(job)}
       </div>

@@ -660,6 +660,9 @@ def _serialize(job: dict) -> dict:
     ):
         if key in job and isinstance(job[key], datetime):
             job[key] = job[key].strftime("%Y-%m-%d %H:%M")
+    # Employer's publish date (API sources): date only, UTC
+    if isinstance(job.get("posted_at"), datetime):
+        job["posted_at"] = job["posted_at"].strftime("%Y-%m-%d")
     # Normalise job link (fixes relative LinkedIn URLs)
     job["link"] = _normalize_link(job)
     # Ensure notes field always exists
@@ -1374,6 +1377,7 @@ def api_update_unmatched_status(job_id: str):
                     "created_at":     now,
                     "from_unmatched": True,
                     "origin":         found_origin(job.get("source")),
+                    **({"posted_at": job["posted_at"]} if job.get("posted_at") else {}),
                 }
 
                 # Insert only if this job is not already on the Tracker.

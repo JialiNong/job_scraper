@@ -93,6 +93,8 @@ def save_matched_job(job: Dict, analysis: Dict) -> bool:
             "job_id": job.get("job_id", ""),
             "source": job.get("source", ""),
             **posting_key_fields(job.get("link", "")),
+            # When the employer published the ad (API sources only)
+            **({"posted_at": job["posted_at"]} if job.get("posted_at") else {}),
             "description": job.get("description", ""),
             "applicants": job.get("applicants", ""),
             "match_score": analysis.get("match_score", 0),

@@ -42,7 +42,10 @@ def _dt(value) -> datetime | None:
     try:
         if isinstance(value, (int, float)):  # Lever: epoch milliseconds
             return datetime.fromtimestamp(value / 1000)
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).replace(tzinfo=None)
+        text = str(value).strip()
+        if text.endswith(" UTC"):  # Recruitee: "2026-10-28 13:28:31 UTC"
+            text = text[:-4] + "+00:00"
+        return datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)
     except (ValueError, OSError):
         return None
 
