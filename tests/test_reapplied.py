@@ -30,7 +30,7 @@ with patch.object(db_mongo, "ensure_indexes"):
         jobs_status_filter_query,
     )
 
-HTML = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+from tracker_page import TRACKER_PAGE as HTML  # noqa: E402  (index.html + its JS/CSS)
 
 FIRST = datetime(2026, 10, 3, 10, 0)
 REJECT = datetime(2026, 10, 10, 9, 0)

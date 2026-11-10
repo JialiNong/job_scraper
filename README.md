@@ -75,6 +75,7 @@ job_scraper/
 │   ├── db/cleanup_excluded_titles.py  # One-off DB cleanup by title blacklist
 │   └── tools/                         # eval_matcher, generate_password_hash, log_recommended_jobs
 ├── evals/                             # Matcher evaluation set + baselines
+├── static/                            # Page JS/CSS (css/index.css, js/index.js for the Tracker)
 ├── tests/                             # Unit tests (python3 -m unittest discover -s tests)
 │   └── e2e/                           # Browser E2E tests for the web UI (./scripts/run_e2e.sh)
 ├── templates/                         # Web UI templates
@@ -204,7 +205,7 @@ Any uncaught JavaScript error fails the test.
 
 **Automatic run in Claude Code:** `.claude/settings.json` has a Stop hook
 (`scripts/e2e_hook.sh`). When Claude finishes a turn in which `src/web`, `src/core`,
-`templates` or `tests` changed, it runs unit + E2E tests; a failure is sent back to
+`templates`, `static` or `tests` changed, it runs unit + E2E tests; a failure is sent back to
 Claude to fix. Unchanged code is not re-run, and a given failure is reported once.
 Last full output: `logs/e2e_last.log`. Review or turn it off with `/hooks`.
 

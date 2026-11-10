@@ -30,7 +30,7 @@ with patch.object(db_mongo, "ensure_indexes"):
     )
     from web.status import _status_update_fields, _timeline_update_fields  # noqa: E402
 
-HTML = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+from tracker_page import TRACKER_PAGE as HTML  # noqa: E402  (index.html + its JS/CSS)
 
 
 class _FakeCursor(list):

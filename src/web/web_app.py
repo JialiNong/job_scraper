@@ -17,7 +17,7 @@ from dotenv import load_dotenv
 # Before the web.* imports: some modules read env at import (MATCH_THRESHOLD)
 load_dotenv()
 
-from flask import Flask  # noqa: E402
+from flask import Flask, url_for  # noqa: E402
 from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
 from core.db_mongo import ensure_indexes  # noqa: E402
 from web.auth import bp as auth_bp, login_manager  # noqa: E402
@@ -74,6 +74,22 @@ if not app.debug and not os.getenv("FLASK_ENV") == "development":
     app.config["SESSION_COOKIE_SECURE"] = True  # Only send over HTTPS
     app.config["SESSION_COOKIE_HTTPONLY"] = True  # No JavaScript access
     app.config["SESSION_COOKIE_SAMESITE"] = "Lax"  # CSRF protection
+
+@app.context_processor
+def _static_url_helper():
+    """
+    {{ static_url('js/index.js') }} → /static/js/index.js?v=<mtime>.
+    The version changes whenever the file is saved, so browsers never run a
+    stale cached copy after an edit or deploy.
+    """
+    def static_url(filename: str) -> str:
+        try:
+            version = int(os.path.getmtime(os.path.join(app.static_folder, filename)))
+        except OSError:
+            version = 0
+        return url_for("static", filename=filename, v=version)
+    return {"static_url": static_url}
+
 
 # Authentication setup (single user; see web/auth.py)
 login_manager.init_app(app)

@@ -28,7 +28,7 @@ with patch.object(db_mongo, "ensure_indexes"):
         run_fetch_details_batch_jobs,
     )
 
-HTML = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+from tracker_page import TRACKER_PAGE as HTML  # noqa: E402  (index.html + its JS/CSS)
 
 USER_URL = "https://de.indeed.com/viewjob?jk=65ad798c3e603bb0"
 JOB_KEY = "65ad798c3e603bb0"

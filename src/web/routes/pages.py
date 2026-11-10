@@ -39,18 +39,19 @@ def manual_apply_page():
 
 @bp.route("/api/dev/reload-token")
 def api_dev_reload_token():
-    """Return latest mtime of HTML templates so the browser can auto-refresh."""
-    templates_dir = current_app.template_folder or ""
+    """Latest mtime of templates + static JS/CSS, so the browser can auto-refresh."""
+    watched = (
+        (current_app.template_folder or "", (".html", ".htm")),
+        (current_app.static_folder or "", (".js", ".css")),
+    )
     latest = 0.0
-    try:
-        for name in os.listdir(templates_dir):
-            if not name.endswith((".html", ".htm")):
-                continue
-            path = os.path.join(templates_dir, name)
-            try:
-                latest = max(latest, os.path.getmtime(path))
-            except OSError:
-                continue
-    except OSError:
-        pass
+    for folder, suffixes in watched:
+        for dirpath, _dirs, files in os.walk(folder):
+            for name in files:
+                if not name.endswith(suffixes):
+                    continue
+                try:
+                    latest = max(latest, os.path.getmtime(os.path.join(dirpath, name)))
+                except OSError:
+                    continue
     return jsonify({"token": str(int(latest * 1000))})

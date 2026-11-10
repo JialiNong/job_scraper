@@ -2,7 +2,7 @@
 # Claude Code Stop hook: when Claude finishes a turn, run unit + browser E2E
 # tests IF the web UI's code changed since the last run.
 #
-#   - Watches the content of src/web, src/core, templates, tests/ (not git state,
+#   - Watches the content of src/web, src/core, templates, static, tests/ (not git state,
 #     so committing does not trigger a re-run).
 #   - Pass: prints a one-line note and lets Claude stop.
 #   - Fail: exit 2 + failure summary on stderr, so Claude sees it and fixes it.
@@ -16,7 +16,7 @@ STATE_FILE="logs/.e2e_hook_state"
 LOG_FILE="logs/e2e_last.log"
 mkdir -p logs
 
-fingerprint=$(git ls-files -co --exclude-standard -- src/web src/core templates tests \
+fingerprint=$(git ls-files -co --exclude-standard -- src/web src/core templates static tests \
   | grep -v '__pycache__' | sort | xargs shasum 2>/dev/null | shasum | cut -d' ' -f1)
 
 last=""
