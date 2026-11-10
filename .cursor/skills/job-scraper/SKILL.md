@@ -4,10 +4,11 @@ description: >-
   Project conventions for the personal job_scraper (Indeed/LinkedIn scrape,
   title filters, Lingua language gate, AI matching (model labels + code score),
   Telegram bot, Web UI). Use whenever editing scrapers, matching, config,
-  shell pipelines, bot commands, docs/, or architecture. Enforces English
-  docs/comments, keeps docs/architecture.md in sync with flow changes, and
-  requires an impact check of related UI/data/filters/environments in the
-  same PR.
+  shell pipelines, bot commands, docs/, architecture, or Tracker UI
+  (templates/static CSS/JS). Enforces English docs/comments, phone vs desktop
+  interaction parity, unified phone control sizing, keeps docs/architecture.md
+  in sync with flow changes, and requires an impact check of related
+  UI/data/filters/environments in the same PR.
 ---
 
 # Job Scraper — Project Skill
@@ -69,13 +70,50 @@ This is the usual miss: the new path works in isolation, and an older sibling st
 | Form fields | clear / reset, defaults, validation, edit / prefill, save payload, backend persistence, display on cards / detail, search / filters / counts / stats, export |
 | New data fields | old records without the field (backfill-free fallbacks), API responses, scrape / fetch merge rules (**do not overwrite user input**) |
 | New statuses / flags | filters, counts, badges, stats, timelines |
-| UI | desktop + mobile (~375px), toolbar consistency with sibling pages |
+| UI | desktop + mobile (~375px), toolbar consistency with sibling pages; see **Web UI** below |
 | Environments | local vs Render (no Playwright on Render; lazy imports so Save Link Only / Flask can start without it) |
 | Tests | the affected neighbors, not only the new happy path |
 
 **Grep** every touched function, field, and component name before finishing. In the PR body and the final report, list the related areas you checked.
 
 A short always-applied pointer lives in [`.cursor/rules/impact-check.mdc`](../../rules/impact-check.mdc).
+
+## Web UI (hard rule)
+
+Apply whenever editing Tracker templates, `static/css/*`, or `static/js/*` — not only when the user mentions mobile.
+
+### Phone vs desktop interaction
+
+Phones have **no hover**. Do not ship desktop-only affordances (`:hover` tooltips, hover-to-reveal detail, click-immediately-navigates) without a touch path.
+
+| Desktop | Phone (default) |
+|---------|-----------------|
+| Hover shows detail / count / preview | Single tap shows the same detail |
+| Click navigates or opens a filtered view | Double-tap (or an explicit link/button) navigates |
+| Copy says “hover” | Copy says “tap” (`TOUCH_UI` / `POINT_VERB` / `[data-point-verb]` in `static/js/index.js`) |
+
+Patterns already in the Tracker:
+
+- Detect touch with `TOUCH_UI` / `@media (hover: none)` (not merely `max-width`)
+- Dual hints: `.cal-hint-hover` / `.cal-hint-touch` (and similar) so copy matches the input mode
+- Heatmap: tap → day panel; double-tap → that day’s applied filter; desktop keeps hover + click-to-open
+
+When adding a new hover-driven control, implement the touch equivalent **in the same PR** and update visible hints.
+
+### Unify control sizing (do not patch one button)
+
+If the user points at one tall / short / uneven control on phone, **do not only fix that node**. Treat it as a density/token problem for the whole surface.
+
+1. Prefer shared tokens — phone control height is `--phone-ctrl-h` in `static/css/base.css` (currently `30px`).
+2. Grep sibling controls on the same page and parallel pages (`index`, `unmatched`, `timeouts`, `manual_apply`): toolbar buttons, selects, filter chips, Save/Add, close (×), batch bar, list row actions.
+3. Remove one-off `min-height: 44px` (or similar) touch mins that fight the shared token unless there is an explicit a11y reason.
+4. Verify ~375px width: controls should share one visual height rhythm, not a mix of “fixed this one” outliers.
+
+Same idea for color/weight (e.g. pale Save buttons): match the established solid primary style across Save / Add / confirm actions, not only the button named in chat.
+
+### First-load request order
+
+On Tracker cold entry, **`/api/jobs` is critical path**. Chips (`/api/stats`) and Overview (journey / heatmap / locations) load **after** the first job list (`loadAfterJobList` / `listReady` in `static/js/index.js`). Do not reintroduce parallel `/api/stats` on init without a reason.
 
 ## Matching source of truth
 
@@ -141,10 +179,11 @@ There is no cron / launchd schedule in this project; do not add one. When you ch
 
 1. Read this skill + skim `docs/architecture.md` for the affected stage.
 2. Implement the code / script / bot change.
-3. Update `docs/architecture.md` if flow/commands/filters/gates changed.
-4. If matching changed, keep `docs/matching_rules.md`, the schema in `evaluator.py`, and `MATCH_WEIGHTS` aligned, and run `scripts/tools/eval_matcher.py`.
-5. Impact check: grep usages of every touched function / field / component; update neighbors from the checklist in the same PR.
-6. Briefly tell the user what flow docs were updated and which related areas you checked.
+3. If UI changed: apply **Web UI** (touch vs hover, unify `--phone-ctrl-h` / sibling controls, keep job-list-first loading).
+4. Update `docs/architecture.md` if flow/commands/filters/gates changed.
+5. If matching changed, keep `docs/matching_rules.md`, the schema in `evaluator.py`, and `MATCH_WEIGHTS` aligned, and run `scripts/tools/eval_matcher.py`.
+6. Impact check: grep usages of every touched function / field / component; update neighbors from the checklist in the same PR.
+7. Briefly tell the user what flow docs were updated and which related areas you checked.
 
 ## Out of scope reminders
 
