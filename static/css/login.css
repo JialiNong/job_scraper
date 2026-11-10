@@ -50,7 +50,6 @@ input[type="password"] {
   font: inherit;
   font-size: .95rem;
   color: var(--text);
-  outline: none;
 }
 input:focus { border-color: var(--accent); }
 

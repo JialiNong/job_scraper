@@ -13,7 +13,6 @@
   color: var(--text);
   padding: 8px 12px;
   font-size: .92rem;
-  outline: none;
   transition: border-color .15s;
 }
 .toolbar input[type="search"]:focus { border-color: var(--accent); }
@@ -26,7 +25,6 @@
   color: var(--text);
   padding: 7px 10px;
   font-size: .88rem;
-  outline: none;
 }
 .toolbar select { cursor: pointer; }
 .count-label {
@@ -150,6 +148,8 @@
   user-select: none;
 }
 .job-grid.layout-compact .card:not(.expanded) .card-row:hover { background: var(--surface2); }
+/* Rows are keyboard buttons: draw the ring inside so the list edge doesn't clip it */
+.job-grid.layout-compact .card-row:focus-visible { outline-offset: -2px; border-radius: 4px; }
 .job-grid.layout-compact .card-body { display: none; padding: 0 16px 16px; gap: 12px; }
 .job-grid.layout-compact .card.expanded .card-body { display: flex; }
 .row-chevron { display: none; }
@@ -163,6 +163,27 @@
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .row-meta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* Rows size themselves by their own width, not the viewport: the same width
+   happens on a tablet, a phone in landscape, or a desktop with the details
+   panel open. Low-priority pills drop out first so the title keeps its room
+   (before, the pills never shrank and pushed the title down to "La…" or out). */
+.job-grid.layout-compact .card-row { container: jobrow / inline-size; }
+@container jobrow (max-width: 860px) {
+  .row-meta .country-pill,
+  .row-meta .row-loc,
+  .row-meta .source-pill,
+  .row-meta .source-badge,
+  .row-meta .origin-pill { display: none; }
+}
+@container jobrow (max-width: 720px) {
+  .row-meta > :not(.status-pill):not(.score-badge):not(.row-open):not(.status-row) { display: none; }
+  /* Two lines, so two jobs with the same long prefix can still be told apart */
+  .row-title {
+    white-space: normal;
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  }
+}
 .row-loc {
   font-size: .8rem; color: var(--muted);
   max-width: 150px;
@@ -172,7 +193,7 @@
 /* ── Pills & score ─────────────────────────────────────────────── */
 .status-pill {
   flex-shrink: 0;
-  font-size: .74rem; font-weight: 700;
+  font-size: .75rem; font-weight: 700;
   padding: 2px 9px;
   border-radius: 999px;
   border: 1.5px solid currentColor;
@@ -294,9 +315,13 @@
 
 @media (max-width: 720px) {
   .job-grid { grid-template-columns: minmax(0, 1fr); }
-  .job-grid.layout-compact .row-loc { display: none; }
-  .job-grid.layout-compact .row-meta .meta-pill,
-  .job-grid.layout-compact .row-meta .country-pill { display: none; }
   .count-label { margin-left: 0; flex-basis: 100%; }
   .toast { left: 16px; right: 16px; bottom: 16px; }
+}
+
+/* ── Touch: 44px targets on coarse pointers ────────────────────── */
+@media (pointer: coarse) {
+  .row-open, .page-btn, .pagination button, #pager button,
+  .layout-toggle button { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; }
+  .job-grid.layout-compact .card-select-wrap { width: 44px; height: 44px; margin: -8px; }
 }

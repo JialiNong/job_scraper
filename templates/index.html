@@ -69,38 +69,12 @@
   <div class="page-head">
     <div class="tabs" role="tablist" aria-label="Tracker views">
       <button type="button" role="tab" id="tabJobs" aria-selected="true" aria-controls="jobsView" onclick="showTrackerView('jobs')">Jobs</button>
-      <button type="button" role="tab" id="tabOverview" aria-selected="false" aria-controls="overviewView" onclick="showTrackerView('overview')">Overview</button>
+      <button type="button" role="tab" id="tabOverview" aria-selected="false" tabindex="-1" aria-controls="overviewView" onclick="showTrackerView('overview')">Overview</button>
     </div>
     <div class="page-actions">
       <button id="refreshBtn" class="ui-btn" onclick="refreshAll()">Refresh</button>
     </div>
   </div>
-
-  <!-- ── Pipeline rail ─────────────────────────────────────────────── -->
-  <section class="funnel-bar" id="funnelBar" aria-label="Pipeline">
-    <div class="rail-head">
-      <span class="rail-total" id="f-clicked">–</span>
-      <span class="rail-total-label">jobs opened after the title check. The bar below is all of them, to scale.</span>
-    </div>
-    <!-- To scale: each part's width is its share of all opened jobs.
-         Applied sits inside AI matched (every applied job was matched). -->
-    <div class="rail-bar" id="railBar">
-      <div class="seg seg-german" data-key="german">
-        <div class="seg-label"><span class="funnel-num" id="f-german">–</span><span class="funnel-label">Skipped, not in English</span><span class="funnel-pct" id="fp-german"></span></div>
-      </div>
-      <div class="seg seg-english" data-key="english">
-        <div class="seg-label"><span class="funnel-num" id="f-english">–</span><span class="funnel-label">In English, not matched</span><span class="funnel-pct" id="fp-english"></span></div>
-      </div>
-      <div class="seg seg-matched" data-key="matched">
-        <div class="seg-label"><span class="funnel-num" id="f-matched">–</span><span class="funnel-label">AI matched</span><span class="funnel-pct" id="fp-matched"></span></div>
-        <div class="seg seg-applied" data-key="applied">
-          <div class="seg-label"><span class="funnel-num" id="f-applied">–</span><span class="funnel-label">Applied (incl. rejected)</span><span class="funnel-pct" id="fp-applied"></span></div>
-        </div>
-      </div>
-    </div>
-    <!-- Labels of parts too narrow to hold their own text -->
-    <div class="rail-outside" id="railOutside"></div>
-  </section>
 
   <!-- ── Jobs view ─────────────────────────────────────────────────── -->
   <div id="jobsView" class="tracker-view" role="tabpanel" aria-labelledby="tabJobs">
@@ -176,16 +150,20 @@
 
     <!-- Floating action bar, shown while "Select jobs" is on -->
     <div class="batch-fetch-bar" id="batchFetchBar">
-      <span class="batch-fetch-meta" id="batchFetchMeta">0 selected</span>
-      <button type="button" class="batch-fetch-btn select-mode-only" id="selectAllVisibleBtn" onclick="selectAllVisible()" title="Select every card on this page (for Delete selected)">Select all on page</button>
-      <button type="button" class="batch-fetch-btn" id="selectVisibleBtn" onclick="selectVisibleRecommended()" title="Select missing-detail / fetchable cards on this page">Select visible</button>
-      <button type="button" class="batch-fetch-btn" id="selectMissingBtn" onclick="selectMissingDetails()" title="Select jobs that still need details (all pages, current filters — including Applied)">Select missing details</button>
-      <button type="button" class="batch-fetch-btn" id="selectMissingAiBtn" onclick="selectMissingAi()" title="Select jobs with no AI result yet (all pages, current filters), then Run AI for selected">Select missing AI result</button>
-      <button type="button" class="batch-fetch-btn" id="clearFetchSelectBtn" onclick="clearFetchSelection()">Clear selection</button>
+      <div class="bf-helpers">
+        <span class="batch-fetch-meta" id="batchFetchMeta">0 selected</span>
+        <button type="button" class="batch-fetch-btn select-mode-only" id="selectAllVisibleBtn" onclick="selectAllVisible()" title="Select every card on this page (for Delete selected)">Select all on page</button>
+        <button type="button" class="batch-fetch-btn" id="selectVisibleBtn" onclick="selectVisibleRecommended()" title="Select missing-detail / fetchable cards on this page">Select visible</button>
+        <button type="button" class="batch-fetch-btn" id="selectMissingBtn" onclick="selectMissingDetails()" title="Select jobs that still need details (all pages, current filters — including Applied)">Select missing details</button>
+        <button type="button" class="batch-fetch-btn" id="selectMissingAiBtn" onclick="selectMissingAi()" title="Select jobs with no AI result yet (all pages, current filters), then Run AI for selected">Select missing AI result</button>
+        <button type="button" class="batch-fetch-btn" id="clearFetchSelectBtn" onclick="clearFetchSelection()">Clear selection</button>
+      </div>
       <span class="batch-sep" aria-hidden="true"></span>
-      <button type="button" class="btn-fetch-details" id="fetchSelectedBtn" onclick="fetchDetailsForSelected()" disabled title="Scrape title, company, location, and description only (no AI)">Fetch details</button>
-      <button type="button" class="btn-run-ai" id="runAiSelectedBtn" onclick="runAiForSelected()" disabled title="Scrape details if missing, then run AI matching">Run AI match</button>
-      <button type="button" class="batch-fetch-btn batch-delete-btn select-mode-only" id="deleteSelectedBtn" onclick="deleteSelectedJobs()" disabled title="Permanently delete every selected job">Delete</button>
+      <div class="bf-actions">
+        <button type="button" class="btn-fetch-details" id="fetchSelectedBtn" onclick="fetchDetailsForSelected()" disabled title="Scrape title, company, location, and description only (no AI)">Fetch details</button>
+        <button type="button" class="btn-run-ai" id="runAiSelectedBtn" onclick="runAiForSelected()" disabled title="Scrape details if missing, then run AI matching">Run AI match</button>
+        <button type="button" class="batch-fetch-btn batch-delete-btn select-mode-only" id="deleteSelectedBtn" onclick="deleteSelectedJobs()" disabled title="Permanently delete every selected job">Delete</button>
+      </div>
     </div>
     <div class="batch-fetch-banner" id="batchFetchBanner" hidden></div>
     <div class="batch-fetch-progress" id="batchFetchProgress" hidden></div>
@@ -204,6 +182,32 @@
 
   <!-- ── Overview view ─────────────────────────────────────────────── -->
   <div id="overviewView" class="tracker-view overview" role="tabpanel" aria-labelledby="tabOverview" hidden>
+
+    <!-- ── Pipeline rail ─────────────────────────────────────────────── -->
+    <section class="funnel-bar" id="funnelBar" aria-label="Pipeline">
+      <div class="rail-head">
+        <span class="rail-total" id="f-clicked">–</span>
+        <span class="rail-total-label">jobs opened after the title check. The bar below is all of them, to scale.</span>
+      </div>
+      <!-- To scale: each part's width is its share of all opened jobs.
+           Applied sits inside AI matched (every applied job was matched). -->
+      <div class="rail-bar" id="railBar">
+        <div class="seg seg-german" data-key="german">
+          <div class="seg-label"><span class="funnel-num" id="f-german">–</span><span class="funnel-label">Skipped, not in English</span><span class="funnel-pct" id="fp-german"></span></div>
+        </div>
+        <div class="seg seg-english" data-key="english">
+          <div class="seg-label"><span class="funnel-num" id="f-english">–</span><span class="funnel-label">In English, not matched</span><span class="funnel-pct" id="fp-english"></span></div>
+        </div>
+        <div class="seg seg-matched" data-key="matched">
+          <div class="seg-label"><span class="funnel-num" id="f-matched">–</span><span class="funnel-label">AI matched</span><span class="funnel-pct" id="fp-matched"></span></div>
+          <div class="seg seg-applied" data-key="applied">
+            <div class="seg-label"><span class="funnel-num" id="f-applied">–</span><span class="funnel-label">Applied (incl. rejected)</span><span class="funnel-pct" id="fp-applied"></span></div>
+          </div>
+        </div>
+      </div>
+      <!-- Labels of parts too narrow to hold their own text -->
+      <div class="rail-outside" id="railOutside"></div>
+    </section>
 
     <div class="cal-section panel" id="calSection">
       <div class="cal-header">
@@ -266,7 +270,7 @@
 
     <div class="loc-section panel" id="locSection">
       <div class="loc-header">
-        <h2 class="loc-title">Where you applied <span>hover for count</span></h2>
+        <h2 class="loc-title">Where you applied <span><span data-point-verb>hover</span> for count</span></h2>
         <div class="loc-subtitle" id="locSubtitle">Applied, rejected, interview and offer</div>
       </div>
       <div class="loc-bubbles" id="locBubbles">

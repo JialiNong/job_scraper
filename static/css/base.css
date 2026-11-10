@@ -2,8 +2,8 @@
    the app shell (sidebar + main column) and a few shared controls.
    Page-specific rules stay in static/css/<page>.css.
 
-   Layout: status/nav sidebar on the left; main column = page head,
-   pipeline rail (Tracker), then a quiet list. One bold element per page. */
+   Layout: status/nav sidebar on the left; main column = page head, then a
+   quiet list (the Tracker's pipeline rail lives on its Overview tab). */
 :root {
   /* Surfaces: sage-tinted greys */
   --bg: #eef1ec;
@@ -11,33 +11,33 @@
   --surface2: #e6ebe4;
   --border: #d2d9d0;
   --text: #1d2a2c;
-  --muted: #5d6d6c;
+  --muted: #576665;
 
   /* Ultramarine: focus, selection, primary action */
   --accent: #3448c5;
   --accent-ink: #ffffff;
   --accent-soft: #dfe3fb;
 
-  --danger: #b0473b;
-  --success: #2f8a57;
-  --warning: #a86c0c;
+  --danger: #a64338;
+  --success: #266f46;
+  --warning: #89580a;
 
   /* Job status colours (one system for pills, dots, timelines) */
-  --pending: #5f7a8a;
-  --applied: #3d79bf;
-  --rejected: #b0473b;
-  --interview: #b97a12;
-  --offer: #2f8a57;
-  --unsuitable: #7a5fa8;
-  --closed: #7c8584;
-  --closed_no_reply: #98a09e;
-  --prev_rejected: #a8405e;
-  --too_many_questions: #9a7b14;
-  --repost: #2f8590;
-  --duplicate: #b5642a;
+  --pending: #4f6673;
+  --applied: #33649e;
+  --rejected: #a64338;
+  --interview: #885a0d;
+  --offer: #266f46;
+  --unsuitable: #70559d;
+  --closed: #545b5a;
+  --closed_no_reply: #5b6563;
+  --prev_rejected: #a63f5d;
+  --too_many_questions: #786010;
+  --repost: #266c75;
+  --duplicate: #945222;
 
   /* AI recommendations */
-  --ai: #6b55b8;
+  --ai: #6851b6;
 
   /* Manual highlights (gold chip, dark ink in both themes) */
   --hl: #f0c75e;
@@ -68,22 +68,22 @@
     --surface2: #222c2e;
     --border: #2c383a;
     --text: #e2e8e4;
-    --muted: #8e9c98;
+    --muted: #919e9a;
     --accent: #8e9bff;
     --accent-ink: #0f1430;
     --accent-soft: #262d55;
-    --danger: #e07a6c;
+    --danger: #e18072;
     --success: #5cbf84;
     --warning: #e0a646;
     --pending: #8fb0c4;
     --applied: #6fa3e0;
-    --rejected: #e07a6c;
+    --rejected: #e18072;
     --interview: #e0a646;
     --offer: #5cbf84;
     --unsuitable: #b39ce0;
-    --closed: #8a9492;
+    --closed: #959e9c;
     --closed_no_reply: #a7b0ae;
-    --prev_rejected: #e07995;
+    --prev_rejected: #e17d98;
     --too_many_questions: #d9bb4f;
     --repost: #5fc0c9;
     --duplicate: #e59a62;
@@ -169,7 +169,9 @@ h1, h2, h3 { font-family: var(--f-display); letter-spacing: -0.01em; text-wrap: 
   font-size: .8rem; font-weight: 700; color: var(--muted);
   padding: 0 10px 6px;
 }
-.side-extra { display: flex; flex-direction: column; min-height: 0; }
+.side-extra { display: flex; flex-direction: column; flex: none; }
+/* flex: none so a long status list makes the sidebar scroll instead of
+   squeezing under "Log out" (it used to draw over it on short windows) */
 .side-logout { margin-top: auto; color: var(--muted); font-size: .88rem; }
 
 .main {
@@ -256,8 +258,11 @@ h1, h2, h3 { font-family: var(--f-display); letter-spacing: -0.01em; text-wrap: 
 .pop .filter-group { display: flex; gap: 6px; align-items: center; }
 .pop .filter-group.hidden-filter { display: none; }
 
-/* ── Phone: sidebar becomes a top bar ──────────────────────────── */
-@media (max-width: 760px) {
+/* ── Phone: sidebar becomes a top bar ──────────────────────────────
+   Also on short screens (a phone in landscape): a full-height sidebar
+   would not fit there. Keep this query in sync with the stats-bar
+   block in index.css. */
+@media (max-width: 760px), (max-height: 520px) {
   .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 1fr; }
   .side {
     position: static; height: auto; overflow: visible;
@@ -278,4 +283,13 @@ h1, h2, h3 { font-family: var(--f-display); letter-spacing: -0.01em; text-wrap: 
   .side-extra { order: 4; flex-basis: 100%; }
   .side-label { display: none; }
   .main { padding: 16px 16px 72px; }
+}
+
+/* ── Touch: 44px targets on coarse pointers only (desktop keeps density) ── */
+@media (pointer: coarse) {
+  .nav a, .side-logout, .ui-btn, .tabs button,
+  .pop select, .pop input, .toolbar select,
+  .toolbar input[type="search"], .toolbar input[type="date"] { min-height: 44px; }
+  .tabs button { padding-inline: 18px; }
+  .brand { display: inline-flex; align-items: center; min-height: 44px; }
 }

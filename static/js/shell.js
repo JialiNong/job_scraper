@@ -1,4 +1,5 @@
-/* Shared page chrome: the "Filters" popover on the job-list pages.
+/* Shared page chrome: the "Filters" popover and keyboard-operable list rows
+   on the job-list pages.
    Loaded before the page script. */
 
 function toggleFilterPop(event) {
@@ -8,14 +9,17 @@ function toggleFilterPop(event) {
   if (!pop || !btn) return;
   pop.hidden = !pop.hidden;
   btn.setAttribute('aria-expanded', String(!pop.hidden));
+  if (!pop.hidden) pop.querySelector('select, input')?.focus();
 }
 
-function closeFilterPop() {
+/* With returnFocus (Esc), focus goes back to the Filters button instead of <body> */
+function closeFilterPop({ returnFocus = false } = {}) {
   const pop = document.getElementById('filterPop');
   const btn = document.getElementById('filterBtn');
   if (!pop || pop.hidden) return;
   pop.hidden = true;
   if (btn) btn.setAttribute('aria-expanded', 'false');
+  if (returnFocus && btn) btn.focus();
 }
 
 /** "Filters (2)": how many selects in the popover differ from their page-load default. */
@@ -36,7 +40,16 @@ document.addEventListener('click', (e) => {
   if (pop && !pop.hidden && !pop.contains(e.target)) closeFilterPop();
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape') closeFilterPop();
+  if (e.key === 'Escape') {
+    closeFilterPop({ returnFocus: true });
+    return;
+  }
+  // List rows are <div role="button">: Enter / Space open them like a click
+  const row = e.target.closest && e.target.closest('.card-row[role="button"]');
+  if (row && e.target === row && (e.key === 'Enter' || e.key === ' ')) {
+    e.preventDefault();
+    row.click();
+  }
 });
 document.addEventListener('change', (e) => {
   if (e.target.closest && e.target.closest('#filterPop')) updateFilterCount();

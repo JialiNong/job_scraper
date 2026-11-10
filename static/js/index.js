@@ -9,6 +9,15 @@ let debounceTimer = null;
 let dateDebounceTimer = null;
 let jobsAbortController = null;
 const SEARCH_DEBOUNCE_MS = 600; // wait until typing pauses before searching
+// Touch screens cannot hover: copy says "tap" there
+const POINT_VERB = window.matchMedia?.('(hover: none)').matches ? 'tap' : 'hover';
+document.querySelectorAll('[data-point-verb]').forEach(el => { el.textContent = POINT_VERB; });
+// The Overview widgets (journey, heatmap, locations) wait for the first job
+// list, so on a cold server the list gets the database connections first.
+// Never hold them back for more than a few seconds.
+let resolveListReady;
+const listReady = new Promise(resolve => { resolveListReady = resolve; });
+setTimeout(() => resolveListReady(), 4000);
 const collapsedGroups = new Set(); // tracks which date groups are collapsed
 let currentLayout = localStorage.getItem('jobLayout') || 'compact';
 const jobHighlights = {}; // job_id -> string[]
@@ -86,24 +95,36 @@ function setLayout(mode) {
   }
 }
 
+/* Open or close one card's details panel. With focus: opening moves focus to
+   the panel title (screen readers announce the job), closing returns it to the row. */
+function setCardOpen(card, open, { focus = false } = {}) {
+  card.classList.toggle('expanded', open);
+  const row = card.querySelector('.card-row');
+  if (row) row.setAttribute('aria-expanded', String(open));
+  if (!focus) return;
+  const target = open ? card.querySelector('.card-title-text') : row;
+  target?.focus({ preventScroll: true });
+}
+
 function toggleCardExpand(rowEl) {
   if (currentLayout !== 'compact') return;
   const card = rowEl.closest('.card');
   if (!card) return;
   const open = !card.classList.contains('expanded');
   collapseOtherCards(card);
-  card.classList.toggle('expanded', open);
+  setCardOpen(card, open, { focus: open });
 }
 
 /* List layout shows the open card's body as a details panel: keep one open */
 function collapseOtherCards(keep) {
   document.querySelectorAll('#jobGrid .card.expanded').forEach(c => {
-    if (c !== keep) c.classList.remove('expanded');
+    if (c !== keep) setCardOpen(c, false);
   });
 }
 
 function closeCardPanel(btn) {
-  btn.closest('.card')?.classList.remove('expanded');
+  const card = btn.closest('.card');
+  if (card) setCardOpen(card, false, { focus: true });
 }
 
 document.addEventListener('keydown', (e) => {
@@ -111,7 +132,8 @@ document.addEventListener('keydown', (e) => {
   if (document.querySelector('.tl-modal-backdrop')) return;
   const tag = (document.activeElement?.tagName || '').toLowerCase();
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
-  collapseOtherCards(null);
+  const open = document.querySelector('#jobGrid .card.expanded');
+  if (open) setCardOpen(open, false, { focus: true });
 });
 
 /* ── Toast ───────────────────────────────────────────────────────── */
@@ -241,13 +263,27 @@ function showTrackerView(view) {
   const overview = view === 'overview';
   document.getElementById('jobsView').hidden = overview;
   document.getElementById('overviewView').hidden = !overview;
-  document.getElementById('tabJobs').setAttribute('aria-selected', String(!overview));
-  document.getElementById('tabOverview').setAttribute('aria-selected', String(overview));
+  const tabJobs = document.getElementById('tabJobs');
+  const tabOverview = document.getElementById('tabOverview');
+  tabJobs.setAttribute('aria-selected', String(!overview));
+  tabOverview.setAttribute('aria-selected', String(overview));
+  tabJobs.tabIndex = overview ? -1 : 0;
+  tabOverview.tabIndex = overview ? 0 : -1;
   if (overview) {
     // Heatmap and bubbles measure their width; re-measure now they are visible
     requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
   }
 }
+
+// Tab list keys: Left / Right / Home / End move between the two views
+document.querySelector('.tabs[role="tablist"]')?.addEventListener('keydown', (e) => {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) return;
+  e.preventDefault();
+  const toOverview = e.key === 'End'
+    || (e.key !== 'Home' && document.getElementById('tabJobs').getAttribute('aria-selected') === 'true');
+  showTrackerView(toOverview ? 'overview' : 'jobs');
+  document.getElementById(toOverview ? 'tabOverview' : 'tabJobs').focus();
+});
 
 /* ── Application Journey ─────────────────────────────────────────── */
 function formatJourneyDate(iso) {
@@ -607,7 +643,7 @@ async function loadLocationStats() {
 
     if (sub) {
       sub.textContent = total
-        ? `${total} applied · hover a bubble for count`
+        ? `${total} applied · ${POINT_VERB} a bubble for count`
         : 'Applied · rejected · interview · offer';
     }
     if (!locations.length) {
@@ -623,13 +659,29 @@ async function loadLocationStats() {
 
 window.addEventListener('resize', () => {
   clearTimeout(_locResizeTimer);
-  _locResizeTimer = setTimeout(() => {
-    if (_locStatsCache?.locations?.length) {
-      renderLocationBubbles(_locStatsCache.locations, _locStatsCache.total);
-    }
-    sizeHeatmapToWidth();
-  }, 120);
+  _locResizeTimer = setTimeout(sizeHeatmapToWidth, 120);
 });
+
+// The canvas also changes size without a window resize: it stretches to the
+// Journey panel's height once that loads, and is 0×0 while Overview is hidden.
+// Re-pack the bubbles whenever its real size changes.
+(() => {
+  const root = document.getElementById('locBubbles');
+  if (!root || !window.ResizeObserver) return;
+  let lastW = 0, lastH = 0, timer = null;
+  new ResizeObserver(([entry]) => {
+    const { width, height } = entry.contentRect;
+    if (!width || !height) return; // hidden tab
+    if (Math.abs(width - lastW) < 2 && Math.abs(height - lastH) < 2) return;
+    lastW = width; lastH = height;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      if (_locStatsCache?.locations?.length) {
+        renderLocationBubbles(_locStatsCache.locations, _locStatsCache.total);
+      }
+    }, 120);
+  }).observe(root);
+})();
 
 /* ── Activity calendar heatmap ───────────────────────────────────── */
 let calDaysByDate = {};
@@ -803,11 +855,13 @@ function sizeHeatmapToWidth() {
   const wrapGap = parseFloat(getComputedStyle(wrap).gap) || 8;
   const bodyGap = parseFloat(getComputedStyle(body).gap) || 10;
   const dowWidth = dow ? dow.getBoundingClientRect().width : 16;
-  const detailW = detail ? detail.getBoundingClientRect().width : 0;
-  const available = body.clientWidth - detailW - bodyGap - dowWidth - wrapGap;
+  // On phones the details sit under the grid (column layout): full width for cells
+  const stacked = getComputedStyle(body).flexDirection === 'column';
+  const detailW = detail && !stacked ? detail.getBoundingClientRect().width : 0;
+  const available = body.clientWidth - detailW - (stacked ? 0 : bodyGap) - dowWidth - wrapGap;
   const cell = Math.floor((available - (weekCount - 1) * gap) / weekCount);
   // Desktop keeps the full 26px cells when there is room; shrink to fit otherwise
-  const maxCell = window.innerWidth > 900 ? 26 : (window.innerWidth <= 768 ? 16 : 18);
+  const maxCell = window.innerWidth > 900 ? 26 : (stacked ? 24 : (window.innerWidth <= 768 ? 16 : 18));
   if (cell >= 8) {
     section.style.setProperty('--cal-cell', `${Math.min(cell, maxCell)}px`);
   }
@@ -1225,7 +1279,7 @@ function renderHighlightsBlock(job) {
       <div class="highlights-chips" data-chips>${renderHighlightChips(highlights)}</div>
       <div class="highlights-add-row">
         ${presets}
-        <input class="hl-input" type="text" maxlength="40" placeholder="Custom tag…"
+        <input class="hl-input" type="text" maxlength="40" placeholder="Custom tag…" aria-label="Custom highlight tag"
                onkeydown="if(event.key==='Enter'){event.preventDefault();addHighlightFromInput('${id}');}" />
         <button type="button" class="hl-add-btn" onclick="addHighlightFromInput('${id}')">+ Add</button>
       </div>
@@ -1328,7 +1382,7 @@ function renderApplicantPositionBlock(job) {
   return `
     <div class="applicant-pos-wrap" data-id="${id}" onclick="event.stopPropagation()">
       <span class="ap-label">Applicant # when I applied</span>
-      <input type="number" min="1" step="1" inputmode="numeric" class="applicant-pos-input"
+      <input type="number" min="1" step="1" inputmode="numeric" class="applicant-pos-input" aria-label="Applicant number when I applied"
              value="${escHtml(job.applicant_position || '')}" placeholder="e.g. 25"
              onkeydown="if(event.key==='Enter'){event.preventDefault();saveApplicantPosition('${id}');}" />
       <button type="button" class="btn-save" onclick="saveApplicantPosition('${id}', this)">Save</button>
@@ -1421,8 +1475,9 @@ function renderCard(job) {
 
   card.innerHTML = `
     ${selectBox}
-    <div class="card-row" onclick="toggleCardExpand(this)">
-      <span class="row-chevron">▸</span>
+    <div class="card-row" role="button" tabindex="0" aria-expanded="false"
+         aria-controls="body-${job._id}" onclick="toggleCardExpand(this)">
+      <span class="row-chevron" aria-hidden="true">▸</span>
       <div class="row-main">
         <div class="row-title">${escHtml(job.title || '(No Title)')}</div>
         <div class="row-company">${escHtml(job.company || '')}</div>
@@ -1440,7 +1495,7 @@ function renderCard(job) {
       </div>
     </div>
 
-    <div class="card-body">
+    <div class="card-body" id="body-${job._id}" role="region" aria-label="Job details">
      <button type="button" class="panel-close" onclick="event.stopPropagation(); closeCardPanel(this)" aria-label="Close details" title="Close (Esc)">×</button>
      <div class="card-split">
       <div class="card-split-match">
@@ -1449,18 +1504,17 @@ function renderCard(job) {
           <!-- View mode -->
           <div class="info-view">
             <div class="card-title">
-              <span class="card-title-text">${escHtml(job.title || '(No Title)')}</span>
+              <span class="card-title-text" tabindex="-1">${escHtml(job.title || '(No Title)')}</span>
               <button class="edit-info-btn" onclick="event.stopPropagation(); openEditInfo(this)" title="Edit title / company / location">Edit</button>
-              <button class="delete-job-btn" onclick="event.stopPropagation(); deleteMatchedJob('${job._id}', this)" title="Delete this job permanently">Delete</button>
             </div>
             <div class="card-company">${cardCompanyHtml(job.company, job.location)}</div>
           </div>
           <!-- Edit mode -->
           <div class="info-edit">
-            <input class="info-input" data-field="title"    value="${escHtml(job.title    || '')}" placeholder="Job Title" />
+            <input class="info-input" data-field="title"    value="${escHtml(job.title    || '')}" placeholder="Job Title" aria-label="Job title" />
             <div class="info-edit-row">
-              <input class="info-input" data-field="company"  value="${escHtml(job.company  || '')}" placeholder="Company" />
-              <input class="info-input" data-field="location" value="${escHtml(job.location || '')}" placeholder="Location" />
+              <input class="info-input" data-field="company"  value="${escHtml(job.company  || '')}" placeholder="Company" aria-label="Company" />
+              <input class="info-input" data-field="location" value="${escHtml(job.location || '')}" placeholder="Location" aria-label="Location" />
             </div>
             <div class="info-action-row">
               <button class="info-save-btn"   onclick="saveJobInfo(this)">✓ Save</button>
@@ -1483,6 +1537,21 @@ function renderCard(job) {
         ${applicantPosPillHtml(job)}
       </div>
 
+      ${renderProgressBlock(job)}
+
+      <div class="card-actions-row">
+        <a class="btn-apply ${isAppliedLike(status, job.application_timeline) ? 'btn-applied' : ''}"
+           href="${escHtml(job.link || '#')}" target="_blank" rel="noopener">
+          ${isAppliedLike(status, job.application_timeline) ? 'View posting' : 'Apply'}
+        </a>
+        <button type="button" class="${runAiCls}" data-id="${job._id}"
+                onclick="event.stopPropagation(); runAiForJob('${job._id}', this)"
+                title="Run AI matching — uses the stored JD when it is complete, otherwise scrapes the job page in Chrome first">
+          ${runAiLabel}
+        </button>
+        ${fetchBtn}
+      </div>
+
       ${renderCompanyHistory(job)}
 
       ${job.recommend_reason ? `<div class="recommend-reason"><span class="recommend-reason-label">Why AI recommends this</span>${escHtml(job.recommend_reason)}</div>` : ''}
@@ -1498,29 +1567,16 @@ function renderCard(job) {
         <div class="job-description-body" data-loaded="0">Expand to load…</div>
       </details>
 
-      <div class="card-actions-row">
-        <a class="btn-apply ${isAppliedLike(status, job.application_timeline) ? 'btn-applied' : ''}"
-           href="${escHtml(job.link || '#')}" target="_blank" rel="noopener">
-          ${isAppliedLike(status, job.application_timeline) ? 'View posting' : 'Apply'}
-        </a>
-        <button type="button" class="${runAiCls}" data-id="${job._id}"
-                onclick="event.stopPropagation(); runAiForJob('${job._id}', this)"
-                title="Run AI matching — uses the stored JD when it is complete, otherwise scrapes the job page in Chrome first">
-          ${runAiLabel}
-        </button>
-        ${fetchBtn}
-      </div>
-
           ${doSection}
           ${lookingSection}
           ${matchReasons ? `<ul style="font-size:.78rem;color:var(--muted);padding-left:16px;line-height:1.6;">${matchReasons}</ul>` : ''}
       </div>
         <div class="card-split-track">
-          ${renderProgressBlock(job)}
           ${renderApplicantPositionBlock(job)}
           <div class="notes-wrap">
             <textarea
               class="notes-textarea"
+              aria-label="Notes"
               data-id="${job._id}"
               placeholder="Notes: Rejected after interview / Direct rejection / Salary mismatch…"
               rows="2"
@@ -1529,6 +1585,9 @@ function renderCard(job) {
           </div>
           ${renderApplicationQa(job)}
           ${renderHighlightsBlock(job)}
+          <div class="card-danger-row">
+            <button type="button" class="delete-job-btn" onclick="event.stopPropagation(); deleteMatchedJob('${job._id}', this)" title="Delete this job permanently">Delete job</button>
+          </div>
         </div>
      </div>
     </div>
@@ -1542,10 +1601,10 @@ function renderQaItemHtml(item = {}) {
   return `
     <div class="qa-item">
       <div class="qa-item-header">
-        <input class="qa-question" type="text" placeholder="Question asked in the application…" value="${q}">
-        <button type="button" class="qa-remove" title="Remove" onclick="removeQaItem(this)">×</button>
+        <input class="qa-question" type="text" placeholder="Question asked in the application…" aria-label="Question" value="${q}">
+        <button type="button" class="qa-remove" title="Remove" aria-label="Remove question" onclick="removeQaItem(this)">×</button>
       </div>
-      <textarea class="qa-answer" rows="2" placeholder="Your answer…">${a}</textarea>
+      <textarea class="qa-answer" rows="2" placeholder="Your answer…" aria-label="Answer">${a}</textarea>
     </div>
   `;
 }
@@ -1713,8 +1772,8 @@ function renderProgressBlock(job) {
         ${undoBtn}
       </div>
       <div class="progress-side">
-        <span class="progress-side-label">Other</span>
-        <select class="status-side-select" data-id="${id}" onchange="updateSideStatus(this)">
+        <label class="progress-side-label" for="side-${id}">Other</label>
+        <select class="status-side-select" id="side-${id}" data-id="${id}" onchange="updateSideStatus(this)">
           <option value="" ${!sideVal ? 'selected' : ''}>—</option>
           <option value="unsuitable" ${sideVal==='unsuitable' ? 'selected':''}>Unsuitable</option>
           <option value="closed" ${sideVal==='closed' ? 'selected':''}>Closed (before applying)</option>
@@ -1891,6 +1950,8 @@ async function loadJobs() {
   } catch (err) {
     if (err.name === 'AbortError') return;
     grid.innerHTML = `<div class="empty"><h2>Loading Failed</h2><p>${err.message}</p></div>`;
+  } finally {
+    if (!signal.aborted) resolveListReady();
   }
 }
 
@@ -1923,7 +1984,7 @@ function openMatchedCard(card) {
   expandDateGroupForCard(card);
   if (currentLayout === 'compact') {
     collapseOtherCards(card);
-    card.classList.add('expanded');
+    setCardOpen(card, true);
   }
   card.classList.add('open-flash');
   card.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -2995,18 +3056,23 @@ function escHtml(str) {
 function refreshAll() {
   // Critical path first (chips + job list), then heavier widgets
   loadStats();
-  loadJobs();
-  setTimeout(() => {
-    loadJourney();
-    loadLocationStats();
-    loadDailyStats();
-  }, 0);
+  loadJobs().finally(loadOverviewData);
 }
 
-// Auto-refresh the page when templates or static JS/CSS change (no server restart needed)
+function loadOverviewData() {
+  loadJourney();
+  loadLocationStats();
+  loadDailyStats();
+}
+
+// Auto-refresh the page when templates or static JS/CSS change (no server restart needed).
+// Local development only: in production this polled every 1.5 s from every open
+// tab (and the server walked the template + static folders for each poll).
 (function setupTemplateHotReload() {
+  if (!['127.0.0.1', 'localhost'].includes(location.hostname)) return;
   let token = null;
   async function check() {
+    if (document.hidden) return;
     try {
       const res = await fetch('/api/dev/reload-token', { cache: 'no-store' });
       if (!res.ok) return;
@@ -3054,8 +3120,4 @@ if (initialApplied) {
 } else {
   loadJobs();
 }
-setTimeout(() => {
-  loadJourney();
-  loadLocationStats();
-  loadDailyStats();
-}, 0);
+listReady.then(loadOverviewData);

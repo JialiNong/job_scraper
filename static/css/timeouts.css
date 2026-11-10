@@ -70,3 +70,8 @@
   .actions .btn { flex: 1; justify-content: center; min-height: 44px; }
   .count-label { margin-left: 0; flex-basis: 100%; }
 }
+
+/* ── Touch: 44px targets on coarse pointers (tablets too) ──────── */
+@media (pointer: coarse) {
+  .btn, .toolbar select { min-height: 44px; }
+}

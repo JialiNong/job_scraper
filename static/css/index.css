@@ -53,7 +53,7 @@
 .stats-bar:not(.stats-expanded) .stat-chip.stat-side:not(.active) { display: none; }
 .stats-bar.stats-expanded .stat-chip[data-status="all"] { margin-top: 8px; }
 
-/* ── Pipeline rail: the page's one bold element ────────────────── */
+/* ── Pipeline rail (Overview tab): its one bold element ────────── */
 .funnel-bar {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -102,10 +102,10 @@
   font-variant-numeric: tabular-nums;
 }
 .funnel-label { font-size: .82rem; font-weight: 700; line-height: 1.25; margin-top: auto; }
-.funnel-pct { font-size: .78rem; line-height: 1.25; opacity: .8; font-variant-numeric: tabular-nums; }
+.funnel-pct { font-size: .78rem; line-height: 1.25; font-variant-numeric: tabular-nums; }
 .funnel-pct:empty { display: none; }
 
-.seg-german  { background: var(--seg-german);  color: var(--muted); }
+.seg-german  { background: var(--seg-german);  color: color-mix(in srgb, var(--text) 50%, var(--muted)); }
 .seg-english { background: var(--seg-english); color: var(--text); }
 .seg-matched { background: var(--seg-matched); color: var(--text); }
 /* Applied lives inside AI matched, flush right */
@@ -139,10 +139,11 @@
   display: grid;
   grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
   gap: 16px;
-  align-items: start;
+  align-items: stretch; /* Journey and Locations share a row: same height */
 }
 .overview[hidden] { display: none; }
-.overview .cal-section { grid-column: 1 / -1; }
+.overview .cal-section,
+.overview .funnel-bar { grid-column: 1 / -1; }
 .panel {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -272,7 +273,7 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   box-shadow: -16px 0 40px var(--shadow);
   cursor: auto;
 }
-.app:has(.job-grid.layout-compact .card.expanded) .main { padding-right: calc(var(--drawer-w) + 28px); }
+.app:has(#jobsView:not([hidden]) .job-grid.layout-compact .card.expanded) .main { padding-right: calc(var(--drawer-w) + 28px); }
 .job-grid.layout-compact .card.expanded .panel-close {
   display: inline-flex; align-items: center; justify-content: center;
   align-self: flex-end;
@@ -285,10 +286,14 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 }
 .job-grid.layout-compact .card.expanded .panel-close:hover { background: var(--surface2); color: var(--text); }
 .job-grid.layout-compact .card.expanded .card-title { font-size: 1.3rem; -webkit-line-clamp: 3; }
-/* With the panel open the list is narrower: keep rows to title, status and score */
-.app:has(.job-grid.layout-compact .card.expanded) .row-meta > :not(.status-pill):not(.score-badge) { display: none; }
-.card.expanded .edit-info-btn,
-.card.expanded .delete-job-btn { opacity: 1; }
+/* The title takes focus only so screen readers announce the opened job; it is
+   not a control, so no ring (the ring wrapped the inline span awkwardly) */
+.card-title-text:focus { outline: none; }
+/* With the panel open the list is narrower: keep rows to title, status and score.
+   Only while the Jobs view shows: on Overview the panel is hidden, so the page
+   takes the full width again (the panel reopens on going back to Jobs). */
+.app:has(#jobsView:not([hidden]) .job-grid.layout-compact .card.expanded) .row-meta > :not(.status-pill):not(.score-badge) { display: none; }
+.card.expanded .edit-info-btn { opacity: 1; }
 @media (max-width: 1080px) {
   .job-grid.layout-compact .card.expanded .card-body {
     top: auto; left: 0; width: auto;
@@ -298,10 +303,10 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
     box-shadow: 0 -16px 40px var(--shadow);
     padding: 18px 18px calc(32px + env(safe-area-inset-bottom, 0px));
   }
-  .app:has(.job-grid.layout-compact .card.expanded) .main { padding-right: 28px; }
+  .app:has(#jobsView:not([hidden]) .job-grid.layout-compact .card.expanded) .main { padding-right: 28px; }
 }
 @media (max-width: 760px) {
-  .app:has(.job-grid.layout-compact .card.expanded) .main { padding-right: 16px; }
+  .app:has(#jobsView:not([hidden]) .job-grid.layout-compact .card.expanded) .main { padding-right: 16px; }
 }
 
 /* ── Application Journey ─────────────────────────────────────── */
@@ -711,9 +716,11 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   font-size: .68rem; color: var(--muted); margin-top: 4px;
   line-height: 1.2;
 }
-.cal-metric.m-clicked .m-num { color: var(--accent); }
-.cal-metric.m-german  .m-num { color: var(--rejected); }
-.cal-metric.m-matched .m-num { color: var(--warning); }
+/* Same meanings as the pipeline rail: grey = skipped, accent = matched,
+   status blue = applied. Red and amber stay reserved for Rejected / Interview. */
+.cal-metric.m-clicked .m-num { color: var(--text); }
+.cal-metric.m-german  .m-num { color: var(--muted); }
+.cal-metric.m-matched .m-num { color: var(--accent); }
 .cal-metric.m-applied .m-num { color: var(--applied); }
 
 /* ── Applied location bubbles (light Apple glass) ─────────────── */
@@ -735,7 +742,11 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   font-size: .72rem;
   color: var(--muted);
 }
+/* The bubble canvas grows to fill the panel when Journey makes the row taller
+   (its height stays the minimum); bubbles re-pack to the new size in JS */
+.loc-section { display: flex; flex-direction: column; }
 .loc-bubbles {
+  flex: 1 0 auto;
   position: relative;
   width: 100%;
   height: 230px;
@@ -923,6 +934,13 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 }
 @media (max-width: 640px) {
   .loc-bubbles { height: 210px; }
+  /* Phone: day details go under the heatmap so the grid gets the full width
+     (beside it, cells shrank to 8px: too small to read or tap) */
+  .cal-body { flex-direction: column; align-items: stretch; gap: 12px; }
+  .cal-wrap { align-self: center; }
+  .cal-detail { max-width: none; width: 100%; flex: none; align-self: auto; padding-top: 0; }
+  .cal-metrics { grid-template-columns: repeat(4, minmax(0, 1fr)); grid-template-rows: auto; flex: none; }
+  .cal-metric .m-label { font-size: .64rem; }
 }
 
 /* ── Toolbar ──────────────────────────────────────────────────── */
@@ -997,7 +1015,6 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   padding-top: 18px;
   border-top: 1px solid var(--border);
 }
-.job-grid.layout-compact .card-split-track .progress-wrap { margin-top: 0; }
 .job-grid.layout-compact .card-split-track .highlights-wrap {
   margin-top: 0;
 }
@@ -1141,7 +1158,6 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   color: var(--text);
   padding: 4px 8px;
   font-size: .75rem;
-  outline: none;
   font-family: inherit;
 }
 .hl-input:focus { border-color: var(--warning); }
@@ -1251,7 +1267,7 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   border: 2px dashed color-mix(in srgb, var(--warning) 60%, transparent);
 }
 .country-pill {
-  font-size: .68rem;
+  font-size: .75rem;
   font-weight: 600;
   border-radius: 6px;
   padding: 2px 7px;
@@ -1425,7 +1441,6 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   padding: 4px 8px;
   font-size: .72rem;
   cursor: pointer;
-  outline: none;
 }
 .status-side-select:focus { border-color: var(--accent); }
 
@@ -1461,7 +1476,6 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   color: var(--text);
   padding: 8px 10px;
   font-size: .85rem;
-  outline: none;
   font-family: inherit;
 }
 .tl-modal input[type="datetime-local"]:focus { border-color: var(--accent); }
@@ -1512,7 +1526,6 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   line-height: 1.5;
   resize: vertical;
   min-height: 60px;
-  outline: none;
   font-family: inherit;
   transition: border-color .15s;
 }
@@ -1570,7 +1583,6 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   color: var(--text);
   padding: 6px 8px;
   font-size: .8rem;
-  outline: none;
   font-family: inherit;
   transition: border-color .15s;
 }
@@ -1586,7 +1598,6 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   line-height: 1.5;
   resize: vertical;
   min-height: 56px;
-  outline: none;
   font-family: inherit;
   transition: border-color .15s;
 }
@@ -1669,26 +1680,32 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   transition: border-color .15s, color .15s;
   opacity: 0;
 }
-.card:hover .edit-info-btn { opacity: 1; }
+.card:hover .edit-info-btn,
+.edit-info-btn:focus-visible { opacity: 1; }
 .edit-info-btn:hover { border-color: var(--accent); color: var(--accent); }
 
+/* Delete sits alone at the very end of the card, away from everyday actions */
+.card-danger-row {
+  display: flex; justify-content: flex-end;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
 .delete-job-btn {
   display: inline-flex;
   align-items: center;
-  margin-left: 4px;
-  padding: 1px 5px;
-  font-size: .7rem;
+  padding: 6px 12px;
+  font-size: .82rem; font-weight: 700;
   background: transparent;
   border: 1px solid var(--border);
-  border-radius: 5px;
-  color: var(--muted);
+  border-radius: 6px;
+  color: var(--danger);
   cursor: pointer;
-  vertical-align: middle;
-  transition: border-color .15s, color .15s, opacity .15s;
-  opacity: 0;
+  transition: border-color .15s, background-color .15s;
 }
-.card:hover .delete-job-btn { opacity: 1; }
-.delete-job-btn:hover { border-color: var(--danger); color: var(--danger); }
+.delete-job-btn:hover {
+  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
 
 .info-edit { display: none; flex-direction: column; gap: 6px; margin-top: 2px; }
 .info-edit.active { display: flex; }
@@ -1699,7 +1716,6 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   color: var(--text);
   font-size: .84rem;
   padding: 6px 9px;
-  outline: none;
   width: 100%;
   transition: border-color .15s;
   font-family: inherit;
@@ -1800,7 +1816,8 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 @media (max-width: 1080px) {
   .overview { grid-template-columns: minmax(0, 1fr); }
 }
-@media (max-width: 760px) {
+/* Same query as the top-bar shell in base.css */
+@media (max-width: 760px), (max-height: 520px) {
   /* Status list becomes a scrolling chip row under the top bar */
   .stats-bar { flex-direction: row; overflow-x: auto; gap: 6px; padding-bottom: 2px; scrollbar-width: none; }
   .stats-bar::-webkit-scrollbar { display: none; }
@@ -1812,6 +1829,8 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   .stat-chip .chip-label { overflow: visible; }
   .stats-more-toggle { flex: none; white-space: nowrap; }
   .stats-bar.stats-expanded .stat-chip[data-status="all"] { margin-top: 0; }
+}
+@media (max-width: 760px) {
 
   .rail-bar { height: 80px; }
   .funnel-num, .rail-total { font-size: 1.45rem; }
@@ -1826,5 +1845,66 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   .panel { padding: 12px; }
   .cal-section { --cal-gap: 2px; --cal-label: 13px; }
 
-  .batch-fetch-bar.select-mode { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+  /* Selection bar: full width, two rows. Select helpers scroll sideways in one
+     line; the three actions share the second row. (It used to wrap to four
+     rows and cover a quarter of the list.) */
+  .batch-fetch-bar.select-mode {
+    left: 12px; right: 12px; transform: none;
+    width: auto; max-width: none;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    flex-direction: column; align-items: stretch; gap: 8px;
+    /* nowrap: wrapping would size the line to the helper strip's full
+       max-content width (~800px) and stretch both rows to it */
+    flex-wrap: nowrap;
+    padding: 8px;
+  }
+  .batch-fetch-bar .bf-helpers {
+    display: flex; gap: 6px; align-items: center;
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .batch-fetch-bar .bf-helpers::-webkit-scrollbar { display: none; }
+  .batch-fetch-bar .bf-helpers > * { flex: none; }
+  .batch-fetch-bar .bf-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+  .batch-fetch-bar .bf-actions > button { justify-content: center; }
+  .batch-fetch-bar .batch-sep { display: none; }
+  /* Keep the last rows of the list reachable above the bar */
+  .app:has(.batch-fetch-bar.select-mode) .main { padding-bottom: 150px; }
+  body:has(.batch-fetch-bar.select-mode) .toast { bottom: 140px; }
+}
+/* Wide screens: the wrappers do not exist for layout */
+.batch-fetch-bar .bf-helpers, .batch-fetch-bar .bf-actions { display: contents; }
+@media (max-width: 760px) {
+  .batch-fetch-bar .bf-helpers { display: flex; }
+  .batch-fetch-bar .bf-actions { display: grid; }
+}
+
+/* ── Touch: 44px targets (coarse pointers only) ──────────────────── */
+@media (pointer: coarse) {
+  .stat-chip, .stats-more-toggle, .filter-highlights,
+  .layout-toggle button, .pagination-btn,
+  .batch-fetch-bar .batch-fetch-btn, .batch-fetch-bar .btn-fetch-details, .batch-fetch-bar .btn-run-ai,
+  .btn-apply, .btn-run-ai, .btn-fetch-details, .btn-save, .btn-add-qa,
+  .progress-btn, .status-side-select, .hl-preset, .hl-add-btn, .hl-input,
+  .delete-job-btn, .jd-copy-btn, .info-save-btn, .info-cancel-btn, .info-input,
+  .applicant-pos-input, .company-filter-chip button {
+    min-height: 44px;
+  }
+  .btn-apply, .company-filter-chip button { display: inline-flex; align-items: center; justify-content: center; }
+  .batch-fetch-bar button { display: inline-flex; align-items: center; justify-content: center; }
+  .company-filter-chip button { min-width: 44px; }
+  .job-grid.layout-compact .card.expanded .panel-close { width: 44px; height: 44px; }
+  /* Edit stays compact beside the title; an invisible margin makes the tap area 44px */
+  .card.expanded .edit-info-btn { position: relative; padding: 3px 10px; }
+  .card.expanded .edit-info-btn::after { content: ""; position: absolute; inset: -8px -4px; }
+  .qa-question, .qa-remove { min-height: 44px; }
+  .qa-remove { min-width: 44px; }
+  /* Inline links: grow the hit area without growing the line */
+  .company-link, .ch-all { padding-block: 10px; margin-block: -10px; }
+  /* Journey dots and info buttons stay small to draw; give them a bigger hit area */
+  .jt-info { position: relative; } /* .jt-node is already absolute */
+  /* Rows sit ~24px apart: grow the info button sideways more than vertically
+     so neighbouring rows' hit areas do not overlap */
+  .jt-info::after { content: ""; position: absolute; inset: -4px -14px; }
+  .jt-node::after { content: ""; position: absolute; inset: -6px; }
+  .cal-detail-link { display: inline-flex; align-items: center; min-height: 44px; }
 }

@@ -42,7 +42,9 @@ function setLayout(mode) {
 function toggleCardExpand(rowEl) {
   if (currentLayout !== 'compact') return;
   const card = rowEl.closest('.card');
-  if (card) card.classList.toggle('expanded');
+  if (!card) return;
+  const open = card.classList.toggle('expanded');
+  rowEl.setAttribute('aria-expanded', String(open));
 }
 
 /* ── Toast ───────────────────────────────────────────────────────── */
@@ -304,7 +306,7 @@ function renderCard(job) {
   card.className = 'card';
   card.id = `card-${job._id}`;
   card.innerHTML = `
-    <div class="card-row" onclick="toggleCardExpand(this)">
+    <div class="card-row" role="button" tabindex="0" aria-expanded="false" onclick="toggleCardExpand(this)">
       <span class="row-chevron">▸</span>
       <div class="row-main">
         <div class="row-title">${escHtml(job.title || '(No Title)')}</div>
@@ -361,6 +363,7 @@ function renderUnmatchedStatusSelect(job) {
   return `
     <div class="status-row">
       <select class="status-select${userStatus === 'watchlist' ? ' s-watchlist' : ''}"
+              aria-label="Can apply?"
               data-id="${job._id}"
               onchange="updateUnmatchedStatus(this)">
         <option value=""    ${userStatus === ''          ? 'selected' : ''}>Not marked</option>
