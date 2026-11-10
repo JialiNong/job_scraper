@@ -147,6 +147,78 @@ TITLE_EXCLUDE_KEYWORDS = [
 ]
 
 
+# ===== API job sources (src/sources/, scripts/run_sources.sh) =====
+# Keyword-less feeds (Arbeitnow, company ATS boards) list every role, so a
+# title must look like a dev role before the AI title check is paid for.
+# Searchable sources (Bundesagentur, Adzuna) already query DEFAULT_KEYWORDS.
+FEED_TITLE_INCLUDE_PATTERNS = [
+    r"\bengineer",
+    r"\bentwickler",
+    r"\bdeveloper\b",
+    r"\bfront[\s-]?end\b",
+    r"\bfull[\s-]?stack\b",
+    r"\bsoftware\b",
+    r"\bweb\b",
+    r"\bprogrammer\b",
+    r"\breact\b",
+    r"\btypescript\b",
+    r"\bjavascript\b",
+    r"\bnode(?:\.?js)?\b",
+]
+
+# Extra title excludes for the API sources only (the shared
+# TITLE_EXCLUDE_KEYWORDS above also apply). Company boards list leadership and
+# graduate roles that the LinkedIn / Indeed keyword searches rarely surface.
+API_TITLE_EXCLUDE_EXTRA = [
+    r"\bVP\b",
+    r"\bVice\s+President\b",
+    r"\bDirector\b",
+    r"\bNew\s+Grad",
+    r"\bGraduate\b",
+    r"\bInternship",
+    r"\bEngineering\s+Manager\b",
+    r"\bWerkstudent",
+    r"\bPraktik",
+    r"\bAusbildung\b",
+    r"\bApprentice",
+]
+
+# Bundesagentur für Arbeit Jobsuche (unofficial public API, documented by bundesAPI)
+ARBEITSAGENTUR_CONFIG = {
+    "source": "arbeitsagentur",
+    "search_url": "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v6/jobs",
+    # Full description lives only on the older v4 detail route (base64 refnr)
+    "detail_url": "https://rest.arbeitsagentur.de/jobboerse/jobsuche-service/pc/v4/jobdetails/{b64}",
+    "job_url": "https://www.arbeitsagentur.de/jobsuche/jobdetail/{refnr}",
+    "api_key": "jobboerse-jobsuche",  # public client id the official web app sends
+    # veroeffentlichtseit only honours these values; others are ignored silently
+    "published_since_choices": (0, 1, 7, 14, 28),
+    "page_size": 100,
+    "max_pages_per_keyword": 3,
+}
+
+ARBEITNOW_CONFIG = {
+    "source": "arbeitnow",
+    "feed_url": "https://www.arbeitnow.com/api/job-board-api",
+    "max_pages": 5,  # 300 jobs per page, newest first (~2–3 days per page)
+}
+
+# Adzuna — opt-in; key from https://developer.adzuna.com is paid beyond 25 trial calls (ADZUNA_APP_ID / ADZUNA_APP_KEY)
+ADZUNA_CONFIG = {
+    "source": "adzuna",
+    "search_url": "https://api.adzuna.com/v1/api/jobs/de/search/{page}",
+    "results_per_page": 50,
+    "max_pages_per_keyword": 2,
+}
+
+# Company ATS boards — watchlist in config/ats_companies.json
+ATS_CONFIG = {
+    "source": "ats",
+    "watchlist_path": "config/ats_companies.json",
+    "max_workers": 8,
+}
+
+
 # ===== Match-stage company blocklist =====
 # Aggregators / job boards that often appear as the scraped "company".
 # Still scored on `jobs`, but never written to `matched_jobs`.

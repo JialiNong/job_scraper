@@ -199,7 +199,9 @@ def main():
     parser = argparse.ArgumentParser(description="AI-powered job matching")
     parser.add_argument("--limit", "-l", type=int, default=None,
                         help="Limit number of jobs to process")
-    parser.add_argument("--source", "-s", choices=["indeed", "linkedin"], default=None,
+    parser.add_argument("--source", "-s",
+                        choices=["indeed", "linkedin", "arbeitnow", "arbeitsagentur", "adzuna", "ats"],
+                        default=None,
                         help="Filter by job source")
     parser.add_argument("--threshold", "-t", type=float, default=MATCH_THRESHOLD,
                         help="Minimum score for the Tracker (0-10)")

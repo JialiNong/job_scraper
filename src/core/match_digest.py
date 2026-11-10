@@ -31,6 +31,16 @@ STATUS_LABELS = {
 }
 
 
+# Display names for the API sources (src/sources/). LinkedIn / Indeed cards keep
+# their original format: .title() label, no company line.
+SOURCE_LABELS = {
+    "arbeitnow": "Arbeitnow",
+    "arbeitsagentur": "Bundesagentur",
+    "adzuna": "Adzuna",
+    "ats": "Company site",
+}
+
+
 def normalize_job_link(job: dict) -> str:
     """Return an absolute job URL (LinkedIn/Indeed relative hrefs → https)."""
     link = (job.get("link") or "").strip()
@@ -84,7 +94,9 @@ def format_job_block(index: int, job: dict) -> str:
     """One job block inside the combined daily card (Telegram HTML)."""
     title = html.escape(str(job.get("title") or "Untitled"))
     location = html.escape(str(job.get("location") or "N/A"))
-    source = html.escape(str(job.get("source") or "unknown").title())
+    source_key = str(job.get("source") or "unknown").lower()
+    source = html.escape(SOURCE_LABELS.get(source_key, source_key.title()))
+    company = html.escape(str(job.get("company") or "")) if source_key in SOURCE_LABELS else ""
     status_key = str(job.get("status") or "pending")
     status = html.escape(STATUS_LABELS.get(status_key, status_key))
 
@@ -96,6 +108,7 @@ def format_job_block(index: int, job: dict) -> str:
 
     lines = [
         f"<b>{index}. {title}</b>",
+        *([f"🏢 {company}"] if company else []),
         f"📍 {location}",
         f"⭐ {score_text}/10 · {source}",
         f"🏷 {status}",

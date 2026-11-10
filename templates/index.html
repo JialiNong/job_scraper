@@ -2706,6 +2706,10 @@
     <option value="all">All Sources</option>
     <option value="linkedin">LinkedIn</option>
     <option value="indeed">Indeed</option>
+    <option value="ats">Company site (ATS)</option>
+    <option value="arbeitnow">Arbeitnow</option>
+    <option value="arbeitsagentur">Bundesagentur</option>
+    <option value="adzuna">Adzuna</option>
   </select>
   <select id="originFilter" onchange="currentPage = 1; loadJobs()" title="How the job got onto the Tracker">
     <option value="all">All Origins</option>
@@ -3732,8 +3736,15 @@ function sourcePillHtml(job) {
       ? `<span class="meta-pill source-pill site-pill" title="${escHtml(job.link || '')}">${escHtml(host)}</span>`
       : '';
   }
-  return `<span class="meta-pill source-pill">${escHtml(source)}</span>`;
+  const label = SOURCE_PILL_LABEL[source.toLowerCase()] || source;
+  return `<span class="meta-pill source-pill">${escHtml(label)}</span>`;
 }
+
+/* API sources (src/sources/): readable names for the stored jobs.source key */
+const SOURCE_PILL_LABEL = {
+  ats: 'company site',
+  arbeitsagentur: 'bundesagentur',
+};
 
 /* Agent rows already show the ✦ agent badge, so only pipeline / manual get a pill. */
 const ORIGIN_PILL = {

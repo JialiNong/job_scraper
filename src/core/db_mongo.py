@@ -84,6 +84,8 @@ def ensure_indexes():
         jobs.create_index("match_score")
         # Unmatched list / count: matched_at exists + score below threshold
         jobs.create_index([("match_score", 1), ("matched_at", -1)])
+        # API sources (src/sources/): company + title dedup across cities / reposts
+        jobs.create_index("dedup_key", sparse=True)
 
         matched = db["matched_jobs"]
         matched.create_index([("matched_at", -1)])

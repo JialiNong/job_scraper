@@ -1,10 +1,19 @@
 # Job Scraper - AI-Powered Job Search Assistant
 
-Automatically scrapes job listings from Indeed and LinkedIn, uses AI to score each match, and notifies you daily.
+Collects job listings from LinkedIn and Indeed (browser), public job APIs (Arbeitnow, Bundesagentur für Arbeit; Adzuna opt-in) and company ATS boards (Greenhouse, Lever, Ashby, Personio, Recruitee, Workable), uses AI to score each match, and notifies you on Telegram.
+
+All job sources and their setup: **[docs/job_sources.md](docs/job_sources.md)**.
 
 ### How it runs
 
-Everything runs on demand from Telegram with one command — there is no scheduled job in this project:
+**API sources: daily in the cloud.** GitHub Actions (`.github/workflows/api-sources.yml`) runs `src/sources/run_sources.py` every morning, so your Mac can stay off. Run it locally with:
+
+```bash
+python3 src/sources/run_sources.py              # Arbeitnow + Bundesagentur + ATS, last 1 day
+python3 src/sources/run_sources.py --dry-run    # preview, no writes
+```
+
+**LinkedIn + Indeed: on demand from Telegram.** These need your Mac's Chrome, so they run with one command:
 
 ```
 /jobs [days] [linkedin_hours] [pages]
@@ -15,6 +24,7 @@ Indeed and LinkedIn are scraped in parallel; each source is AI-matched as soon a
 ## Features
 
 - **Multi-platform scraping** – Indeed and LinkedIn, in parallel
+- **API sources** – Arbeitnow, Bundesagentur and 80 company ATS boards (Adzuna opt-in), daily on GitHub Actions
 - **AI matching** – OpenAI scores each job 0–10 against your profile
 - **Smart deduplication** – already-analyzed jobs are skipped automatically
 - **Human-like behavior** – random delays to avoid detection
@@ -252,7 +262,7 @@ python3 src/matching/ai_matcher.py -s indeed -t 7.5  # Indeed only, stricter
   title:       "Senior Frontend Developer",
   company:     "Tech GmbH",
   location:    "Berlin, Germany",
-  source:      "linkedin",          // "indeed" or "linkedin"
+  source:      "linkedin",          // linkedin / indeed / arbeitnow / arbeitsagentur / adzuna / ats
   link:        "https://...",
   description: "...",
   status:      "new",
