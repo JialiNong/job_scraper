@@ -24,6 +24,8 @@ from core.job_url import (
     expand_short_job_url,
     normalize_pasted_job_url,
     plan_manual_log_action,
+    posting_key,
+    posting_key_fields,
     resolve_job_id,
 )
 
@@ -125,6 +127,27 @@ def get_tracker_job(job_id: str, source: str) -> dict | None:
     else:
         query = {"job_id": job_id, "source": source}
     return col.find_one(query)
+
+
+def reuse_saved_posting(url: str, source: str, job_id: str) -> tuple[str, str]:
+    """
+    Return (source, job_id) to log this URL under.
+
+    When the same ad is already stored under another id or source (a Personio
+    link the ATS source saved with `?language=en`, a careers page with
+    ?gh_jid=… …), reuse that row's identity so Log Job updates it instead of
+    adding a duplicate card. Otherwise the URL's own (source, job_id).
+    """
+    if not posting_key(url):  # LinkedIn / Indeed: job_id already is the posting id
+        return source, job_id
+    hit = lookup_known_job(job_id, source, link=url)
+    if hit and hit.get("matched_by") == "posting_key":
+        print(
+            f"  ↪ Same posting already saved as {hit['source']}/{hit['job_id']} "
+            f"({hit['collection']}): {hit.get('title') or ''}"
+        )
+        return hit["source"], hit["job_id"]
+    return source, job_id
 
 
 def _clean_identity_text(value, field: str) -> str:
@@ -404,6 +427,7 @@ def force_save_manual_job(
         "updated_at":  t,
         "match_score": match_score,
         "ai_pending":  bool(ai_pending),
+        **posting_key_fields(job.get("link", "")),
         **analysis_fields(analysis),
     }
     if status == "applied":
@@ -443,6 +467,7 @@ def force_save_manual_job(
         "application_qa": [],
         "manually_logged": True,
         "ai_pending":  bool(ai_pending),
+        **posting_key_fields(job.get("link", "")),
     }
     if status == "applied":
         matched_data["applied_at"] = t
@@ -636,6 +661,7 @@ def save_link_only_urls(
             print("  ❌ Cannot resolve job_id from URL")
             results["failed"].append(url)
             continue
+        source, job_id = reuse_saved_posting(url, source, job_id)
         if is_job_on_tracker(job_id, source):
             outcome = handle_existing_tracker(
                 url, job_id, source, status, applied_date,
@@ -653,6 +679,7 @@ def save_link_only_urls(
             print("  ❌ Cannot build a job record from this URL")
             results["failed"].append(url)
             continue
+        job["job_id"], job["source"] = job_id, source
         if rec:
             job["recommended_by"] = rec
         if reason:
@@ -717,7 +744,7 @@ def log_agent_jobs(jobs: list, recommended_by="claude") -> dict:
             print(f"  ❌ Cannot resolve job_id from URL: {url}")
             merged["failed"].append(url)
             continue
-        hit = lookup_known_job(job_id, source)
+        hit = lookup_known_job(job_id, source, link=url)
         if hit:
             print(
                 f"  ⏭️  Already in DB ({hit['collection']}, stage={hit['stage']}): "

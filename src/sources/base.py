@@ -163,7 +163,8 @@ def ingest(
         if require_on_topic_title and not is_on_topic_title(job.title):
             stats["off_topic"] += 1
             continue
-        if db_mongo.is_job_known(job.job_id, job.source):
+        # link: same ad already saved by hand / from another URL (?language=en …)
+        if db_mongo.is_job_known(job.job_id, job.source, link=job.link):
             stats["known"] += 1
             continue
         key_ct = dedup_key(job.title, job.company)

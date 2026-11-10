@@ -1790,7 +1790,7 @@ def api_manual_apply_lookup():
         url = expand_short_job_url(raw) or raw
         source = detect_source(url)
         job_id = resolve_job_id(url, source)
-        hit = lookup_known_job(job_id, source) if job_id else None
+        hit = lookup_known_job(job_id, source, link=url) if job_id else None
         if hit:
             stage = hit.get("stage") or ""
             on_tracker = bool(hit.get("on_tracker"))

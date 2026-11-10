@@ -6,6 +6,7 @@ import re
 import threading
 from dotenv import load_dotenv
 
+from core.job_url import posting_key, posting_key_fields
 from core.scraper_utils import indeed_job_id_variants
 
 # Load environment variables from .env file
@@ -86,6 +87,8 @@ def ensure_indexes():
         jobs.create_index([("match_score", 1), ("matched_at", -1)])
         # API sources (src/sources/): company + title dedup across cities / reposts
         jobs.create_index("dedup_key", sparse=True)
+        # Same ad under another URL / source (core.job_url.posting_key)
+        jobs.create_index("posting_key", sparse=True)
 
         matched = db["matched_jobs"]
         matched.create_index([("matched_at", -1)])
@@ -95,10 +98,12 @@ def ensure_indexes():
         matched.create_index("origin")
         matched.create_index("run_id")
         matched.create_index("link")
+        matched.create_index("posting_key", sparse=True)
 
         timeouts = db["timeout_jobs"]
         timeouts.create_index("status")
         timeouts.create_index([("created_at", -1)])
+        timeouts.create_index("posting_key", sparse=True)
 
         _indexes_ready = True
 
@@ -128,6 +133,8 @@ def save_job(job_data):
     # Ensure required fields have default values
     job_data.setdefault("source", "linkedin")
     job_data.setdefault("status", "new")
+    if not job_data.get("posting_key"):
+        job_data.update(posting_key_fields(job_data.get("link")))
     
     try:
         result = collection.insert_one(job_data)
@@ -338,12 +345,13 @@ def _timeout_id_query(job_id, source):
     return query
 
 
-def is_job_known(job_id, source="linkedin"):
+def is_job_known(job_id, source="linkedin", link=None):
     """
     True if job_id is already in `jobs` or `matched_jobs` (Indeed: all jk variants).
+    With `link`, also True when the same ad was saved under another id / source.
     Used by scrapers to skip re-clicking a listing already stored.
     """
-    return lookup_known_job(job_id, source) is not None
+    return lookup_known_job(job_id, source, link=link) is not None
 
 
 def is_job_on_tracker(job_id, source="linkedin"):
@@ -357,9 +365,14 @@ def is_job_on_tracker(job_id, source="linkedin"):
     return bool(hit and hit.get("on_tracker"))
 
 
-def lookup_known_job(job_id, source="linkedin"):
+def lookup_known_job(job_id, source="linkedin", link=None):
     """
     Find a job by job_id + source (Indeed: all jk variants).
+
+    With `link`, a miss falls back to the link's posting key, so the same ad
+    saved under another URL or source (manual Personio link vs. ATS source,
+    `?language=en` copies …) is found too. Such hits carry
+    matched_by="posting_key" and the existing row's own job_id / source.
 
     Prefers `matched_jobs` (Tracker), then `jobs` (scrape store),
     then `timeout_jobs` still pending review.
@@ -378,10 +391,23 @@ def lookup_known_job(job_id, source="linkedin"):
     """
     job_id = str(job_id or "").strip()
     source = (source or "").strip().lower()
-    if not job_id or not source:
-        return None
+    if job_id and source:
+        hit = _lookup_by_query(_timeout_id_query(job_id, source), job_id, source)
+        if hit:
+            hit["matched_by"] = "job_id"
+            return hit
+    key = posting_key(link) if link else None
+    if key:
+        hit = _lookup_by_query({"posting_key": key}, job_id, source)
+        if hit:
+            hit["matched_by"] = "posting_key"
+            return hit
+    return None
+
+
+def _lookup_by_query(id_query, job_id, source):
+    """lookup_known_job body: matched_jobs → jobs → pending timeout_jobs."""
     db = get_db()
-    id_query = _timeout_id_query(job_id, source)
     projection = {
         "_id": 1,
         "title": 1,
@@ -509,6 +535,7 @@ def save_timeout_job(
         "reason": reason,
         "review_status": "open",
         "updated_at": now,
+        **posting_key_fields(link),
     }
     if existing:
         col.update_one({"_id": existing["_id"]}, {"$set": doc, "$inc": {"timeout_count": 1}})

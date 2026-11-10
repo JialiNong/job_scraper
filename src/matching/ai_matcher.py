@@ -31,6 +31,7 @@ from core.db_mongo import (  # noqa: E402
 )
 from core.job_origin import found_origin  # noqa: E402
 from core.manual_log import analysis_fields  # noqa: E402
+from core.job_url import posting_key_fields  # noqa: E402
 from core.scraper_utils import indeed_job_id_variants, scrub_bullet_location  # noqa: E402
 from matching import evaluator  # noqa: E402
 from matching.evaluator import (  # noqa: E402,F401  (re-exported for callers)
@@ -91,6 +92,7 @@ def save_matched_job(job: Dict, analysis: Dict) -> bool:
             "link": job.get("link", ""),
             "job_id": job.get("job_id", ""),
             "source": job.get("source", ""),
+            **posting_key_fields(job.get("link", "")),
             "description": job.get("description", ""),
             "applicants": job.get("applicants", ""),
             "match_score": analysis.get("match_score", 0),

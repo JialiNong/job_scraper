@@ -126,6 +126,97 @@ def job_id_from_url(url: str) -> str:
     return hashlib.sha1(canonicalize_url(url).encode("utf-8")).hexdigest()[:16]
 
 
+# ---------- posting key: one id per job ad, whatever the URL decoration ----------
+#
+# job_id for non-LinkedIn/Indeed links hashes the whole URL, so
+# `…/job/2811207` and `…/job/2811207?language=en` got two ids, and a link
+# logged by hand never matched the same ad found by the ATS source
+# (job_id "personio:bookboost:2811207"). The posting key is parsed from the
+# link itself and stored on every row, so dedup can match across sources.
+
+# ATS hosts whose URL carries the posting id. Ids that are globally unique on
+# that ATS (Greenhouse, Lever, Ashby, Workable, SmartRecruiters, JOIN) skip the
+# company slug so a company careers page (?gh_jid=…) matches the board URL.
+_ATS_KEY_PATTERNS = [
+    ("greenhouse", re.compile(r"(?:^|\.)greenhouse\.io$"), re.compile(r"/jobs/(\d+)"), False),
+    ("lever", re.compile(r"^jobs\.(?:eu\.)?lever\.co$"), re.compile(r"^/[^/]+/([0-9a-f-]{36})"), False),
+    ("ashby", re.compile(r"^jobs\.ashbyhq\.com$"), re.compile(r"^/[^/]+/([0-9a-f-]{36})"), False),
+    ("personio", re.compile(r"^([^.]+)\.jobs\.personio\.(?:de|com)$"), re.compile(r"^/job/(\d+)"), True),
+    ("workable", re.compile(r"^apply\.workable\.com$"), re.compile(r"^/[^/]+/j/([0-9A-Za-z]+)"), False),
+    ("workable", re.compile(r"^[^.]+\.workable\.com$"), re.compile(r"^/j/([0-9A-Za-z]+)"), False),
+    ("recruitee", re.compile(r"^([^.]+)\.recruitee\.com$"), re.compile(r"^/o/([^/]+)"), True),
+    ("smartrecruiters", re.compile(r"^(?:jobs|careers)\.smartrecruiters\.com$"), re.compile(r"^/[^/]+/(\d+)"), False),
+    ("join", re.compile(r"^join\.com$"), re.compile(r"^/companies/[^/]+/(\d+)"), False),
+    ("teamtailor", re.compile(r"^([^.]+)\.teamtailor\.com$"), re.compile(r"/jobs/(\d+)"), True),
+    ("bamboohr", re.compile(r"^([^.]+)\.bamboohr\.com$"), re.compile(r"/careers/(\d+)"), True),
+    ("workday", re.compile(r"^([^.]+)\.wd\d+\.myworkdayjobs\.com$"), re.compile(r"/job/.*_([A-Za-z0-9-]+)$"), True),
+]
+# Embedded-board ids on company careers pages
+_ATS_QUERY_KEYS = {"gh_jid": "greenhouse", "ashby_jid": "ashby"}
+
+# Query params that never identify the job: language, tracking, referrers
+_NOISE_PARAMS = {
+    "language", "lang", "locale", "hl", "em", "ref", "referrer", "referer",
+    "source", "src", "trk", "trackingid", "gh_src", "lever-source", "lever-origin",
+    "fbclid", "gclid", "msclkid", "mc_cid", "mc_eid", "_hsenc", "_hsmi", "mode",
+    "from", "via", "channel", "medium", "campaign",
+}
+
+
+def posting_key(url: str) -> Optional[str]:
+    """
+    Stable id of the job ad behind a URL, or None for LinkedIn / Indeed
+    (their job_id already is one).
+
+    Known ATS boards → "personio:bookboost:2811207", "greenhouse:4012345" …
+    Any other site → "url:host/path?kept=params" with language / tracking
+    params dropped, so `?language=en` or `?utm_source=…` copies still match.
+    """
+    from urllib.parse import parse_qsl, urlencode
+
+    text = normalize_pasted_job_url(url)
+    if not text:
+        return None
+    parsed = urlparse(text)
+    host = (parsed.hostname or "").lower()
+    if host.startswith("www."):
+        host = host[4:]
+    if not host or "linkedin.com" in host or "indeed.com" in host:
+        return None
+    path = parsed.path.rstrip("/")
+    query = parse_qsl(parsed.query, keep_blank_values=False)
+
+    for param, value in query:
+        provider = _ATS_QUERY_KEYS.get(param.lower())
+        if provider and value.strip():
+            return f"{provider}:{value.strip().lower()}"
+
+    for provider, host_re, path_re, with_slug in _ATS_KEY_PATTERNS:
+        hm = host_re.search(host)
+        if not hm:
+            continue
+        pm = path_re.search(path)
+        if not pm:
+            continue
+        job = pm.group(1).lower()
+        if not with_slug:
+            return f"{provider}:{job}"
+        slug = (hm.group(1) if hm.groups() else "").lower()
+        return f"{provider}:{slug}:{job}"
+
+    kept = sorted(
+        (k, v) for k, v in query
+        if k.lower() not in _NOISE_PARAMS and not k.lower().startswith("utm_")
+    )
+    return f"url:{host}{path or '/'}" + (f"?{urlencode(kept)}" if kept else "")
+
+
+def posting_key_fields(url: str) -> dict:
+    """{"posting_key": …} for a row's link, or {} when there is none."""
+    key = posting_key(url or "")
+    return {"posting_key": key} if key else {}
+
+
 def extract_linkedin_job_id(url: str) -> Optional[str]:
     text = normalize_pasted_job_url(url)
     m = _LINKEDIN_VIEW_RE.search(text)

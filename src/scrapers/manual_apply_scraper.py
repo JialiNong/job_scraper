@@ -76,6 +76,7 @@ from core.manual_log import (
     keep_manual_identity,
     mark_tracker_job_applied,
     normalize_manual_identity,
+    reuse_saved_posting,
     normalize_recommended_by,
     save_job_record,
     save_link_only_urls,
@@ -782,6 +783,7 @@ def process_urls(
                     print("  ❌ Cannot resolve job_id from URL")
                     results["failed"].append(url)
                     continue
+                source, job_id = reuse_saved_posting(url, source, job_id)
                 existing = get_tracker_job(job_id, source)
                 if existing and not tracker_needs_scrape(existing):
                     outcome = handle_existing_tracker(
@@ -799,6 +801,9 @@ def process_urls(
                 job = None
                 if page is not None:
                     job = scrape_job_page(page, url)
+                if job:
+                    # Same ad saved under another id/source: update that row
+                    job["job_id"], job["source"] = job_id, source
                 if existing:
                     # Refresh a link-only / AI-pending Tracker card in place.
                     # Do not force_save (that wipes notes / timeline).
@@ -853,6 +858,8 @@ def process_urls(
                         else "Chrome was not available"
                     )
                     job = job_stub_from_url(url, scrape_warning=warn)
+                    if job:
+                        job["job_id"], job["source"] = job_id, source
                 if not job:
                     print("  ❌ Cannot build a job record from this URL")
                     results["failed"].append(url)

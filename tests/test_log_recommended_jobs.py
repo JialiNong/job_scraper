@@ -64,7 +64,7 @@ class LogAgentJobsTests(unittest.TestCase):
                         patch.object(ml, "stamp_recommended_by") as stamp_rec, \
                         patch.object(ml, "stamp_manual_identity") as stamp_id:
                     result = ml.log_agent_jobs([{"url": URL_A, "title": "Other title"}])
-                lookup.assert_called_once_with("4123456789", "linkedin")
+                lookup.assert_called_once_with("4123456789", "linkedin", link=URL_A)
                 save.assert_not_called()
                 stamp_rec.assert_not_called()
                 stamp_id.assert_not_called()
