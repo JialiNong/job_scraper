@@ -15,7 +15,7 @@ from telegram.ext import (
 )
 from telegram.request import HTTPXRequest
 
-# Repo root: src/bot/telegram_bot.py -> ../../
+# Repo root: src/tg/bot.py -> ../../
 PROJECT_DIR = Path(__file__).resolve().parents[2]
 SRC_ROOT = Path(__file__).resolve().parents[1]
 load_dotenv(PROJECT_DIR / ".env")
@@ -26,7 +26,7 @@ if str(SRC_ROOT) not in sys.path:
 from core.challenge_wait import signal_indeed_resume  # noqa: E402
 from core.config import INDEED_CONFIG  # noqa: E402
 from core.pipeline_lock import pipeline_is_running  # noqa: E402
-from core.telegram_notify import telegram_send_kwargs  # noqa: E402
+from tg.client import telegram_send_kwargs  # noqa: E402
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 ALLOWED_USER_ID = int(os.getenv("TELEGRAM_ALLOWED_USER_ID"))

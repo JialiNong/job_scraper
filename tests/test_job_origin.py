@@ -17,7 +17,7 @@ import core.manual_log as ml  # noqa: E402
 from core.job_origin import infer_origin, log_job_origin, origin_filter_query  # noqa: E402
 
 with patch.object(db_mongo, "ensure_indexes"):
-    from web.web_app import _jobs_list_query_from_args  # noqa: E402
+    from web.list_query import _jobs_list_query_from_args  # noqa: E402
 
 T = datetime(2026, 9, 18)
 

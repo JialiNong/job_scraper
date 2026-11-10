@@ -18,7 +18,7 @@ if str(SRC) not in sys.path:
 import core.db_mongo as db_mongo  # noqa: E402
 
 with patch.object(db_mongo, "ensure_indexes"):
-    from web.web_app import (  # noqa: E402
+    from web.status import (  # noqa: E402
         _hydrate_timeline,
         _status_update_fields,
         _timeline_update_fields,

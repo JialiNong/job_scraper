@@ -106,8 +106,8 @@ Location / German company / “nice to have German” / plus / German-OR-English
 |-------|------|
 | `scripts/run_jobs.sh` / Telegram `/jobs [days] [linkedin_hours] [pages]` | Indeed (`--days`, 1/3/7/14) + LinkedIn (`--hours`, default days × 24) parallel lanes (scrape → match that source + Telegram ping) → Telegram match digest. `--pages` sets pages/keyword on both (default `FULL_MAX_PAGES`). No DB cleanup step. |
 | `./scripts/start_ui.sh` | Flask tracker UI (default port 5050) |
-| `src/bot/telegram_bot.py` | `/start` `/test` `/jobs` `/indeed_ok` (only `/jobs` starts scrapes) |
-| `src/core/match_digest.py` | Shared “today’s matches” Telegram digest (pushed by `run_jobs.sh`) |
+| `src/tg/bot.py` | `/start` `/test` `/jobs` `/indeed_ok` (only `/jobs` starts scrapes) |
+| `src/tg/digest.py` | Shared “today’s matches” Telegram digest (pushed by `run_jobs.sh`) |
 | `/timeouts` | Review title-qualified scrape timeouts; add to Tracker as pending |
 | Individual `src/scrapers/*.py`, `src/matching/ai_matcher.py` | Debug / partial runs |
 

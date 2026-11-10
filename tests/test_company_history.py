@@ -21,18 +21,18 @@ if str(SRC) not in sys.path:
 import core.db_mongo as db_mongo  # noqa: E402
 
 with patch.object(db_mongo, "ensure_indexes"):
-    from web.web_app import (  # noqa: E402
-        _jobs_list_query_from_args,
+    from web.list_query import _jobs_list_query_from_args, company_match_clause  # noqa: E402
+    from web.serialize import (  # noqa: E402
         _serialize,
-        _status_update_fields,
-        _timeline_update_fields,
         attach_company_history,
         company_history_item,
-        company_match_clause,
         parse_applicant_position,
     )
+    from web.status import _status_update_fields, _timeline_update_fields  # noqa: E402
 
-HTML = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+from page_source import page_source  # noqa: E402
+
+HTML = page_source("index")  # index.html + its JS/CSS
 
 
 class _FakeCursor(list):

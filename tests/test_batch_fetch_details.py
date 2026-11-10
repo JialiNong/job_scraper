@@ -19,16 +19,18 @@ import core.db_mongo as db_mongo  # noqa: E402
 import core.manual_log as ml  # noqa: E402
 
 with patch.object(db_mongo, "ensure_indexes"):
-    from web.web_app import (  # noqa: E402
+    from web.serialize import _serialize  # noqa: E402
+    from web.chrome_tasks import (  # noqa: E402
         PLAYWRIGHT_UNAVAILABLE_MSG,
-        _serialize,
         guard_fetch_details_playwright,
         parse_batch_job_oids,
         run_ai_batch_jobs,
         run_fetch_details_batch_jobs,
     )
 
-HTML = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+from page_source import page_source  # noqa: E402
+
+HTML = page_source("index")  # index.html + its JS/CSS
 
 USER_URL = "https://de.indeed.com/viewjob?jk=65ad798c3e603bb0"
 JOB_KEY = "65ad798c3e603bb0"

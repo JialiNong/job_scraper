@@ -50,15 +50,24 @@ job_scraper/
 │   │   ├── ai_matcher.py              # Matching entry point (pipeline / CLI)
 │   │   └── evaluator.py               # Model labels job + company, code scores
 │   ├── web/
-│   │   └── web_app.py                 # Flask Job Tracker UI
-│   └── bot/
-│       └── telegram_bot.py            # Telegram bot
+│   │   ├── web_app.py                 # Flask app entry: config + registers Blueprints
+│   │   ├── auth.py                    # Single-user login
+│   │   ├── status.py                  # Status / timeline rules (pure)
+│   │   ├── list_query.py              # Tracker list filter → Mongo query
+│   │   ├── serialize.py               # Mongo doc → card JSON
+│   │   ├── chrome_tasks.py            # Background Chrome tasks: state + locks
+│   │   └── routes/                    # Blueprints: pages, jobs, unmatched, timeouts,
+│   │                                  #   stats, log_job, ai_tasks (no URL prefix)
+│   └── tg/                            # Telegram (bot commands + push messages)
+│       ├── bot.py                     # Bot: receives /jobs, /indeed_ok
+│       ├── client.py                  # Push: Bot API sendMessage helper
+│       └── digest.py                  # Today's match cards → Telegram
 ├── docs/
 │   ├── architecture.md                # How the system works (canonical flow doc)
 │   ├── user_profile.md                # Your resume — required for AI
 │   ├── matching_rules.md              # Rules the model applies (hard fails, labels)
 │   ├── deployment/                    # Render setup + deployment report
-│   └── testing/                       # Testing guide + past test/verification reports
+│   └── archive/testing/               # Past one-off test / verification reports
 ├── scripts/
 │   ├── run_jobs.sh                    # Pipeline behind Telegram /jobs
 │   ├── start_ui.sh                    # Start Job Tracker web UI
@@ -66,7 +75,11 @@ job_scraper/
 │   ├── db/cleanup_excluded_titles.py  # One-off DB cleanup by title blacklist
 │   └── tools/                         # eval_matcher, generate_password_hash, log_recommended_jobs
 ├── evals/                             # Matcher evaluation set + baselines
+├── static/                            # Page JS/CSS: css/<page>.css + js/<page>.js per template
+│   └── css/base.css, job_list.css     #   shared: colour tokens + common rules (all pages);
+│                                      #   job list (Tracker + Unmatched). Load order: base → job_list → page
 ├── tests/                             # Unit tests (python3 -m unittest discover -s tests)
+│   └── e2e/                           # Browser E2E tests for the web UI (./scripts/run_e2e.sh)
 ├── templates/                         # Web UI templates
 ├── logs/                              # Log output directory
 └── .env                               # Environment variables (not in git)
@@ -138,7 +151,7 @@ python3 src/matching/ai_matcher.py -l 3
 
 ### From Telegram (normal use)
 
-Start the bot (`python3 src/bot/telegram_bot.py`), then send:
+Start the bot (`python3 src/tg/bot.py`), then send:
 
 | Command | Indeed | LinkedIn | Pages per keyword |
 |---|---|---|---|
@@ -171,6 +184,32 @@ Execution order:
 Only one run at a time: a second `/jobs` while one is running is refused (`logs/pipeline.pid`).
 
 ---
+
+## Tests
+
+| What | Command | Time |
+|---|---|---|
+| Unit tests | `/opt/miniconda3/bin/python3 -m unittest discover -s tests` | < 1 s |
+| Browser E2E (web UI) | `./scripts/run_e2e.sh` (add `-v` for each test name) | ~20 s |
+
+**E2E** (`tests/e2e/`) starts a throwaway MongoDB on a random local port, the real
+web server (`src/web/web_app.py`), and headless Google Chrome, then clicks through
+login, application progress, Other status, notes, edit, delete, Unmatched → Can Apply,
+Timeouts → Add, Log Job (link only) and the agent API, checking MongoDB after each.
+Any uncaught JavaScript error fails the test.
+
+- It **never touches your real data**: the harness refuses to start unless the server
+  points at `127.0.0.1` + a database ending in `_e2e`, with AI / Telegram keys blank.
+- Needs `mongod` (`brew install mongodb/brew/mongodb-community`; no service needs to
+  run) and Playwright (already used by the scrapers; it drives your installed Chrome).
+- Seed data and fixed card ids live in `tests/e2e/harness.py`. When you change a
+  page's buttons or ids, update the selectors in `tests/e2e/test_tracker_e2e.py`.
+
+**Automatic run in Claude Code:** `.claude/settings.json` has a Stop hook
+(`scripts/e2e_hook.sh`). When Claude finishes a turn in which `src/web`, `src/core`,
+`templates`, `static` or `tests` changed, it runs unit + E2E tests; a failure is sent back to
+Claude to fix. Unchanged code is not re-run, and a given failure is reported once.
+Last full output: `logs/e2e_last.log`. Review or turn it off with `/hooks`.
 
 ## Configuration
 

@@ -14,7 +14,9 @@ if str(SRC) not in sys.path:
 
 import scrapers.manual_apply_scraper as mas  # noqa: E402
 
-HTML = (ROOT / "templates" / "index.html").read_text(encoding="utf-8")
+from page_source import page_source  # noqa: E402
+
+HTML = page_source("index")  # index.html + its JS/CSS
 
 BODY = (
     "You will own features end to end across a TypeScript and Node.js backend "

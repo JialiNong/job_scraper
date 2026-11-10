@@ -25,7 +25,9 @@ JD = (
     "strong frontend design and coding experience with JavaScript and React."
 )
 
-HTML = (ROOT / "templates" / "manual_apply.html").read_text(encoding="utf-8")
+from page_source import page_source  # noqa: E402
+
+HTML = page_source("manual_apply")  # manual_apply.html + its JS/CSS
 
 
 class FakeLocator:
