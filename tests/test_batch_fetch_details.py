@@ -19,9 +19,9 @@ import core.db_mongo as db_mongo  # noqa: E402
 import core.manual_log as ml  # noqa: E402
 
 with patch.object(db_mongo, "ensure_indexes"):
-    from web.web_app import (  # noqa: E402
+    from web.serialize import _serialize  # noqa: E402
+    from web.chrome_tasks import (  # noqa: E402
         PLAYWRIGHT_UNAVAILABLE_MSG,
-        _serialize,
         guard_fetch_details_playwright,
         parse_batch_job_oids,
         run_ai_batch_jobs,

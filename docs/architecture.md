@@ -322,7 +322,15 @@ job_scraper/
 │   ├── matching/
 │   │   ├── ai_matcher.py        # match orchestration (`evaluate_job`)
 │   │   └── evaluator.py         # layer 1 labels, layer 2 company lookup, code score
-│   ├── web/web_app.py           # Tracker UI
+│   ├── web/                     # Tracker UI (Flask)
+│   │   ├── web_app.py           # app entry: config, login manager, registers Blueprints
+│   │   ├── auth.py              # single-user login Blueprint
+│   │   ├── status.py            # status + application timeline rules (pure, no Flask)
+│   │   ├── list_query.py        # Tracker list filters → Mongo query
+│   │   ├── serialize.py         # Mongo doc → card JSON, company history
+│   │   ├── chrome_tasks.py      # Log Job / Run AI / batch Fetch state + locks (one Chrome)
+│   │   └── routes/              # Blueprints, no URL prefix: pages, jobs, unmatched,
+│   │                            #   timeouts, stats, log_job, ai_tasks
 │   └── tg/                      # Telegram — package is not named `telegram` (would shadow python-telegram-bot)
 │       ├── bot.py               # Bot: commands in (/jobs, /indeed_ok)
 │       ├── client.py            # Push out: sync Bot API sendMessage helper

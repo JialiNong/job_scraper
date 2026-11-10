@@ -50,7 +50,14 @@ job_scraper/
 │   │   ├── ai_matcher.py              # Matching entry point (pipeline / CLI)
 │   │   └── evaluator.py               # Model labels job + company, code scores
 │   ├── web/
-│   │   └── web_app.py                 # Flask Job Tracker UI
+│   │   ├── web_app.py                 # Flask app entry: config + registers Blueprints
+│   │   ├── auth.py                    # Single-user login
+│   │   ├── status.py                  # Status / timeline rules (pure)
+│   │   ├── list_query.py              # Tracker list filter → Mongo query
+│   │   ├── serialize.py               # Mongo doc → card JSON
+│   │   ├── chrome_tasks.py            # Background Chrome tasks: state + locks
+│   │   └── routes/                    # Blueprints: pages, jobs, unmatched, timeouts,
+│   │                                  #   stats, log_job, ai_tasks (no URL prefix)
 │   └── tg/                            # Telegram (bot commands + push messages)
 │       ├── bot.py                     # Bot: receives /jobs, /indeed_ok
 │       ├── client.py                  # Push: Bot API sendMessage helper

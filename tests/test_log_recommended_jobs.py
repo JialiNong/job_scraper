@@ -20,6 +20,9 @@ import core.manual_log as ml  # noqa: E402
 
 with patch.object(db_mongo, "ensure_indexes"):
     import web.web_app as web_app  # noqa: E402
+    import web.chrome_tasks as chrome_tasks  # noqa: E402
+    import web.routes.jobs as jobs_routes  # noqa: E402
+    import web.routes.log_job as log_job_routes  # noqa: E402
 
 URL_A = "https://www.linkedin.com/jobs/view/4123456789/"
 URL_B = "https://de.indeed.com/viewjob?jk=65ad798c3e603bb0"
@@ -143,7 +146,7 @@ class AgentJobsApiTests(unittest.TestCase):
         body = [{"url": URL_A, "recommended_by": "gpt", "reason": "fits"}]
         result = {"ok": [URL_A], "skipped": [], "failed": [], "existing": []}
         with patch.dict(os.environ, {"AGENT_API_TOKEN": TOKEN}), \
-                patch.object(web_app, "log_agent_jobs", return_value=result) as log:
+                patch.object(log_job_routes, "log_agent_jobs", return_value=result) as log:
             resp = self._post(body)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(log.call_args.args[0], body)
@@ -174,7 +177,7 @@ class AgentJobsApiTests(unittest.TestCase):
     def test_top_level_recommended_by_is_passed_and_echoed(self):
         result = {"ok": [URL_A], "skipped": [], "failed": [], "existing": []}
         with patch.dict(os.environ, {"AGENT_API_TOKEN": TOKEN}), \
-                patch.object(web_app, "log_agent_jobs", return_value=result) as log:
+                patch.object(log_job_routes, "log_agent_jobs", return_value=result) as log:
             resp = self._post({"jobs": [URL_A], "recommended_by": "Cursor"})
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(log.call_args.kwargs["recommended_by"], "cursor")
@@ -183,7 +186,7 @@ class AgentJobsApiTests(unittest.TestCase):
     def test_saves_and_reports_counts(self):
         result = {"ok": [URL_A], "skipped": [URL_B], "failed": [], "existing": []}
         with patch.dict(os.environ, {"AGENT_API_TOKEN": TOKEN}), \
-                patch.object(web_app, "log_agent_jobs", return_value=result) as log:
+                patch.object(log_job_routes, "log_agent_jobs", return_value=result) as log:
             resp = self._post({"jobs": [{"url": URL_A}, {"url": URL_B}]})
         self.assertEqual(resp.status_code, 200)
         body = resp.get_json()
@@ -202,7 +205,7 @@ class BatchDeleteApiTests(unittest.TestCase):
     def test_deletes_each_id_and_counts_missing(self):
         ids = ["a" * 24, "b" * 24]
         hits = iter([{"deleted_jobs": 1, "title": "", "company": ""}, None])
-        with patch.object(web_app, "delete_tracker_job",
+        with patch.object(jobs_routes, "delete_tracker_job",
                           side_effect=lambda oid: next(hits)) as delete:
             resp = self.client.post("/api/jobs/batch-delete", json={"ids": ids})
         self.assertEqual(resp.status_code, 200)
@@ -211,8 +214,8 @@ class BatchDeleteApiTests(unittest.TestCase):
         self.assertEqual((body["deleted"], body["missing"], body["ids"]), (1, 1, [ids[0]]))
 
     def test_refused_while_chrome_batch_runs(self):
-        with patch.dict(web_app._fetch_batch_state, {"running": True}), \
-                patch.object(web_app, "delete_tracker_job") as delete:
+        with patch.dict(chrome_tasks._fetch_batch_state, {"running": True}), \
+                patch.object(jobs_routes, "delete_tracker_job") as delete:
             resp = self.client.post("/api/jobs/batch-delete", json={"ids": ["a" * 24]})
         self.assertEqual(resp.status_code, 409)
         delete.assert_not_called()

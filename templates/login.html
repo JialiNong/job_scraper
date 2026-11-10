@@ -145,7 +145,7 @@
       {% endif %}
     {% endwith %}
     
-    <form method="POST" action="{{ url_for('login') }}">
+    <form method="POST" action="{{ url_for('auth.login') }}">
       <div class="form-group">
         <label for="username">Username</label>
         <input type="text" id="username" name="username" required autofocus autocomplete="username" />

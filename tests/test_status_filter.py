@@ -18,15 +18,14 @@ if str(SRC) not in sys.path:
 import core.db_mongo as db_mongo  # noqa: E402
 
 with patch.object(db_mongo, "ensure_indexes"):
-    from web.web_app import (  # noqa: E402
+    from web.list_query import combine_job_list_query, jobs_country_filter_query  # noqa: E402
+    from web.serialize import job_country  # noqa: E402
+    from web.status import (  # noqa: E402
         INTERVIEW_TIMELINE_STEPS,
         SIDE_STATUSES,
         application_progress,
         chip_status_counts,
-        combine_job_list_query,
-        job_country,
         job_matches_status_filter,
-        jobs_country_filter_query,
         jobs_status_filter_query,
     )
 

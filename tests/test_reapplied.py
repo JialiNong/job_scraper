@@ -18,7 +18,9 @@ if str(SRC) not in sys.path:
 import core.db_mongo as db_mongo  # noqa: E402
 
 with patch.object(db_mongo, "ensure_indexes"):
-    from web.web_app import (  # noqa: E402
+    import web.web_app  # noqa: E402,F401  (builds the app for endpoint tests)
+    import web.routes.jobs as jobs_routes  # noqa: E402
+    from web.status import (  # noqa: E402
         JOURNEY_TRACK_STEPS,
         TIMELINE_STEPS,
         _normalize_timeline,
@@ -104,7 +106,7 @@ class TimelineEndpointTests(unittest.TestCase):
 
     def test_unknown_step_is_rejected_not_dropped(self):
         col = MagicMock()
-        with patch.object(self.web_app, "get_collection", return_value=col):
+        with patch.object(jobs_routes, "get_collection", return_value=col):
             res = self.client.patch(
                 "/api/jobs/6abbb5bf2f19f44d13721caf/timeline",
                 json={"timeline": [
@@ -123,7 +125,7 @@ class TimelineEndpointTests(unittest.TestCase):
         }
         col = MagicMock()
         col.find_one.return_value = job
-        with patch.object(self.web_app, "get_collection", return_value=col):
+        with patch.object(jobs_routes, "get_collection", return_value=col):
             res = self.client.patch(
                 "/api/jobs/6abbb5bf2f19f44d13721caf/timeline",
                 json={"timeline": [
