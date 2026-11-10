@@ -277,15 +277,19 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 .job-grid.layout-compact .card.expanded .panel-close {
   display: inline-flex; align-items: center; justify-content: center;
   align-self: flex-end;
-  width: 32px; height: 32px; flex: none;
-  margin: -8px -10px -6px 0;
+  width: 28px; height: 28px; flex: none;
+  margin: -4px -6px 0 0;
   border: 0; border-radius: 6px;
-  background: none; color: var(--muted);
-  font-size: 1.4rem; line-height: 1;
+  background: transparent; color: var(--muted);
+  font-size: 1.25rem; font-weight: 400; line-height: 1;
   cursor: pointer;
 }
-.job-grid.layout-compact .card.expanded .panel-close:hover { background: var(--surface2); color: var(--text); }
-.job-grid.layout-compact .card.expanded .card-title { font-size: 1.3rem; -webkit-line-clamp: 3; }
+.job-grid.layout-compact .card.expanded .panel-close:hover {
+  background: var(--surface2); color: var(--text);
+}
+.job-grid.layout-compact .card.expanded .card-title {
+  font-size: 1.2rem; line-height: 1.25; -webkit-line-clamp: 3;
+}
 /* The title takes focus only so screen readers announce the opened job; it is
    not a control, so no ring (the ring wrapped the inline span awkwardly) */
 .card-title-text:focus { outline: none; }
@@ -991,7 +995,7 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   white-space: nowrap;
 }
 
-/* Match (left) + Progress/Highlights/Q&A (right). Stacks in cards; two cols in list. */
+/* Match (job + progress/notes) then track (Q&A / highlights). */
 .card-split {
   display: flex;
   flex-direction: column;
@@ -1162,16 +1166,16 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 }
 .hl-input:focus { border-color: var(--warning); }
 .hl-add-btn {
-  background: transparent;
+  background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--muted);
+  color: var(--text);
   padding: 4px 10px;
-  font-size: .75rem;
-  font-weight: 600;
+  font-size: .78rem;
+  font-weight: 700;
   cursor: pointer;
 }
-.hl-add-btn:hover { border-color: var(--warning); color: var(--warning); }
+.hl-add-btn:hover { background: var(--hl); color: var(--hl-ink); border-color: var(--hl); }
 
 /* Meta row */
 .source-pill.site-pill { text-transform: none; }
@@ -1200,16 +1204,17 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   background: var(--surface2);
   border: 1px solid var(--border);
   border-radius: 8px;
-  padding: 8px 12px;
+  padding: 4px 10px;
 }
 .job-description summary {
   cursor: pointer;
-  font-size: .78rem;
-  font-weight: 600;
+  font-size: .82rem;
+  font-weight: 700;
   color: var(--text);
   display: flex;
   align-items: center;
   gap: 8px;
+  min-height: 28px;
   list-style: none;
 }
 .job-description summary::-webkit-details-marker { display: none; }
@@ -1223,8 +1228,9 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 .jd-copy-btn {
   margin-left: auto;
   border: 1px solid var(--border); background: var(--surface);
-  color: var(--muted); border-radius: 6px; padding: 2px 8px;
-  font: inherit; font-size: .72rem; font-weight: 500; cursor: pointer;
+  color: var(--text); border-radius: 5px; padding: 1px 7px;
+  font: inherit; font-size: .7rem; font-weight: 700; cursor: pointer;
+  line-height: 1.3;
 }
 .jd-copy-btn:hover { color: var(--text); border-color: var(--accent); }
 .job-description-body {
@@ -1305,8 +1311,8 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 }
 .btn-fetch-details:hover { border-color: var(--accent); color: var(--accent); }
 
-/* Application progress timeline */
-.progress-wrap {
+/* Application progress + notes: one block, filled together */
+.progress-panel {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1314,6 +1320,11 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   border: 1px solid var(--border);
   border-radius: 10px;
   padding: 12px;
+}
+.progress-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 .progress-title {
   font-size: .72rem;
@@ -1402,6 +1413,7 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   align-items: center;
 }
 .progress-btn {
+  display: inline-flex; align-items: center;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 999px;
@@ -1410,6 +1422,7 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   font-size: .72rem;
   font-weight: 600;
   cursor: pointer;
+  line-height: 1.2;
   transition: border-color .15s, color .15s, background .15s;
 }
 .progress-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -1438,8 +1451,9 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--muted);
-  padding: 4px 8px;
+  padding: 3px 8px;
   font-size: .72rem;
+  line-height: 1.3;
   cursor: pointer;
 }
 .status-side-select:focus { border-color: var(--accent); }
@@ -1514,8 +1528,12 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   word-break: break-word;
 }
 
-/* Notes */
-.notes-wrap { display: flex; flex-direction: column; gap: 6px; }
+/* Notes sit under Other in the same progress panel */
+.notes-wrap {
+  display: flex; flex-direction: column; gap: 6px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
+}
 .notes-textarea {
   background: var(--surface2);
   border: 1px solid var(--border);
@@ -1533,17 +1551,23 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 .notes-textarea::placeholder { color: var(--muted); }
 .btn-save {
   align-self: flex-end;
-  background: transparent;
-  border: 1px solid var(--border);
+  background: var(--accent);
+  border: 1px solid var(--accent);
   border-radius: 6px;
-  color: var(--muted);
-  padding: 4px 12px;
-  font-size: .75rem;
+  color: var(--accent-ink);
+  padding: 5px 12px;
+  font-size: .78rem;
+  font-weight: 700;
   cursor: pointer;
-  transition: border-color .15s, color .15s;
+  transition: filter .15s, background .15s, border-color .15s;
 }
-.btn-save:hover { border-color: var(--accent); color: var(--accent); }
-.btn-save.saved { border-color: var(--success); color: var(--success); }
+.btn-save:hover { filter: brightness(1.08); }
+.btn-save.saved {
+  background: var(--success);
+  border-color: var(--success);
+  color: var(--on-solid);
+  filter: none;
+}
 
 /* Application Q&A */
 .qa-wrap {
@@ -1624,16 +1648,17 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   gap: 8px;
 }
 .btn-add-qa {
-  background: transparent;
-  border: 1px dashed var(--border);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-radius: 6px;
-  color: var(--muted);
-  padding: 4px 12px;
-  font-size: .75rem;
+  color: var(--text);
+  padding: 5px 12px;
+  font-size: .78rem;
+  font-weight: 700;
   cursor: pointer;
-  transition: border-color .15s, color .15s;
+  transition: border-color .15s, background .15s;
 }
-.btn-add-qa:hover { border-color: var(--accent); color: var(--accent); }
+.btn-add-qa:hover { background: var(--surface2); border-color: var(--text); }
 
 /* ── Pagination ──────────────────────────────────────────────────── */
 .pagination {
@@ -1765,13 +1790,11 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 .company-history {
   margin: 10px 0 4px;
   border: 1px solid var(--border);
-  border-left: 3px solid var(--interview);
   border-radius: 8px;
   background: var(--surface2);
   padding: 8px 12px;
   font-size: .78rem;
 }
-.company-history.seen-rejected { border-left-color: var(--rejected); }
 .company-history .ch-head { font-weight: 600; margin-bottom: 4px; }
 .company-history .ch-summary { color: var(--muted); font-weight: 400; }
 .company-history ul { list-style: none; padding: 0; margin: 4px 0 6px; }
@@ -1819,25 +1842,59 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 /* Same query as the top-bar shell in base.css */
 @media (max-width: 760px), (max-height: 520px) {
   /* Status list becomes a scrolling chip row under the top bar */
-  .stats-bar { flex-direction: row; overflow-x: auto; gap: 6px; padding-bottom: 2px; scrollbar-width: none; }
+  .stats-bar { flex-direction: row; overflow-x: auto; gap: 4px; padding-bottom: 0; scrollbar-width: none; }
   .stats-bar::-webkit-scrollbar { display: none; }
   .stat-chip {
     width: auto; flex: none;
     border: 1px solid var(--border); border-radius: 999px;
-    padding: 4px 10px; gap: 6px; font-size: .84rem;
+    padding: 3px 8px; gap: 5px; font-size: .8rem;
   }
   .stat-chip .chip-label { overflow: visible; }
-  .stats-more-toggle { flex: none; white-space: nowrap; }
+  .stats-more-toggle { flex: none; white-space: nowrap; padding: 3px 8px; font-size: .78rem; }
   .stats-bar.stats-expanded .stat-chip[data-status="all"] { margin-top: 0; }
 }
 @media (max-width: 760px) {
-
-  .rail-bar { height: 80px; }
-  .funnel-num, .rail-total { font-size: 1.45rem; }
-  .rail-outside { justify-content: flex-start; flex-direction: column; gap: 6px; }
+  /* Phone: the bar is a thin strip; numbers and labels sit underneath */
+  .funnel-bar { padding: 10px 12px; }
+  .rail-head { margin-bottom: 8px; gap: 6px; }
+  .rail-total { font-size: 1.15rem; }
+  .rail-total-label { font-size: .78rem; }
+  .rail-bar { height: 28px; }
+  .seg-label { visibility: hidden; padding: 0; }
+  .funnel-num { font-size: 1.05rem; }
+  .rail-outside {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 8px;
+  }
+  .rail-total-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rail-out {
+    display: flex; align-items: baseline; gap: 7px;
+    flex-wrap: nowrap;
+  }
+  .rail-out .funnel-num { font-size: .95rem; }
+  .rail-out .funnel-label { font-size: .78rem; margin-top: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rail-out .funnel-pct { font-size: .72rem; white-space: nowrap; }
+  .progress-panel { padding: 10px; gap: 8px; }
+  .progress-btn { padding: 3px 9px; }
+  .status-side-select { padding: 2px 6px; }
 
   .layout-toggle { display: none; }
-  .toolbar input[type="search"] { font-size: 16px; }
+  .job-grid.layout-compact .card.expanded .panel-close {
+    width: 28px; height: 28px;
+    font-size: 1.15rem;
+    font-weight: 400;
+    margin: 0;
+  }
+  .job-grid.layout-compact .card.expanded .card-title { font-size: 1.05rem; }
+  .job-grid.layout-compact .card.expanded .card-body { padding: 12px 14px calc(24px + env(safe-area-inset-bottom, 0px)); }
+  .info-edit { gap: 4px; }
+  .info-edit-row { gap: 4px; }
+  .info-action-row { gap: 4px; }
+  .batch-fetch-bar.select-mode { padding: 6px; gap: 6px; }
+  .batch-fetch-bar .bf-helpers { gap: 4px; }
+  .batch-fetch-bar .bf-actions { gap: 4px; }
 
   .journey-panel { padding: 6px 8px; gap: 4px; }
   .journey-track { min-height: 16px; }
@@ -1880,31 +1937,84 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 
 /* ── Touch: 44px targets (coarse pointers only) ──────────────────── */
 @media (pointer: coarse) {
-  .stat-chip, .stats-more-toggle, .filter-highlights,
-  .layout-toggle button, .pagination-btn,
-  .batch-fetch-bar .batch-fetch-btn, .batch-fetch-bar .btn-fetch-details, .batch-fetch-bar .btn-run-ai,
-  .btn-apply, .btn-run-ai, .btn-fetch-details, .btn-save, .btn-add-qa,
-  .progress-btn, .status-side-select, .hl-preset, .hl-add-btn, .hl-input,
-  .delete-job-btn, .jd-copy-btn, .info-save-btn, .info-cancel-btn, .info-input,
-  .applicant-pos-input, .company-filter-chip button {
-    min-height: 44px;
-  }
-  .btn-apply, .company-filter-chip button { display: inline-flex; align-items: center; justify-content: center; }
-  .batch-fetch-bar button { display: inline-flex; align-items: center; justify-content: center; }
-  .company-filter-chip button { min-width: 44px; }
-  .job-grid.layout-compact .card.expanded .panel-close { width: 44px; height: 44px; }
-  /* Edit stays compact beside the title; an invisible margin makes the tap area 44px */
+  .company-filter-chip button { min-width: 30px; min-height: var(--phone-ctrl-h); }
   .card.expanded .edit-info-btn { position: relative; padding: 3px 10px; }
   .card.expanded .edit-info-btn::after { content: ""; position: absolute; inset: -8px -4px; }
-  .qa-question, .qa-remove { min-height: 44px; }
-  .qa-remove { min-width: 44px; }
-  /* Inline links: grow the hit area without growing the line */
-  .company-link, .ch-all { padding-block: 10px; margin-block: -10px; }
-  /* Journey dots and info buttons stay small to draw; give them a bigger hit area */
-  .jt-info { position: relative; } /* .jt-node is already absolute */
-  /* Rows sit ~24px apart: grow the info button sideways more than vertically
-     so neighbouring rows' hit areas do not overlap */
+  .qa-remove { min-width: 30px; min-height: var(--phone-ctrl-h); }
+  .company-link, .ch-all { padding-block: 8px; margin-block: -8px; }
+  .jt-info { position: relative; }
   .jt-info::after { content: ""; position: absolute; inset: -4px -14px; }
   .jt-node::after { content: ""; position: absolute; inset: -6px; }
-  .cal-detail-link { display: inline-flex; align-items: center; min-height: 44px; }
+  .cal-detail-link { display: inline-flex; align-items: center; min-height: var(--phone-ctrl-h); }
 }
+
+/* ── List rows: where the eye goes ──────────────────────────────────
+   1 the job title, 2 your status, 3 the score, 4 how the job got here.
+   Company, place, board and history sit in a quiet second line. The three
+   right-hand columns have fixed widths so they line up down the list. */
+.job-grid.layout-compact .card-row { gap: 16px; padding: 12px 16px; min-height: 68px; }
+.row-title-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.row-title-line .row-title { min-width: 0; }
+.row-title-line .row-highlights { flex: none; display: inline-flex; gap: 4px; }
+.row-title-line .row-highlights:empty { display: none; }
+.row-sub {
+  display: flex; align-items: baseline; gap: 0 14px;
+  margin-top: 3px; min-width: 0;
+  font-size: .84rem; color: var(--muted);
+  white-space: nowrap; overflow: hidden;
+}
+.row-sub > * { flex: none; }
+.row-sub .row-company { color: var(--text); font-weight: 700; font-size: inherit; margin: 0; }
+.row-sub .row-loc {
+  flex: 0 1 auto; min-width: 0; max-width: none;
+  font-size: inherit; overflow: hidden; text-overflow: ellipsis;
+}
+.row-sub .row-loc:empty { display: none; }
+/* History is context, not an alarm: neutral text, a dot for how it went */
+.row-seen { display: inline-flex; align-items: center; gap: 6px; }
+.row-seen.seen-applied::before,
+.row-seen.seen-rejected::before {
+  content: ""; width: 7px; height: 7px; border-radius: 50%; flex: none;
+  background: var(--applied);
+}
+.row-seen.seen-rejected::before { background: var(--rejected); }
+
+.job-grid.layout-compact .row-meta { gap: 12px; }
+.row-channel { width: 108px; display: flex; justify-content: flex-end; }
+
+/* Status: solid when it needs you or is a milestone (Not applied, Interview,
+   Offer); a pale tint while waiting or done (Applied, Rejected, side statuses) */
+.status-pill {
+  min-width: 100px;
+  padding: 4px 10px;
+  border: 0;
+  text-align: center;
+  font-size: .78rem;
+  background: color-mix(in srgb, currentColor 13%, transparent);
+}
+.status-pill.s-pending   { color: var(--on-solid); background: var(--pending); }
+.status-pill.s-interview { color: var(--on-solid); background: var(--interview); }
+.status-pill.s-offer     { color: var(--on-solid); background: var(--offer); }
+
+/* Score: a numeral on a disc tinted by band; low scores get no fill */
+.score-badge { font-weight: 800; }
+.job-grid.layout-compact .score-badge { width: 44px; height: 44px; font-size: .98rem; }
+.score-badge.score-hi  { border-color: transparent; background: color-mix(in srgb, var(--offer) 14%, var(--surface)); }
+.score-badge.score-mid { border-color: transparent; background: color-mix(in srgb, var(--warning) 14%, var(--surface)); }
+/* Not scored yet: an empty, quiet circle (it used to be the loudest thing in the row) */
+.score-badge.score-pending { color: var(--muted); border: 1.5px dashed var(--border); background: transparent; }
+
+/* Narrow rows (phone, or next to the panel): company and place only */
+@container jobrow (max-width: 720px) {
+  .row-sub .row-via, .row-sub .row-seen { display: none; }
+  .status-pill { min-width: 0; }
+}
+
+/* ── Details panel: real section headings ───────────────────────── */
+.progress-title, .qa-label, .highlights-label, .panel-heading,
+.recommend-reason-label, .applicant-pos-wrap .ap-label {
+  font: 700 .95rem/1.3 var(--f-display);
+  color: var(--text);
+}
+.recommend-reason-label { margin-bottom: 4px; }
+.breakdown summary { font: 700 .95rem/1.3 var(--f-display); }

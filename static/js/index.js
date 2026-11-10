@@ -30,16 +30,16 @@ let totalJobs = 0;
 const PAGE_SIZE = 20;
 
 const STATUS_LABEL = {
-  pending:    'Not Applied',
+  pending:    'Not applied',
   applied:    'Applied',
   rejected:   'Rejected',
   interview:  'Interview',
   offer:      'Offer',
   unsuitable: 'Unsuitable',
   closed:     'Closed',
-  closed_no_reply: 'Closed · No Reply',
-  prev_rejected: 'Prev. Rejected',
-  too_many_questions: 'Skipped · Long Form',
+  closed_no_reply: 'Closed, no reply',
+  prev_rejected: 'Rejected before',
+  too_many_questions: 'Skipped, long form',
   repost:     'Repost',
   duplicate:  'Duplicate',
 };
@@ -238,7 +238,9 @@ function placeRailLabels() {
     const inner = s.querySelector(':scope > .seg');
     const room = s.clientWidth - (inner && !inner.hidden ? inner.offsetWidth : 0);
     const need = Math.max(...[...label.children].map(c => c.offsetWidth)) + 24; // + label padding
-    if (need <= room) return;
+    // Phone: bar is a thin strip; labels always sit underneath.
+    const compact = window.matchMedia('(max-width: 760px)').matches;
+    if (!compact && need <= room) return;
     s.classList.add('narrow');
     const item = document.createElement('div');
     item.className = `rail-out rail-out-${s.dataset.key}`;
@@ -1202,6 +1204,9 @@ function countryPillHtml(job) {
 
 function sourcePillHtml(job) {
   const source = String(job.source || '');
+  // LinkedIn / Indeed are the board, shown as small "via …" on the second
+  // line. They are not a channel next to ATS, Log job, or an agent.
+  if (BOARD_LABEL[source.toLowerCase()]) return '';
   if (source === 'manual' && RECOMMENDED_BY_LABEL[String(job.recommended_by || '').toLowerCase()]) {
     let host = '';
     try { host = new URL(job.link || '').hostname.replace(/^www\./, ''); } catch (e) {}
@@ -1254,6 +1259,64 @@ function recommendedByBadge(job) {
   return `<span class="meta-pill recommended-pill" title="${escHtml(title)}">✦ ${escHtml(label)}</span>`;
 }
 
+/* ── List row: one channel chip + a quiet sub line ──────────────────
+   Channel = how the job reached the Tracker, one of four: ATS / API board,
+   AI agent (Claude, Cursor…), Log job (by hand), or Scraper. The job board
+   it is posted on (LinkedIn, Indeed) goes in the sub line as "via …". */
+const BOARD_LABEL = { linkedin: 'LinkedIn', indeed: 'Indeed' };
+
+function jobHost(job) {
+  try { return new URL(job.link || '').hostname.replace(/^www\./, ''); } catch (e) { return ''; }
+}
+
+function jobChannel(job) {
+  const rec = RECOMMENDED_BY_LABEL[String(job.recommended_by || '').toLowerCase()];
+  if (rec) return { cls: 'ch-ai', label: `✦ ${rec}`, title: `Recommended by ${rec}` };
+  const src = String(job.source || '').toLowerCase();
+  const api = SOURCE_BADGE[src];
+  if (api) return { cls: `ch-api ch-${src}`, label: `◆ ${api.label.replace(/ API$/, '')}`, title: api.title };
+  if (job.origin === 'manual') return { cls: 'ch-manual', label: 'Log job', title: ORIGIN_PILL.manual.title };
+  if (job.origin === 'pipeline' || BOARD_LABEL[src]) {
+    return { cls: 'ch-scraper', label: ORIGIN_PILL.pipeline.label, title: ORIGIN_PILL.pipeline.title };
+  }
+  return src ? { cls: 'ch-other', label: src, title: '' } : null;
+}
+
+function channelChipHtml(job) {
+  const ch = jobChannel(job);
+  if (!ch) return '<span class="row-channel"></span>';
+  return `<span class="row-channel"><span class="channel-chip ${escHtml(ch.cls)}" title="${escHtml(ch.title)}">${escHtml(ch.label)}</span></span>`;
+}
+
+/* Board (LinkedIn, Indeed) or, for agent / Log job rows, the site host.
+   API / ATS rows have no "via". */
+function jobViaText(job) {
+  const src = String(job.source || '').toLowerCase();
+  if (BOARD_LABEL[src]) return BOARD_LABEL[src];
+  const ch = jobChannel(job);
+  if (ch && (ch.cls === 'ch-ai' || ch.cls === 'ch-manual')) return jobHost(job);
+  return '';
+}
+
+function rowSubHtml(job) {
+  const viaText = jobViaText(job);
+  const history = Array.isArray(job.company_history) ? job.company_history : [];
+  let seen = '';
+  if (history.length) {
+    const total = job.company_history_total || history.length;
+    const { applied, rejected } = companyHistoryFlags(history);
+    const cls = rejected ? ' seen-rejected' : (applied ? ' seen-applied' : '');
+    seen = `<span class="row-seen${cls}" title="${escHtml(`Seen ${total} other job(s) at this company: ${companyHistorySummary(history)}`)}">seen ${total}× before</span>`;
+  }
+  return `
+        <div class="row-sub">
+          <span class="row-company">${escHtml(job.company || '')}</span>
+          <span class="row-loc" title="${escHtml(job.location || '')}">${escHtml(job.location || '')}</span>
+          ${viaText ? `<span class="row-via">via ${escHtml(viaText)}</span>` : ''}
+          ${seen}
+        </div>`;
+}
+
 function renderHighlightChips(highlights) {
   return highlights.map(tag => `
     <span class="hl-chip">
@@ -1297,7 +1360,7 @@ function companyHistoryStatus(item) {
     if (item.status === 'closed_no_reply') return { label: 'Applied · closed, no reply', cls: 'st-applied' };
     return { label: 'Applied · no reply yet', cls: 'st-applied' };
   }
-  return { label: STATUS_LABEL[item.status] || 'Not Applied', cls: '' };
+  return { label: STATUS_LABEL[item.status] || 'Not applied', cls: '' };
 }
 
 function companyHistorySummary(history) {
@@ -1314,15 +1377,6 @@ function companyHistoryFlags(history) {
   const applied = history.some(h => h.progress);
   const rejected = history.some(h => h.progress === 'rejected' || h.status === 'prev_rejected');
   return { applied, rejected };
-}
-
-function companySeenPillHtml(job) {
-  const history = Array.isArray(job.company_history) ? job.company_history : [];
-  if (!history.length) return '';
-  const total = job.company_history_total || history.length;
-  const { applied, rejected } = companyHistoryFlags(history);
-    const title = `Seen ${total} other job(s) at this company: ${companyHistorySummary(history)}`;
-  return `<span class="meta-pill company-seen-pill${rejected ? ' seen-rejected' : ''}" title="${escHtml(title)}">Seen ${total}× before</span>`;
 }
 
 function renderCompanyHistory(job) {
@@ -1479,17 +1533,14 @@ function renderCard(job) {
          aria-controls="body-${job._id}" onclick="toggleCardExpand(this)">
       <span class="row-chevron" aria-hidden="true">▸</span>
       <div class="row-main">
-        <div class="row-title">${escHtml(job.title || '(No Title)')}</div>
-        <div class="row-company">${escHtml(job.company || '')}</div>
+        <div class="row-title-line">
+          <span class="row-title">${escHtml(job.title || '(No Title)')}</span>
+          <span class="row-highlights" data-row-highlights>${highlightBadges}</span>
+        </div>
+        ${rowSubHtml(job)}
       </div>
       <div class="row-meta">
-        ${countryPillHtml(job)}
-        ${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">${escHtml(job.location)}</span>` : ''}
-        ${sourcePillHtml(job)}
-        ${originPillHtml(job)}
-        ${recBadge}
-        ${companySeenPillHtml(job)}
-        <span class="row-highlights" data-row-highlights>${highlightBadges}</span>
+        ${channelChipHtml(job)}
         ${statusPillHtml(status, job.application_timeline)}
         <div class="score-badge ${scoreCls(hasAiScore(job) ? job.match_score : null)}">${score}</div>
       </div>
@@ -1507,7 +1558,7 @@ function renderCard(job) {
               <span class="card-title-text" tabindex="-1">${escHtml(job.title || '(No Title)')}</span>
               <button class="edit-info-btn" onclick="event.stopPropagation(); openEditInfo(this)" title="Edit title / company / location">Edit</button>
             </div>
-            <div class="card-company">${cardCompanyHtml(job.company, job.location)}</div>
+            <div class="card-company">${cardCompanyHtml(job.company, job.location)}${jobViaText(job) ? `<span class="card-via">via ${escHtml(jobViaText(job))}</span>` : ''}</div>
           </div>
           <!-- Edit mode -->
           <div class="info-edit">
@@ -1537,7 +1588,10 @@ function renderCard(job) {
         ${applicantPosPillHtml(job)}
       </div>
 
+      <div class="progress-panel">
       ${renderProgressBlock(job)}
+      ${renderNotesBlock(job)}
+      </div>
 
       <div class="card-actions-row">
         <a class="btn-apply ${isAppliedLike(status, job.application_timeline) ? 'btn-applied' : ''}"
@@ -1573,16 +1627,6 @@ function renderCard(job) {
       </div>
         <div class="card-split-track">
           ${renderApplicantPositionBlock(job)}
-          <div class="notes-wrap">
-            <textarea
-              class="notes-textarea"
-              aria-label="Notes"
-              data-id="${job._id}"
-              placeholder="Notes: Rejected after interview / Direct rejection / Salary mismatch…"
-              rows="2"
-            >${escHtml(job.notes || '')}</textarea>
-            <button class="btn-save" data-id="${job._id}" onclick="saveNotes(this)">Save Notes</button>
-          </div>
           ${renderApplicationQa(job)}
           ${renderHighlightsBlock(job)}
           <div class="card-danger-row">
@@ -1765,7 +1809,7 @@ function renderProgressBlock(job) {
 
   return `
     <div class="progress-wrap" data-id="${id}" id="progress-${id}" onclick="event.stopPropagation()">
-      <div class="progress-title">Application Progress</div>
+      <div class="progress-title">Application progress</div>
       <div class="progress-track">${trackHtml}</div>
       <div class="progress-actions">
         ${actionBtns}
@@ -1787,6 +1831,21 @@ function renderProgressBlock(job) {
       </div>
     </div>
   `;
+}
+
+function renderNotesBlock(job) {
+  return `
+    <div class="notes-wrap" data-id="${job._id}" onclick="event.stopPropagation()">
+      <div class="panel-heading">Notes</div>
+      <textarea
+        class="notes-textarea"
+        aria-label="Notes"
+        data-id="${job._id}"
+        placeholder="Rejected after interview, salary, or why you skipped it…"
+        rows="2"
+      >${escHtml(job.notes || '')}</textarea>
+      <button type="button" class="btn-save" data-id="${job._id}" onclick="saveNotes(this)">Save notes</button>
+    </div>`;
 }
 
 /* ── Load jobs ───────────────────────────────────────────────────── */
@@ -2691,7 +2750,7 @@ async function saveNotes(btn) {
     if (!res.ok) throw new Error('Request failed');
     btn.textContent = 'Saved ✓';
     btn.classList.add('saved');
-    setTimeout(() => { btn.textContent = 'Save Notes'; btn.classList.remove('saved'); }, 2000);
+    setTimeout(() => { btn.textContent = 'Save notes'; btn.classList.remove('saved'); }, 2000);
     showToast('Notes saved');
   } catch (err) {
     showToast('Notes save failed', 'err');
@@ -3000,8 +3059,10 @@ async function saveJobInfo(btn) {
     const view = block.querySelector('.info-view');
     const titleSpan = view.querySelector('.card-title-text');
     if (titleSpan) titleSpan.textContent = payload.title || '(No Title)';
-    view.querySelector('.card-company').innerHTML =
-      cardCompanyHtml(payload.company, payload.location);
+    const companyEl = view.querySelector('.card-company');
+    const via = companyEl.querySelector('.card-via');
+    companyEl.innerHTML = cardCompanyHtml(payload.company, payload.location);
+    if (via) companyEl.appendChild(via);
 
     // Sync compact-row fields
     const card = block.closest('.card');
@@ -3012,22 +3073,9 @@ async function saveJobInfo(btn) {
       if (rowTitle) rowTitle.textContent = payload.title || '(No Title)';
       if (rowCompany) rowCompany.textContent = payload.company || '';
       if (rowLoc) {
-        if (payload.location) {
-          rowLoc.textContent = payload.location;
-          rowLoc.title = payload.location;
-          rowLoc.style.display = '';
-        } else {
-          rowLoc.style.display = 'none';
-        }
-      } else if (payload.location) {
-        const meta = card.querySelector('.row-meta');
-        if (meta) {
-          const loc = document.createElement('span');
-          loc.className = 'row-loc';
-          loc.title = payload.location;
-          loc.textContent = payload.location;
-          meta.insertBefore(loc, meta.firstChild);
-        }
+        // Always rendered in the sub line; empty hides itself (CSS :empty)
+        rowLoc.textContent = payload.location || '';
+        rowLoc.title = payload.location || '';
       }
     }
 

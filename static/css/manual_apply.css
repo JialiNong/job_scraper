@@ -169,18 +169,12 @@
 }
 
 @media (max-width: 760px) {
-  .form-panel { padding: 14px; }
-  .options-row { flex-direction: column; align-items: stretch; }
+  .form-panel { padding: 12px; gap: 12px; }
+  .options-row { flex-direction: column; align-items: stretch; gap: 10px; }
   .identity-row .option-group { flex: none; }
-  .option-input, .url-box { font-size: 16px; width: 100%; }
-  .btn-row { flex-direction: column; }
-  .btn { justify-content: center; min-height: 44px; }
-  .btn-clear { margin-left: 0; }
-}
-
-/* ── Touch: 44px targets on coarse pointers (tablets too) ──────── */
-@media (pointer: coarse) {
-  .btn, .option-input, .url-box, select { min-height: 44px; }
-  /* padding, not display:flex, so the disclosure triangle stays */
-  .tip summary { padding-block: 11px; }
+  .option-input, .url-box { width: 100%; }
+  .url-box { font-size: 16px; min-height: 140px; height: auto; }
+  .btn-row { flex-direction: column; gap: 6px; }
+  .btn { justify-content: center; }
+  .btn-clear { margin-left: 0; height: auto; min-height: var(--phone-ctrl-h); }
 }

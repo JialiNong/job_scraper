@@ -8,15 +8,6 @@ const SOURCE_BADGE = {
   adzuna:         { label: 'Adzuna API',    title: 'Adzuna job search API' },
 };
 
-function sourceBadgeHtml(job) {
-  const key = String(job.source || '').toLowerCase();
-  const badge = SOURCE_BADGE[key];
-  if (!badge) return '';
-  let host = '';
-  try { host = new URL(job.link || '').hostname.replace(/^www\./, ''); } catch (e) {}
-  const title = badge.title + (host ? ` · ${host}` : '');
-  return `<span class="meta-pill source-badge src-${escHtml(key)}" title="${escHtml(title)}">◆ ${escHtml(badge.label)}</span>`;
-}
 let currentPage = 1;
 let debounceTimer = null;
 let dateDebounceTimer = null;
@@ -254,13 +245,48 @@ function renderBreakdown(title, section) {
 
 function renderList(label, items, cls) {
   if (!Array.isArray(items) || !items.length) return '';
+  const rows = items.slice(0, 6).map(t => {
+    const text = String(t || '').replace(/^[\s•●·▪◦]+/, '').trim();
+    return text ? `<li class="${cls}">${escHtml(text)}</li>` : '';
+  }).join('');
+  if (!rows) return '';
   return `
     <div>
       <div class="tag-label">${escHtml(label)}</div>
-      <ul class="tag-list">
-        ${items.slice(0, 6).map(t => `<li class="${cls}">• ${escHtml(t)}</li>`).join('')}
-      </ul>
+      <ul class="tag-list">${rows}</ul>
     </div>`;
+}
+
+/* Same four channels as the Tracker. LinkedIn / Indeed are the board ("via …"
+   on the company line), not a tag next to ATS / Log job / an agent. */
+const AGENT_LABEL = { claude: 'Claude', cursor: 'Cursor', gemini: 'Gemini', gpt: 'GPT' };
+const BOARD_LABEL = { linkedin: 'LinkedIn', indeed: 'Indeed' };
+
+function rowChannelHtml(job) {
+  const src = String(job.source || '').toLowerCase();
+  const rec = AGENT_LABEL[String(job.recommended_by || '').toLowerCase()];
+  if (rec) return `<span class="channel-chip ch-ai" title="Recommended by ${escHtml(rec)}">✦ ${escHtml(rec)}</span>`;
+  const badge = SOURCE_BADGE[src];
+  if (badge) {
+    const label = badge.label.replace(/ API$/, '');
+    return `<span class="channel-chip ch-api ch-${escHtml(src)}" title="${escHtml(badge.title)}">◆ ${escHtml(label)}</span>`;
+  }
+  /* jobs.created_at is set by the scrapers too, so inferred origin "manual"
+     is not a Log job. The board source is the scraper channel. */
+  if (BOARD_LABEL[src]) {
+    return `<span class="channel-chip ch-scraper" title="Found by the LinkedIn / Indeed scraper">Scraper</span>`;
+  }
+  if (src === 'manual') {
+    return `<span class="channel-chip ch-manual" title="Logged by hand via Log Job">Log job</span>`;
+  }
+  return src ? `<span class="meta-pill source-pill">${escHtml(job.source || '')}</span>` : '';
+}
+
+function rowViaHtml(job, extraClass) {
+  const label = BOARD_LABEL[String(job.source || '').toLowerCase()];
+  if (!label) return '';
+  const cls = extraClass ? `row-via ${extraClass}` : 'row-via';
+  return `<span class="${cls}">via ${escHtml(label)}</span>`;
 }
 
 const GATE_PILLS = {
@@ -310,12 +336,15 @@ function renderCard(job) {
       <span class="row-chevron">▸</span>
       <div class="row-main">
         <div class="row-title">${escHtml(job.title || '(No Title)')}</div>
-        <div class="row-company">${escHtml(job.company || '')}</div>
+        <div class="row-line2">
+          <span class="row-company">${escHtml(job.company || '')}</span>
+          ${rowViaHtml(job)}
+        </div>
       </div>
       <div class="row-meta">
         ${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">${escHtml(job.location)}</span>` : ''}
         ${gatePill}
-        ${sourceBadgeHtml(job) || `<span class="meta-pill source-pill">${escHtml(job.source || '')}</span>`}
+        ${rowChannelHtml(job)}
         <span class="status-pill ${statusCls}" data-status-pill>${statusLabel}</span>
         ${openLink}
         <div class="score-badge ${scoreCls(score)}">${score.toFixed(1)}</div>
@@ -326,13 +355,13 @@ function renderCard(job) {
       <div class="card-header">
         <div class="card-title-block">
           <div class="card-title">${escHtml(job.title || '(No Title)')}</div>
-          <div class="card-company">${escHtml(job.company || '')}${job.location ? ' · ' + escHtml(job.location) : ''}</div>
+          <div class="card-company">${escHtml(job.company || '')}${job.location ? ' · ' + escHtml(job.location) : ''}${rowViaHtml(job, 'card-via')}</div>
         </div>
         <div class="score-badge ${scoreCls(score)}">${score.toFixed(1)}</div>
       </div>
 
       <div class="card-meta">
-        ${sourceBadgeHtml(job) || `<span class="meta-pill source-pill">${escHtml(job.source || '')}</span>`}
+        ${rowChannelHtml(job)}
         ${gatePill}
         ${job.matched_at ? `<span class="meta-pill" title="Matched on">Matched ${escHtml(job.matched_at)}</span>` : ''}
         ${postedPillHtml(job)}
@@ -345,8 +374,8 @@ function renderCard(job) {
 
       ${renderBreakdown("What you'll do", job.what_youll_do)}
       ${renderBreakdown("What they're looking for", job.what_theyre_looking_for)}
-      ${renderList('Missing Requirements', job.missing_requirements, 'bd-no')}
-      ${renderList('Red Flags', job.red_flags, 'bd-no')}
+      ${renderList('Missing requirements', job.missing_requirements, 'bd-no')}
+      ${renderList('Red flags', job.red_flags, 'bd-no')}
       ${renderList('Company & score', job.match_reasons, '')}
 
       <a class="btn-apply" href="${escHtml(job.link || '#')}" target="_blank" rel="noopener">View Original</a>

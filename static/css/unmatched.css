@@ -35,9 +35,34 @@
 }
 .reason-box strong { display: block; color: var(--danger); margin-bottom: 4px; font-size: .82rem; }
 
-.tag-list { display: flex; flex-direction: column; gap: 4px; }
-.tag-list li { font-size: .84rem; line-height: 1.45; }
-.tag-label { font-size: .8rem; font-weight: 700; color: var(--muted); margin-bottom: 2px; }
+/* One dot, drawn by ::before. A list marker plus a "•" in the text was two dots. */
+.tag-list {
+  display: flex; flex-direction: column; gap: 4px;
+  margin: 0; padding: 0; list-style: none;
+}
+.tag-list li {
+  display: block;
+  position: relative;
+  list-style: none;
+  font-size: .84rem; line-height: 1.45;
+  padding-left: 0.95em;
+}
+.tag-list li::marker { content: none; }
+.tag-list li::before {
+  content: "•";
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+/* Company can shrink; "via LinkedIn" stays on the second line. */
+.row-line2 {
+  display: flex; align-items: baseline; gap: 10px;
+  min-width: 0; margin-top: 1px;
+  font-size: .82rem; color: var(--muted);
+}
+.row-line2 .row-company { min-width: 0; margin-top: 0; }
+.row-line2 .row-via { flex: none; font-weight: 400; }
+.tag-label { font: 700 .95rem/1.3 var(--f-display); color: var(--text); margin-bottom: 4px; }
 
 .pager {
   display: flex; align-items: center; justify-content: center;
@@ -91,11 +116,4 @@
 
 @media (max-width: 760px) {
   .layout-toggle { display: none; }
-  .toolbar input[type="search"] { font-size: 16px; }
-  .status-select { min-height: 44px; }
-}
-
-/* ── Touch: 44px targets on coarse pointers ────────────────────── */
-@media (pointer: coarse) {
-  .watchlist-chip, .status-select { min-height: 44px; }
 }
