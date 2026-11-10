@@ -46,6 +46,7 @@ from core.db_mongo import (
 from core.scraper_utils import indeed_job_id_variants
 from core.job_origin import (
     ORIGIN_PIPELINE,
+    found_origin,
     infer_origin,
     normalize_origin,
     origin_filter_query,
@@ -1360,7 +1361,7 @@ def api_update_unmatched_status(job_id: str):
                     "highlights":     [],
                     "created_at":     now,
                     "from_unmatched": True,
-                    "origin":         ORIGIN_PIPELINE,
+                    "origin":         found_origin(job.get("source")),
                 }
 
                 # Insert only if this job is not already on the Tracker.

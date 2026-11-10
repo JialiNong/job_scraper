@@ -2720,6 +2720,7 @@
   <select id="originFilter" onchange="currentPage = 1; loadJobs()" title="How the job got onto the Tracker">
     <option value="all">All Origins</option>
     <option value="pipeline">Scraper</option>
+    <option value="api">API sources</option>
     <option value="manual">Log Job (manual)</option>
     <option value="agent">AI agent</option>
   </select>
@@ -3765,9 +3766,10 @@ function sourceBadgeHtml(job) {
   return `<span class="meta-pill source-badge src-${escHtml(key)}" title="${escHtml(title)}">◆ ${escHtml(badge.label)}</span>`;
 }
 
-/* Agent rows already show the ✦ agent badge, so only pipeline / manual get a pill. */
+/* Agent rows already show the ✦ agent badge and API rows the ◆ source badge,
+   so only pipeline / manual get a pill. */
 const ORIGIN_PILL = {
-  pipeline: { label: 'Scraper', title: 'Found by the Python scraper pipeline' },
+  pipeline: { label: 'Scraper', title: 'Found by the LinkedIn / Indeed scraper' },
   manual:   { label: 'Log Job', title: 'Logged by hand via Log Job' },
 };
 

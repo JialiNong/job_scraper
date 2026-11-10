@@ -11,8 +11,8 @@ There are **5 ways to get jobs**, plus 2 ways to rescue jobs the pipeline alread
 | # | Way | Sources | Runs where / when | Needs | `jobs.source` | Tracker `origin` |
 |---|-----|---------|-------------------|-------|---------------|------------------|
 | 1 | **Browser scrapers** | LinkedIn, Indeed | Your Mac, on demand (Telegram `/jobs` → `scripts/run_jobs.sh`) | Mac on, debug Chrome, sometimes an Indeed captcha | `linkedin`, `indeed` | `pipeline` |
-| 2 | **Public job APIs** | Arbeitnow, Bundesagentur für Arbeit (Adzuna: opt-in, paid) | GitHub Actions, **daily 06:00 UTC** (Mac can be off), or by hand | Nothing (Adzuna: paid key) | `arbeitnow`, `arbeitsagentur`, `adzuna` | `pipeline` |
-| 3 | **Company ATS boards** | Greenhouse, Lever, Ashby, Personio, Recruitee, Workable — for companies on the watchlist | Same daily GitHub Actions run | Watchlist `config/ats_companies.json` | `ats` (+ `ats_provider`, `ats_slug`) | `pipeline` |
+| 2 | **Public job APIs** | Arbeitnow, Bundesagentur für Arbeit (Adzuna: opt-in, paid) | GitHub Actions, **daily 06:00 UTC** (Mac can be off), or by hand | Nothing (Adzuna: paid key) | `arbeitnow`, `arbeitsagentur`, `adzuna` | `api` |
+| 3 | **Company ATS boards** | Greenhouse, Lever, Ashby, Personio, Recruitee, Workable — for companies on the watchlist | Same daily GitHub Actions run | Watchlist `config/ats_companies.json` | `ats` (+ `ats_provider`, `ats_slug`) | `api` |
 | 4 | **Manual Log Job** | Any job URL you paste | Tracker web UI **Log Job**, or `src/scrapers/manual_apply_scraper.py` | — | `linkedin` / `indeed` / `manual` | `manual` |
 | 5 | **Agent push** | Jobs an AI agent (Claude, …) recommends | `POST /api/agent/jobs` (Render) or `scripts/tools/log_recommended_jobs.py` | `AGENT_API_TOKEN` | from the URL | `agent` |
 

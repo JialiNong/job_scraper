@@ -29,7 +29,7 @@ from core.db_mongo import (  # noqa: E402
     init_db,
     mark_job_as_matched,
 )
-from core.job_origin import ORIGIN_PIPELINE  # noqa: E402
+from core.job_origin import found_origin  # noqa: E402
 from core.manual_log import analysis_fields  # noqa: E402
 from core.scraper_utils import indeed_job_id_variants, scrub_bullet_location  # noqa: E402
 from matching import evaluator  # noqa: E402
@@ -103,7 +103,7 @@ def save_matched_job(job: Dict, analysis: Dict) -> bool:
             "notes": "",
             "application_qa": [],
             "highlights": [],
-            "origin": ORIGIN_PIPELINE,
+            "origin": found_origin(job.get("source")),
             **({"run_id": PIPELINE_RUN_ID} if PIPELINE_RUN_ID else {}),
         })
         print(f"✓ Saved matched job: {job.get('title')} (score: {analysis.get('match_score')})")
