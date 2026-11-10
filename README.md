@@ -51,14 +51,16 @@ job_scraper/
 │   │   └── evaluator.py               # Model labels job + company, code scores
 │   ├── web/
 │   │   └── web_app.py                 # Flask Job Tracker UI
-│   └── bot/
-│       └── telegram_bot.py            # Telegram bot
+│   └── tg/                            # Telegram (bot commands + push messages)
+│       ├── bot.py                     # Bot: receives /jobs, /indeed_ok
+│       ├── client.py                  # Push: Bot API sendMessage helper
+│       └── digest.py                  # Today's match cards → Telegram
 ├── docs/
 │   ├── architecture.md                # How the system works (canonical flow doc)
 │   ├── user_profile.md                # Your resume — required for AI
 │   ├── matching_rules.md              # Rules the model applies (hard fails, labels)
 │   ├── deployment/                    # Render setup + deployment report
-│   └── testing/                       # Testing guide + past test/verification reports
+│   └── archive/testing/               # Past one-off test / verification reports
 ├── scripts/
 │   ├── run_jobs.sh                    # Pipeline behind Telegram /jobs
 │   ├── start_ui.sh                    # Start Job Tracker web UI
@@ -138,7 +140,7 @@ python3 src/matching/ai_matcher.py -l 3
 
 ### From Telegram (normal use)
 
-Start the bot (`python3 src/bot/telegram_bot.py`), then send:
+Start the bot (`python3 src/tg/bot.py`), then send:
 
 | Command | Indeed | LinkedIn | Pages per keyword |
 |---|---|---|---|

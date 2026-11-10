@@ -15,7 +15,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
-from core.telegram_notify import indeed_challenge_keyboard, send_telegram_message
+from tg.client import indeed_challenge_keyboard, send_telegram_message
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _LOGS_DIR = _PROJECT_ROOT / "logs"

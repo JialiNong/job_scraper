@@ -97,13 +97,13 @@ caffeinate -i ./scripts/run_jobs.sh --days 3 --hours 72 --pages 2
 
 **Per-source progress:** each lane sends two short Telegram notes — scrape done (matching started), then matching done. Indeed and LinkedIn do not wait for each other to start matching.
 
-**Match card push:** `scripts/run_jobs.sh` calls `core.match_digest.push_todays_matched_jobs()` only after **both** lanes finish. That covers Telegram `/jobs` and any manual shell run.
+**Match card push:** `scripts/run_jobs.sh` calls `tg.digest.push_todays_matched_jobs()` only after **both** lanes finish. That covers Telegram `/jobs` and any manual shell run.
 
 **Single-flight lock:** `scripts/run_jobs.sh` writes `logs/pipeline.pid`. A second `/jobs` or shell run exits immediately instead of launching another debug Chrome (same `--user-data-dir` would kill the first Chrome and abort Indeed with `TargetClosedError`). Telegram also checks this pidfile. If Indeed’s tab still dies mid-run, `indeed_scraper` reconnects over CDP and retries that page instead of exiting 1.
 
 **Destination:** Job cards, pipeline Done/error status, and Indeed challenge alerts go to the configured forum topic (`TELEGRAM_CHAT_ID` + `TELEGRAM_MESSAGE_THREAD_ID` — Jiali Personal Hub → Job Assistance). Command authorization stays on `TELEGRAM_ALLOWED_USER_ID` (your personal account). Slash-command replies (`/start`, Started, …) stay in the topic you typed in; send commands from Job Assistance so those stay there too.
 
-Start the bot: `python3 src/bot/telegram_bot.py`
+Start the bot: `python3 src/tg/bot.py`
 
 ### 2.2.1 Indeed human verification handshake
 
@@ -305,7 +305,7 @@ job_scraper/
 │   ├── job_sources.md           # every way jobs come in + API sources / ATS setup
 │   ├── user_profile.md          # resume / profile
 │   ├── deployment/              # Render setup + deployment report
-│   └── testing/                 # testing guide + past test / verification reports
+│   └── archive/testing/         # past one-off test / verification reports
 ├── src/
 │   ├── core/
 │   │   ├── config.py            # keywords, title blacklist, platform URLs
@@ -316,8 +316,6 @@ job_scraper/
 │   │   ├── scraper_utils.py     # title gates, Lingua, CDP helpers
 │   │   ├── challenge_wait.py    # Indeed captcha detect + auto-continue / Telegram resume
 │   │   ├── pipeline_lock.py     # Single-flight pidfile for scripts/run_jobs.sh
-│   │   ├── telegram_notify.py   # Sync Bot API helper (scraper alerts)
-│   │   ├── match_digest.py      # Today's match cards → Telegram (after run_jobs.sh / run_sources.py)
 │   │   └── dedup.py             # Cross-source duplicate check (company + title) for API sources
 │   ├── scrapers/                # Indeed / LinkedIn / Manual
 │   ├── sources/                 # API sources: Arbeitnow / Bundesagentur / Adzuna / company ATS (run_sources.py)
@@ -325,7 +323,10 @@ job_scraper/
 │   │   ├── ai_matcher.py        # match orchestration (`evaluate_job`)
 │   │   └── evaluator.py         # layer 1 labels, layer 2 company lookup, code score
 │   ├── web/web_app.py           # Tracker UI
-│   └── bot/telegram_bot.py      # Telegram commands (+ Indeed resume)
+│   └── tg/                      # Telegram — package is not named `telegram` (would shadow python-telegram-bot)
+│       ├── bot.py               # Bot: commands in (/jobs, /indeed_ok)
+│       ├── client.py            # Push out: sync Bot API sendMessage helper
+│       └── digest.py            # Today's match cards → Telegram (after run_jobs.sh / run_sources.py)
 └── scripts/
     ├── run_jobs.sh              # pipeline behind Telegram /jobs
     ├── start_ui.sh              # Tracker web UI

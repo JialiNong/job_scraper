@@ -39,3 +39,7 @@ dump/
 
 # Matching eval run outputs (baselines may be committed intentionally)
 evals/results/
+
+# Runtime logs and local screenshots
+logs/
+artifacts/

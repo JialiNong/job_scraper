@@ -132,8 +132,8 @@ def main() -> int:
     print("\n" + summary)
 
     if not args.dry_run and not args.no_telegram:
-        from core.match_digest import push_todays_matched_jobs
-        from core.telegram_notify import send_telegram_message
+        from tg.digest import push_todays_matched_jobs
+        from tg.client import send_telegram_message
 
         send_telegram_message(summary)
         if not args.no_match:

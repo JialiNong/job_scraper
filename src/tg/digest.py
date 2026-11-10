@@ -3,6 +3,7 @@ Build and send today's matched-job digest to Telegram.
 
 Used by:
   - scripts/run_jobs.sh (push after both lanes finish)
+  - src/sources/run_sources.py (daily API sources run)
 """
 from __future__ import annotations
 
@@ -10,7 +11,7 @@ import html
 import time
 from datetime import datetime
 from core.db_mongo import get_collection
-from core.telegram_notify import send_telegram_message
+from tg.client import send_telegram_message
 
 # Telegram hard limit is 4096; stay under to leave room for UTF-16 emoji expansion
 _TELEGRAM_MSG_LIMIT = 3500
@@ -186,6 +187,6 @@ def push_todays_matched_jobs(run_id: str | None = None) -> int:
 
 
 if __name__ == "__main__":
-    # CLI: python3 -m core.match_digest   (from src/) or via scripts
+    # CLI: python3 -m tg.digest   (from src/) or via scripts
     n = push_todays_matched_jobs()
     raise SystemExit(0 if n >= 0 else 1)

@@ -218,7 +218,7 @@ log "Step 2/2: Pushing this run's matches to Telegram..."
 $PYTHON -c "
 import os, sys
 sys.path.insert(0, 'src')
-from core.match_digest import push_todays_matched_jobs
+from tg.digest import push_todays_matched_jobs
 push_todays_matched_jobs(run_id=os.environ['PIPELINE_RUN_ID'])
 " >> "$LOG_DIR/telegram_push_$(date +%Y%m%d).log" 2>&1 \
   && log "✅ Telegram match digest sent" \
