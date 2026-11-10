@@ -411,10 +411,10 @@
       padding: 4px 2px;
     }
 
-    /* ── Dashboard row: locations + daily activity (equal halves) ── */
+    /* ── Dashboard row: compact locations + wider 3-month activity ── */
     .dash-row {
       display: grid;
-      grid-template-columns: 1fr 1fr;
+      grid-template-columns: minmax(260px, 2fr) minmax(0, 3fr);
       align-items: stretch;
       border-bottom: 1px solid var(--border);
       background: var(--surface);
@@ -594,7 +594,7 @@
     .loc-bubbles {
       position: relative;
       width: 100%;
-      height: 260px;
+      height: 230px;
       overflow: hidden;
       background: var(--bg);
       border: 1px solid var(--border);
@@ -2587,7 +2587,7 @@
 
 <div class="cal-section" id="calSection">
   <div class="cal-header">
-    <div class="cal-title">Daily Activity <span>last 2 months</span></div>
+    <div class="cal-title">Daily Activity <span>last 3 months</span></div>
     <div class="cal-legend">
       Less
       <span class="swatch l0" style="background:#1a1d27"></span>
@@ -2706,6 +2706,10 @@
     <option value="all">All Sources</option>
     <option value="linkedin">LinkedIn</option>
     <option value="indeed">Indeed</option>
+    <option value="ats">Company site (ATS)</option>
+    <option value="arbeitnow">Arbeitnow</option>
+    <option value="arbeitsagentur">Bundesagentur</option>
+    <option value="adzuna">Adzuna</option>
   </select>
   <select id="originFilter" onchange="currentPage = 1; loadJobs()" title="How the job got onto the Tracker">
     <option value="all">All Origins</option>
@@ -3134,61 +3138,48 @@ const LOC_BUBBLE_COLORS = [
 function packLocationBubbles(items, width, height) {
   // Greedy circle pack: largest first, nest tightly around the center.
   // inset = stay inside the rounded clip; gap = space between circles.
+  // Never overlaps: items with no free spot are returned in `skipped`.
   const cx = width / 2;
   const cy = height / 2;
   const placed = [];
+  const skipped = [];
   const inset = 8;
-  const gap = 1;
+  const gap = 2;
+
+  const fits = (x, y, r) => {
+    if (x - r < inset || x + r > width - inset || y - r < inset || y + r > height - inset) {
+      return false;
+    }
+    for (const p of placed) {
+      if (Math.hypot(x - p.x, y - p.y) < p.r + r + gap - 0.5) return false;
+    }
+    return true;
+  };
 
   for (const item of items) {
     if (!placed.length) {
-      placed.push({ ...item, x: cx, y: cy });
+      if (fits(cx, cy, item.r)) placed.push({ ...item, x: cx, y: cy });
+      else skipped.push(item);
       continue;
     }
 
     let best = null;
     for (const other of placed) {
       const ring = other.r + item.r + gap;
-      for (let a = 0; a < 360; a += 8) {
+      for (let a = 0; a < 360; a += 5) {
         const rad = (a * Math.PI) / 180;
         const x = other.x + Math.cos(rad) * ring;
         const y = other.y + Math.sin(rad) * ring;
-        if (
-          x - item.r < inset ||
-          x + item.r > width - inset ||
-          y - item.r < inset ||
-          y + item.r > height - inset
-        ) {
-          continue;
-        }
-        let overlaps = false;
-        for (const p of placed) {
-          if (Math.hypot(x - p.x, y - p.y) < p.r + item.r + gap - 0.5) {
-            overlaps = true;
-            break;
-          }
-        }
-        if (overlaps) continue;
+        if (!fits(x, y, item.r)) continue;
         const score = Math.hypot(x - cx, y - cy);
         if (!best || score < best.score) best = { x, y, score };
       }
     }
 
-    if (best) {
-      placed.push({ ...item, x: best.x, y: best.y });
-    } else {
-      // Fallback: slight spiral outward from center
-      const n = placed.length;
-      const ang = n * 2.4;
-      const dist = 20 + n * 6;
-      placed.push({
-        ...item,
-        x: Math.min(width - item.r - inset, Math.max(item.r + inset, cx + Math.cos(ang) * dist)),
-        y: Math.min(height - item.r - inset, Math.max(item.r + inset, cy + Math.sin(ang) * dist)),
-      });
-    }
+    if (best) placed.push({ ...item, x: best.x, y: best.y });
+    else skipped.push(item);
   }
-  return placed;
+  return { placed, skipped };
 }
 
 function renderLocationBubbles(locations, total) {
@@ -3198,29 +3189,39 @@ function renderLocationBubbles(locations, total) {
   const width = Math.max(root.clientWidth || 640, 320);
   const height = Math.max(root.clientHeight || 280, 200);
   const maxCount = Math.max(...locations.map(l => l.count || 0), 1);
-  
+
   // Smaller bubbles on mobile so the packed cloud stays inside the canvas
   const isMobile = window.innerWidth <= 768;
-  const minR = isMobile ? 14 : 22;
-  const maxR = isMobile ? Math.min(32, Math.floor(Math.min(width, height) * 0.15)) : Math.min(58, Math.floor(Math.min(width, height) * 0.22));
+  const baseMinR = isMobile ? 14 : 22;
+  const baseMaxR = isMobile ? Math.min(32, Math.floor(Math.min(width, height) * 0.15)) : Math.min(58, Math.floor(Math.min(width, height) * 0.22));
 
-  const items = locations.map((loc, i) => {
-    const count = loc.count || 0;
-    const t = Math.sqrt(count / maxCount);
-    const r = Math.round(minR + (maxR - minR) * t);
-    const palette = LOC_BUBBLE_COLORS[i % LOC_BUBBLE_COLORS.length];
-    return {
-      name: loc.name || 'Remote',
-      count,
-      r,
-      color: palette.fill,
-      ink: palette.ink,
-    };
-  });
+  const buildItems = (scale) => {
+    const minR = Math.max(12, baseMinR * scale);
+    const maxR = Math.max(minR, baseMaxR * scale);
+    return locations.map((loc, i) => {
+      const count = loc.count || 0;
+      const t = Math.sqrt(count / maxCount);
+      const palette = LOC_BUBBLE_COLORS[i % LOC_BUBBLE_COLORS.length];
+      return {
+        name: loc.name || 'Remote',
+        count,
+        r: Math.round(minR + (maxR - minR) * t),
+        color: palette.fill,
+        ink: palette.ink,
+      };
+    });
+  };
 
-  const packed = packLocationBubbles(items, width, height);
+  // Shrink all bubbles until every one fits without overlap; if even the
+  // smallest scale can't fit them all, drop the leftovers (smallest counts).
+  let packed = null;
+  for (let scale = 1; scale >= 0.5; scale -= 0.08) {
+    packed = packLocationBubbles(buildItems(scale), width, height);
+    if (!packed.skipped.length) break;
+  }
+
   root.classList.remove('has-open');
-  root.innerHTML = packed.map(b => {
+  root.innerHTML = packed.placed.map(b => {
     const size = b.r * 2;
     return `
       <div class="loc-bubble"
@@ -3263,8 +3264,11 @@ async function loadLocationStats() {
   try {
     const res = await fetch('/api/stats/locations');
     const data = await res.json();
-    const locations = data.locations || [];
     const total = data.total || 0;
+    // Single-job cities add clutter; only chart places with 2+ applications
+    const locations = (data.locations || [])
+      .filter(l => (l.count || 0) >= 2)
+      .sort((a, b) => (b.count || 0) - (a.count || 0));
     _locStatsCache = { locations, total };
 
     if (sub) {
@@ -3273,7 +3277,7 @@ async function loadLocationStats() {
         : 'Applied · rejected · interview · offer';
     }
     if (!locations.length) {
-      root.innerHTML = '<div class="loc-empty">No applied jobs yet</div>';
+      root.innerHTML = `<div class="loc-empty">${total ? 'No city with 2+ applications yet' : 'No applied jobs yet'}</div>`;
       return;
     }
     // Wait a frame so clientWidth is correct after layout
@@ -3338,8 +3342,8 @@ async function loadDailyStats() {
   if (!container) return;
 
   try {
-    // ~2 months so it fits beside the location bubbles
-    const res = await fetch('/api/stats/daily?days=61');
+    // ~3 months (13–14 week columns)
+    const res = await fetch('/api/stats/daily?days=92');
     const data = await res.json();
     const days = data.days || [];
     calDaysByDate = {};
@@ -3441,11 +3445,6 @@ function sizeHeatmapToWidth() {
   const months = document.getElementById('calMonths');
   if (!section || !body || !wrap || !months) return;
 
-  if (window.innerWidth > 900) {
-    section.style.removeProperty('--cal-cell');
-    return;
-  }
-
   const weekCount = months.querySelectorAll('.cal-month-col').length;
   if (!weekCount) return;
 
@@ -3457,7 +3456,8 @@ function sizeHeatmapToWidth() {
   const detailW = detail ? detail.getBoundingClientRect().width : 0;
   const available = body.clientWidth - detailW - bodyGap - dowWidth - wrapGap;
   const cell = Math.floor((available - (weekCount - 1) * gap) / weekCount);
-  const maxCell = window.innerWidth <= 768 ? 16 : 18;
+  // Desktop keeps the full 26px cells when there is room; shrink to fit otherwise
+  const maxCell = window.innerWidth > 900 ? 26 : (window.innerWidth <= 768 ? 16 : 18);
   if (cell >= 8) {
     section.style.setProperty('--cal-cell', `${Math.min(cell, maxCell)}px`);
   }
@@ -3736,8 +3736,15 @@ function sourcePillHtml(job) {
       ? `<span class="meta-pill source-pill site-pill" title="${escHtml(job.link || '')}">${escHtml(host)}</span>`
       : '';
   }
-  return `<span class="meta-pill source-pill">${escHtml(source)}</span>`;
+  const label = SOURCE_PILL_LABEL[source.toLowerCase()] || source;
+  return `<span class="meta-pill source-pill">${escHtml(label)}</span>`;
 }
+
+/* API sources (src/sources/): readable names for the stored jobs.source key */
+const SOURCE_PILL_LABEL = {
+  ats: 'company site',
+  arbeitsagentur: 'bundesagentur',
+};
 
 /* Agent rows already show the ✦ agent badge, so only pipeline / manual get a pill. */
 const ORIGIN_PILL = {

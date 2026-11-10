@@ -1,0 +1,7 @@
+# API job sources pipeline (src/sources/run_sources.py) — no Playwright / Chrome.
+# Installed by .github/workflows/api-sources.yml on the GitHub Actions runner.
+pymongo>=4.6.0
+python-dotenv>=1.0.0
+openai>=1.0.0
+lingua-language-detector>=2.1.0  # English-only JD gate
+trafilatura>=1.12.0              # Adzuna: full JD from the original posting

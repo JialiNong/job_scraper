@@ -40,6 +40,8 @@ from matching.evaluator import (  # noqa: E402,F401  (re-exported for callers)
 )
 
 MATCH_THRESHOLD = float(os.getenv("MATCH_THRESHOLD", "7.0"))  # Tracker cut-off (0-10)
+# Set by scripts/run_jobs.sh so the end-of-run Telegram digest only lists this run's matches
+PIPELINE_RUN_ID = os.getenv("PIPELINE_RUN_ID", "").strip()
 
 
 def evaluate_job(
@@ -102,6 +104,7 @@ def save_matched_job(job: Dict, analysis: Dict) -> bool:
             "application_qa": [],
             "highlights": [],
             "origin": ORIGIN_PIPELINE,
+            **({"run_id": PIPELINE_RUN_ID} if PIPELINE_RUN_ID else {}),
         })
         print(f"✓ Saved matched job: {job.get('title')} (score: {analysis.get('match_score')})")
         return True
@@ -196,7 +199,9 @@ def main():
     parser = argparse.ArgumentParser(description="AI-powered job matching")
     parser.add_argument("--limit", "-l", type=int, default=None,
                         help="Limit number of jobs to process")
-    parser.add_argument("--source", "-s", choices=["indeed", "linkedin"], default=None,
+    parser.add_argument("--source", "-s",
+                        choices=["indeed", "linkedin", "arbeitnow", "arbeitsagentur", "adzuna", "ats"],
+                        default=None,
                         help="Filter by job source")
     parser.add_argument("--threshold", "-t", type=float, default=MATCH_THRESHOLD,
                         help="Minimum score for the Tracker (0-10)")

@@ -1,0 +1,404 @@
+{
+  "companies": [
+    {
+      "company": "1Komma5Grad",
+      "provider": "personio",
+      "slug": "1komma5grad"
+    },
+    {
+      "company": "Acentecom",
+      "provider": "ashby",
+      "slug": "acentecom"
+    },
+    {
+      "company": "Air Apps",
+      "provider": "ashby",
+      "slug": "airapps"
+    },
+    {
+      "company": "Almedia",
+      "provider": "ashby",
+      "slug": "almedia"
+    },
+    {
+      "company": "Almetra",
+      "provider": "ashby",
+      "slug": "almetra"
+    },
+    {
+      "company": "Alpaca",
+      "provider": "greenhouse",
+      "slug": "alpaca"
+    },
+    {
+      "company": "Alpine Eagle",
+      "provider": "greenhouse",
+      "slug": "alpineeagle"
+    },
+    {
+      "company": "Ashby",
+      "provider": "ashby",
+      "slug": "ashby"
+    },
+    {
+      "company": "Atolls",
+      "provider": "greenhouse",
+      "slug": "atolls"
+    },
+    {
+      "company": "Attio",
+      "provider": "ashby",
+      "slug": "attio"
+    },
+    {
+      "company": "Autonomous Teaming",
+      "provider": "personio",
+      "slug": "autonomous-teaming"
+    },
+    {
+      "company": "AutoScout24",
+      "provider": "greenhouse",
+      "slug": "autoscout24"
+    },
+    {
+      "company": "Avelios Medical",
+      "provider": "ashby",
+      "slug": "avelios-medical"
+    },
+    {
+      "company": "Bookboost",
+      "provider": "personio",
+      "slug": "bookboost"
+    },
+    {
+      "company": "Canonical",
+      "provider": "greenhouse",
+      "slug": "canonical"
+    },
+    {
+      "company": "Capmont",
+      "provider": "personio",
+      "slug": "capmont"
+    },
+    {
+      "company": "ClickHouse",
+      "provider": "ashby",
+      "slug": "clickhouse"
+    },
+    {
+      "company": "Contabo",
+      "provider": "personio",
+      "slug": "contabo"
+    },
+    {
+      "company": "contentpass",
+      "provider": "personio",
+      "slug": "contentpass"
+    },
+    {
+      "company": "Cosuno",
+      "provider": "ashby",
+      "slug": "cosuno"
+    },
+    {
+      "company": "Cresta",
+      "provider": "greenhouse",
+      "slug": "cresta"
+    },
+    {
+      "company": "Databricks",
+      "provider": "greenhouse",
+      "slug": "databricks"
+    },
+    {
+      "company": "Distribusion Technologies",
+      "provider": "recruitee",
+      "slug": "distribusion"
+    },
+    {
+      "company": "DKB Code Factory",
+      "provider": "greenhouse",
+      "slug": "dkbcodefactory"
+    },
+    {
+      "company": "Doctolib",
+      "provider": "ashby",
+      "slug": "doctolib"
+    },
+    {
+      "company": "Dyflexis",
+      "provider": "recruitee",
+      "slug": "dyflexis"
+    },
+    {
+      "company": "EGYM",
+      "provider": "ashby",
+      "slug": "egym"
+    },
+    {
+      "company": "einwert",
+      "provider": "personio",
+      "slug": "einwert"
+    },
+    {
+      "company": "ElevenLabs",
+      "provider": "ashby",
+      "slug": "elevenlabs"
+    },
+    {
+      "company": "EWOR",
+      "provider": "greenhouse",
+      "slug": "ewor"
+    },
+    {
+      "company": "Eye Security",
+      "provider": "ashby",
+      "slug": "eye-security"
+    },
+    {
+      "company": "GlassDollar",
+      "provider": "personio",
+      "slug": "glassdollar"
+    },
+    {
+      "company": "Hawk",
+      "provider": "ashby",
+      "slug": "hawk"
+    },
+    {
+      "company": "Hostaway",
+      "provider": "recruitee",
+      "slug": "hostaway"
+    },
+    {
+      "company": "IDnow",
+      "provider": "greenhouse",
+      "slug": "idnow"
+    },
+    {
+      "company": "Ingestro",
+      "provider": "recruitee",
+      "slug": "ingestro"
+    },
+    {
+      "company": "InnoCraft",
+      "provider": "lever",
+      "slug": "innocraft"
+    },
+    {
+      "company": "Jiga",
+      "provider": "ashby",
+      "slug": "jiga"
+    },
+    {
+      "company": "KONUX",
+      "provider": "greenhouse",
+      "slug": "konux"
+    },
+    {
+      "company": "koppla",
+      "provider": "personio",
+      "slug": "koppla"
+    },
+    {
+      "company": "lemon.markets",
+      "provider": "ashby",
+      "slug": "lemon-markets"
+    },
+    {
+      "company": "LiveKit",
+      "provider": "ashby",
+      "slug": "livekit"
+    },
+    {
+      "company": "matchmatch",
+      "provider": "ashby",
+      "slug": "matchmatch"
+    },
+    {
+      "company": "Mercanis",
+      "provider": "personio",
+      "slug": "mercanis"
+    },
+    {
+      "company": "Mozilla",
+      "provider": "greenhouse",
+      "slug": "mozilla"
+    },
+    {
+      "company": "MUBI",
+      "provider": "ashby",
+      "slug": "mubi"
+    },
+    {
+      "company": "n8n",
+      "provider": "ashby",
+      "slug": "n8n"
+    },
+    {
+      "company": "NavVis",
+      "provider": "greenhouse",
+      "slug": "navvis"
+    },
+    {
+      "company": "NiCE",
+      "provider": "greenhouse",
+      "slug": "nice"
+    },
+    {
+      "company": "Plentific",
+      "provider": "ashby",
+      "slug": "plentific"
+    },
+    {
+      "company": "PPRO",
+      "provider": "ashby",
+      "slug": "ppro"
+    },
+    {
+      "company": "Qonto",
+      "provider": "ashby",
+      "slug": "qonto"
+    },
+    {
+      "company": "Quantum-Systems",
+      "provider": "recruitee",
+      "slug": "quantumsystemsgmbh"
+    },
+    {
+      "company": "refurbed",
+      "provider": "greenhouse",
+      "slug": "refurbed"
+    },
+    {
+      "company": "RELEX Solutions",
+      "provider": "greenhouse",
+      "slug": "relex"
+    },
+    {
+      "company": "Reonic",
+      "provider": "ashby",
+      "slug": "reonic"
+    },
+    {
+      "company": "revel8",
+      "provider": "personio",
+      "slug": "revel8"
+    },
+    {
+      "company": "saas.group",
+      "provider": "greenhouse",
+      "slug": "saasgroup"
+    },
+    {
+      "company": "SANOVIO",
+      "provider": "ashby",
+      "slug": "sanovio"
+    },
+    {
+      "company": "Seez",
+      "provider": "personio",
+      "slug": "seez"
+    },
+    {
+      "company": "Sharpist",
+      "provider": "recruitee",
+      "slug": "sharpist"
+    },
+    {
+      "company": "Skalar",
+      "provider": "ashby",
+      "slug": "skalar"
+    },
+    {
+      "company": "Snke",
+      "provider": "personio",
+      "slug": "snke"
+    },
+    {
+      "company": "Snowflake",
+      "provider": "ashby",
+      "slug": "snowflake"
+    },
+    {
+      "company": "Sporty Group",
+      "provider": "greenhouse",
+      "slug": "sportygroup"
+    },
+    {
+      "company": "Spread Group",
+      "provider": "recruitee",
+      "slug": "spreadgroup"
+    },
+    {
+      "company": "Staffbase",
+      "provider": "greenhouse",
+      "slug": "staffbase"
+    },
+    {
+      "company": "STARK",
+      "provider": "personio",
+      "slug": "stark"
+    },
+    {
+      "company": "Storage24",
+      "provider": "personio",
+      "slug": "storage24"
+    },
+    {
+      "company": "SWARCO",
+      "provider": "personio",
+      "slug": "swarco"
+    },
+    {
+      "company": "Taktile",
+      "provider": "ashby",
+      "slug": "taktile"
+    },
+    {
+      "company": "Tanso",
+      "provider": "personio",
+      "slug": "tanso"
+    },
+    {
+      "company": "The Flex",
+      "provider": "ashby",
+      "slug": "the-flex"
+    },
+    {
+      "company": "Trading 212",
+      "provider": "ashby",
+      "slug": "trading212"
+    },
+    {
+      "company": "Turba Labs",
+      "provider": "personio",
+      "slug": "turbalabs"
+    },
+    {
+      "company": "Twentyfour Industries",
+      "provider": "personio",
+      "slug": "twentyfour-industries"
+    },
+    {
+      "company": "Upvest",
+      "provider": "ashby",
+      "slug": "upvest"
+    },
+    {
+      "company": "Vantis",
+      "provider": "personio",
+      "slug": "vantis"
+    },
+    {
+      "company": "Wolt",
+      "provider": "greenhouse",
+      "slug": "wolt"
+    },
+    {
+      "company": "Zenjob",
+      "provider": "ashby",
+      "slug": "zenjob"
+    }
+  ]
+}

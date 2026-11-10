@@ -31,6 +31,16 @@ STATUS_LABELS = {
 }
 
 
+# Display names for the API sources (src/sources/). LinkedIn / Indeed cards keep
+# their original format: .title() label, no company line.
+SOURCE_LABELS = {
+    "arbeitnow": "Arbeitnow",
+    "arbeitsagentur": "Bundesagentur",
+    "adzuna": "Adzuna",
+    "ats": "Company site",
+}
+
+
 def normalize_job_link(job: dict) -> str:
     """Return an absolute job URL (LinkedIn/Indeed relative hrefs → https)."""
     link = (job.get("link") or "").strip()
@@ -49,13 +59,22 @@ def normalize_job_link(job: dict) -> str:
     return link
 
 
-def fetch_todays_matched_jobs() -> list[dict]:
-    """Return today's matched_jobs, highest score first."""
+def fetch_todays_matched_jobs(run_id: str | None = None) -> list[dict]:
+    """
+    Return matched_jobs, highest score first.
+
+    With run_id: only rows the pipeline run with that id wrote (Telegram /jobs).
+    Without: every row matched today (manual logs and agents included).
+    """
     matched_jobs = get_collection("matched_jobs")
-    today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    if run_id:
+        query = {"run_id": run_id}
+    else:
+        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        query = {"matched_at": {"$gte": today_start}}
     return list(
         matched_jobs.find(
-            {"matched_at": {"$gte": today_start}},
+            query,
             {
                 "title": 1,
                 "location": 1,
@@ -75,7 +94,9 @@ def format_job_block(index: int, job: dict) -> str:
     """One job block inside the combined daily card (Telegram HTML)."""
     title = html.escape(str(job.get("title") or "Untitled"))
     location = html.escape(str(job.get("location") or "N/A"))
-    source = html.escape(str(job.get("source") or "unknown").title())
+    source_key = str(job.get("source") or "unknown").lower()
+    source = html.escape(SOURCE_LABELS.get(source_key, source_key.title()))
+    company = html.escape(str(job.get("company") or "")) if source_key in SOURCE_LABELS else ""
     status_key = str(job.get("status") or "pending")
     status = html.escape(STATUS_LABELS.get(status_key, status_key))
 
@@ -87,6 +108,7 @@ def format_job_block(index: int, job: dict) -> str:
 
     lines = [
         f"<b>{index}. {title}</b>",
+        *([f"🏢 {company}"] if company else []),
         f"📍 {location}",
         f"⭐ {score_text}/10 · {source}",
         f"🏷 {status}",
@@ -101,9 +123,9 @@ def format_job_block(index: int, job: dict) -> str:
     return "\n".join(lines)
 
 
-def build_match_messages(jobs: list[dict]) -> list[str]:
+def build_match_messages(jobs: list[dict], label: str = "Today's matches") -> list[str]:
     """Pack all jobs into as few Telegram messages as possible."""
-    header = f"📋 Today's matches: <b>{len(jobs)}</b>\n"
+    header = f"📋 {label}: <b>{len(jobs)}</b>\n"
     blocks = [format_job_block(i, job) for i, job in enumerate(jobs, start=1)]
 
     messages: list[str] = []
@@ -129,24 +151,28 @@ def build_match_messages(jobs: list[dict]) -> list[str]:
     return messages
 
 
-def push_todays_matched_jobs() -> int:
+def push_todays_matched_jobs(run_id: str | None = None) -> int:
     """
-    Send today's matched jobs via the Bot API (sync).
+    Send matched jobs via the Bot API (sync).
 
+    With run_id, only that pipeline run's new matches are sent; otherwise all of today's.
     Returns the number of jobs included (0 if none / notify skipped).
     """
     try:
-        jobs = fetch_todays_matched_jobs()
+        jobs = fetch_todays_matched_jobs(run_id)
     except Exception as exc:
         send_telegram_message(f"⚠️ Failed to load matches: {exc}")
         return 0
 
     if not jobs:
-        send_telegram_message("📭 No matched jobs for today.")
+        send_telegram_message(
+            "📭 No new matches from this run." if run_id else "📭 No matched jobs for today."
+        )
         return 0
 
+    label = "This run's matches" if run_id else "Today's matches"
     sent = 0
-    for message in build_match_messages(jobs):
+    for message in build_match_messages(jobs, label=label):
         if send_telegram_message(
             message,
             parse_mode="HTML",

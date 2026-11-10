@@ -84,6 +84,8 @@ def ensure_indexes():
         jobs.create_index("match_score")
         # Unmatched list / count: matched_at exists + score below threshold
         jobs.create_index([("match_score", 1), ("matched_at", -1)])
+        # API sources (src/sources/): company + title dedup across cities / reposts
+        jobs.create_index("dedup_key", sparse=True)
 
         matched = db["matched_jobs"]
         matched.create_index([("matched_at", -1)])
@@ -91,6 +93,7 @@ def ensure_indexes():
         matched.create_index([("status", 1), ("applied_at", -1)])
         matched.create_index("source")
         matched.create_index("origin")
+        matched.create_index("run_id")
         matched.create_index("link")
 
         timeouts = db["timeout_jobs"]
@@ -590,6 +593,8 @@ _COUNTRY_ONLY = {
     "europe",
     "european union",
     "european union (remote)",
+    "european economic area",
+    "eea",
     "dach",
     "emea",
 }
@@ -699,6 +704,55 @@ def _city_in_text(text_lower: str) -> str | None:
         ):
             return canon
     return None
+
+
+# Non-German countries / cities: the location chart is Germany + Remote only
+_FOREIGN_MARKERS = (
+    "netherlands", "the netherlands", "holland", "amsterdam", "rotterdam",
+    "the hague", "den haag", "utrecht", "eindhoven", "geleen", "delft",
+    "sweden", "stockholm", "gothenburg", "malmö", "malmo",
+    "united kingdom", "uk", "england", "scotland", "london", "manchester",
+    "edinburgh", "cambridge", "oxford",
+    "ireland", "dublin", "cork",
+    "france", "paris", "lyon", "spain", "madrid", "barcelona", "valencia",
+    "portugal", "lisbon", "porto", "italy", "milan", "rome",
+    "austria", "vienna", "wien", "graz", "switzerland", "zurich", "zürich",
+    "geneva", "basel", "lausanne",
+    "belgium", "brussels", "antwerp", "luxembourg",
+    "denmark", "copenhagen", "norway", "oslo", "finland", "helsinki",
+    "poland", "warsaw", "krakow", "kraków", "wroclaw", "wrocław",
+    "czech republic", "czechia", "prague", "hungary", "budapest",
+    "romania", "bucharest", "estonia", "tallinn", "lithuania", "vilnius",
+    "latvia", "riga", "greece", "athens", "croatia", "zagreb",
+    "united states", "usa", "us", "new york", "san francisco", "canada",
+    "toronto", "india", "bangalore", "singapore", "dubai", "israel", "tel aviv",
+)
+_FOREIGN_RE = re.compile(
+    r"(?<![a-z0-9äöüß])(?:"
+    + "|".join(re.escape(m) for m in sorted(_FOREIGN_MARKERS, key=len, reverse=True))
+    + r")(?![a-z0-9äöüß])"
+)
+_GERMAN_CITY_NAMES = frozenset(_CITY_CANON.values())
+
+
+def is_germany_or_remote(raw: str, normalized: str | None = None) -> bool:
+    """
+    True when an applied location belongs on the Germany + Remote chart.
+
+    A known German city always counts (e.g. "Stuttgart, Ulm or Berlin").
+    Otherwise any non-German country / city marker excludes it, including
+    country-scoped remote like "Remote, UK" — unless Germany is also named.
+    Unknown localities without a
+    foreign marker (Manching, Gilching, …) are treated as German towns.
+    """
+    name = normalized if normalized is not None else normalize_applied_location(raw)
+    if name in _GERMAN_CITY_NAMES:
+        return True
+    text = (raw or "").lower()
+    # Multi-country postings that include Germany ("Remote - Germany | UK") stay
+    if re.search(r"(?<![a-z])(germany|deutschland)(?![a-z])", text):
+        return True
+    return not _FOREIGN_RE.search(text)
 
 
 def normalize_applied_location(raw: str) -> str:
@@ -900,7 +954,11 @@ def get_applied_location_stats() -> dict:
         # A reapply is another application at the same place.
         n = 1 + reapplied_count(doc)
         total += n
-        counter[normalize_applied_location(doc.get("location") or "")] += n
+        raw = doc.get("location") or ""
+        name = normalize_applied_location(raw)
+        # Chart shows Germany + Remote only; total still counts every application
+        if is_germany_or_remote(raw, name):
+            counter[name] += n
 
     locations = [
         {"name": name, "count": count}

@@ -68,11 +68,14 @@ flowchart TB
 
 ### 2.1 Pipeline
 
-There is **no scheduled job** (no cron / launchd) in this project. Runs are started on demand from Telegram `/jobs` (or the same script from a shell); recurring runs, if any, are driven by external agents.
+The browser pipeline (LinkedIn / Indeed) has **no schedule**: it runs on demand from Telegram `/jobs` (or the same script from a shell) on the Mac.
+
+The **API sources pipeline** (Arbeitnow, Bundesagentur, company ATS boards; Adzuna opt-in; `src/sources/run_sources.py`) runs **daily on GitHub Actions** (`.github/workflows/api-sources.yml`, 06:00 UTC), with no Mac needed. It uses the same title / language gates and the same AI matcher, and sends its own Telegram summary + match cards. Full source list, setup and watchlist: [`job_sources.md`](./job_sources.md).
 
 | Command | What it does | Typical time |
 |---------|--------------|--------------|
 | `./scripts/run_jobs.sh [--days N] [--hours H] [--pages P]` | Indeed + LinkedIn lanes in parallel. Each source matches as soon as its scrape finishes, with Telegram pings; match-card digest after both lanes. Defaults: Indeed 1 day, LinkedIn 24h (or `days × 24` when `--days` is given), `FULL_MAX_PAGES` (3) pages per keyword on both platforms | 40–60 min at defaults |
+| `python3 src/sources/run_sources.py [--sources …] [--days N] [--dry-run]` | API sources: fetch → funnel → AI match → Telegram (same as the daily GitHub Actions run). See [`job_sources.md`](./job_sources.md) | 2–8 min |
 | `./scripts/start_ui.sh` | Start Job Tracker Web UI (default `:5050`); runs with `--reload`, so saving a `.py` file restarts the server and templates hot-reload in the browser | — |
 
 Prefer `caffeinate -i` for manual runs so sleep does not interrupt Playwright:
@@ -299,6 +302,7 @@ job_scraper/
 ├── docs/
 │   ├── architecture.md          # this file
 │   ├── matching_rules.md        # layer-1 rules for the model (hard fails, labels)
+│   ├── job_sources.md           # every way jobs come in + API sources / ATS setup
 │   ├── user_profile.md          # resume / profile
 │   ├── deployment/              # Render setup + deployment report
 │   └── testing/                 # testing guide + past test / verification reports
@@ -313,8 +317,10 @@ job_scraper/
 │   │   ├── challenge_wait.py    # Indeed captcha detect + auto-continue / Telegram resume
 │   │   ├── pipeline_lock.py     # Single-flight pidfile for scripts/run_jobs.sh
 │   │   ├── telegram_notify.py   # Sync Bot API helper (scraper alerts)
-│   │   └── match_digest.py      # Today's match cards → Telegram (after run_jobs.sh)
+│   │   ├── match_digest.py      # Today's match cards → Telegram (after run_jobs.sh / run_sources.py)
+│   │   └── dedup.py             # Cross-source duplicate check (company + title) for API sources
 │   ├── scrapers/                # Indeed / LinkedIn / Manual
+│   ├── sources/                 # API sources: Arbeitnow / Bundesagentur / Adzuna / company ATS (run_sources.py)
 │   ├── matching/
 │   │   ├── ai_matcher.py        # match orchestration (`evaluate_job`)
 │   │   └── evaluator.py         # layer 1 labels, layer 2 company lookup, code score
