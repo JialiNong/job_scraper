@@ -76,6 +76,8 @@ job_scraper/
 │   └── tools/                         # eval_matcher, generate_password_hash, log_recommended_jobs
 ├── evals/                             # Matcher evaluation set + baselines
 ├── static/                            # Page JS/CSS: css/<page>.css + js/<page>.js per template
+│   └── css/base.css, job_list.css     #   shared: colour tokens + common rules (all pages);
+│                                      #   job list (Tracker + Unmatched). Load order: base → job_list → page
 ├── tests/                             # Unit tests (python3 -m unittest discover -s tests)
 │   └── e2e/                           # Browser E2E tests for the web UI (./scripts/run_e2e.sh)
 ├── templates/                         # Web UI templates

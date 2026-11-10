@@ -1,30 +1,7 @@
 /* Timeouts page (templates/timeouts.html) styles */
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 :root {
-  --bg: #0f1117;
-  --surface: #1a1d27;
-  --surface2: #222533;
-  --border: #2d3148;
-  --text: #e2e6f0;
-  --muted: #7b82a0;
-  --accent: #6c8cff;
   --ok: #22c55e;
   --danger: #ef4444;
-}
-body {
-  background: var(--bg);
-  color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  min-height: 100vh;
-}
-header {
-  position: sticky; top: 0; z-index: 100;
-  background: rgba(15,17,23,.92);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border);
-  padding: 0 24px;
-  height: 56px;
-  display: flex; align-items: center; justify-content: space-between;
 }
 .logo { font-size: 1.1rem; font-weight: 700; color: var(--accent); text-decoration: none; }
 .header-actions { display: flex; align-items: center; gap: 10px; }
