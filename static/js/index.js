@@ -1205,7 +1205,73 @@ function canFetchDetails(job) {
 
 function formatScoreBadge(job) {
   if (!hasAiScore(job)) return '—';
-  return Number(job.match_score).toFixed(1);
+  const n = Number(job.match_score);
+  return n % 1 === 0 ? String(n) : n.toFixed(1);
+}
+
+function scoreRingPct(score) {
+  const n = Number(score);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.min(100, n * 10));
+}
+
+function scoreRingHtml(job, { size = '' } = {}) {
+  const has = hasAiScore(job);
+  const raw = has ? Number(job.match_score) : null;
+  const pct = has ? scoreRingPct(raw) : 0;
+  const label = formatScoreBadge(job);
+  const cls = scoreCls(has ? raw : null);
+  const sizeCls = size ? ` ${size}` : '';
+  const title = has
+    ? `Match score ${label} of 10, from Run AI on this site`
+    : 'No AI match score yet';
+  return `
+    <div class="score-ring ${cls}${sizeCls}" role="img" aria-label="${escHtml(title)}" title="${escHtml(title)}">
+      <svg viewBox="0 0 36 36" aria-hidden="true">
+        <circle class="score-ring-track" cx="18" cy="18" r="15.5" fill="none" pathLength="100" />
+        <circle class="score-ring-fill" cx="18" cy="18" r="15.5" fill="none" pathLength="100"
+                stroke-linecap="round" stroke-dasharray="${pct} 100" />
+      </svg>
+      <span class="score-ring-num">${escHtml(label)}</span>
+    </div>`;
+}
+
+function renderAgentReason(job) {
+  const reason = String(job.recommend_reason || '').trim();
+  if (!reason) return '';
+  return `<div class="recommend-reason"><span class="recommend-reason-label">Why AI recommends this</span>${escHtml(reason)}</div>`;
+}
+
+function renderLocalAiBlock(job, doSection, lookingSection, matchReasons) {
+  const hasLocal = hasAiScore(job) || job.summary || doSection || lookingSection || matchReasons;
+  if (!hasLocal) return '';
+  const ring = hasAiScore(job) ? scoreRingHtml(job, { size: 'score-lg' }) : '';
+  const summary = job.summary
+    ? `<div class="card-summary">${escHtml(job.summary)}</div>`
+    : '';
+  const lead = (ring || summary)
+    ? `<div class="ai-local-lead">${ring}${summary}</div>`
+    : '';
+  return `
+    <div class="ai-local">
+      ${lead}
+      ${doSection}
+      ${lookingSection}
+      ${matchReasons ? `<ul class="ai-match-reasons">${matchReasons}</ul>` : ''}
+    </div>`;
+}
+
+function renderOriginalDescription(job) {
+  return `
+      <details class="job-description" data-job-id="${job._id}" ontoggle="loadJobDescription(this)">
+        <summary>
+          <span>Original description</span>
+          <button type="button" class="jd-copy-btn" data-job-id="${job._id}"
+                  onclick="event.preventDefault(); event.stopPropagation(); copyJobDescription(this)"
+                  title="Copy the full original description">Copy</button>
+        </summary>
+        <div class="job-description-body" data-loaded="0">Expand to load…</div>
+      </details>`;
 }
 
 /* ── Job Wizard breakdown ────────────────────────────────────────── */
@@ -1253,13 +1319,6 @@ function highlightBadgesHtml(highlights) {
 
 /* source "manual" just means "not LinkedIn / Indeed"; for agent pushes
    show the job site's domain instead so it does not read as Log Job. */
-function countryPillHtml(job) {
-  const key = String(job.country || '');
-  const label = String(job.country_label || '');
-  if (!key || !label) return '';
-  return `<span class="country-pill country-${escHtml(key)}">${escHtml(label)}</span>`;
-}
-
 function sourcePillHtml(job) {
   const source = String(job.source || '');
   // LinkedIn / Indeed are the board, shown as small "via …" on the second
@@ -1292,14 +1351,12 @@ function sourceBadgeHtml(job) {
   let host = '';
   try { host = new URL(job.link || '').hostname.replace(/^www\./, ''); } catch (e) {}
   const title = badge.title + (host ? ` · ${host}` : '');
-  return `<span class="meta-pill source-badge src-${escHtml(key)}" title="${escHtml(title)}">◆ ${escHtml(badge.label)}</span>`;
+  return `<span class="meta-pill source-badge src-${escHtml(key)}" title="${escHtml(title)}">${escHtml(badge.label)}</span>`;
 }
 
-/* Every channel chip uses a leading mark (✦ agent, ◆ API/ATS, ● Log job,
-   ▸ Scraper) so the four origins read as one label family. */
 const ORIGIN_PILL = {
-  pipeline: { label: '▸ Scraper', title: 'Found by the LinkedIn / Indeed scraper' },
-  manual:   { label: '● Log Job', title: 'Logged by hand via Log Job' },
+  pipeline: { label: 'Scraper', title: 'Found by the LinkedIn / Indeed scraper' },
+  manual:   { label: 'Log job', title: 'Logged by hand via Log Job' },
 };
 
 function originPillHtml(job) {
@@ -1314,7 +1371,7 @@ function recommendedByBadge(job) {
   if (!label) return '';
   const reason = String(job.recommend_reason || '').trim();
   const title = `Recommended by ${label}` + (reason ? ` — ${reason}` : '');
-  return `<span class="meta-pill recommended-pill" title="${escHtml(title)}">✦ ${escHtml(label)}</span>`;
+  return `<span class="meta-pill recommended-pill" title="${escHtml(title)}">${escHtml(label)}</span>`;
 }
 
 /* ── List row: one channel chip + a quiet sub line ──────────────────
@@ -1329,13 +1386,13 @@ function jobHost(job) {
 
 function jobChannel(job) {
   const rec = RECOMMENDED_BY_LABEL[String(job.recommended_by || '').toLowerCase()];
-  if (rec) return { cls: 'ch-ai', label: `✦ ${rec}`, title: `Recommended by ${rec}` };
+  if (rec) return { cls: 'ch-ai', label: rec, title: `Recommended by ${rec}` };
   const src = String(job.source || '').toLowerCase();
   const api = SOURCE_BADGE[src];
-  if (api) return { cls: `ch-api ch-${src}`, label: `◆ ${api.label.replace(/ API$/, '')}`, title: api.title };
-  if (job.origin === 'manual') return { cls: 'ch-manual', label: '● Log job', title: ORIGIN_PILL.manual.title };
+  if (api) return { cls: `ch-api ch-${src}`, label: api.label.replace(/ API$/, ''), title: api.title };
+  if (job.origin === 'manual') return { cls: 'ch-manual', label: ORIGIN_PILL.manual.label, title: ORIGIN_PILL.manual.title };
   if (job.origin === 'pipeline' || BOARD_LABEL[src]) {
-    return { cls: 'ch-scraper', label: '▸ Scraper', title: ORIGIN_PILL.pipeline.title };
+    return { cls: 'ch-scraper', label: ORIGIN_PILL.pipeline.label, title: ORIGIN_PILL.pipeline.title };
   }
   return src ? { cls: 'ch-other', label: src, title: '' } : null;
 }
@@ -1541,7 +1598,6 @@ async function saveApplicantPosition(id, btn) {
 
 /* ── Render card ─────────────────────────────────────────────────── */
 function renderCard(job) {
-  const score  = formatScoreBadge(job);
   const status = job.status || 'pending';
   const aiHint = needsAiHint(job);
   const doSection = renderBreakdown("What you'll do", job.what_youll_do);
@@ -1590,6 +1646,7 @@ function renderCard(job) {
     <div class="card-row" role="button" tabindex="0" aria-expanded="false"
          aria-controls="body-${job._id}" onclick="toggleCardExpand(this)">
       <span class="row-chevron" aria-hidden="true">▸</span>
+      ${scoreRingHtml(job)}
       <div class="row-main">
         <div class="row-title-line">
           <span class="row-title">${escHtml(job.title || '(No Title)')}</span>
@@ -1600,7 +1657,6 @@ function renderCard(job) {
       <div class="row-meta">
         ${channelChipHtml(job)}
         ${statusPillHtml(status, job.application_timeline)}
-        <div class="score-badge ${scoreCls(hasAiScore(job) ? job.match_score : null)}">${score}</div>
       </div>
     </div>
 
@@ -1631,7 +1687,6 @@ function renderCard(job) {
             </div>
           </div>
         </div>
-        <div class="score-badge ${scoreCls(hasAiScore(job) ? job.match_score : null)}">${score}</div>
       </div>
 
       <div class="card-meta">
@@ -1639,12 +1694,13 @@ function renderCard(job) {
         ${sourcePillHtml(job)}
         ${originPillHtml(job)}
         ${recBadge}
-        ${countryPillHtml(job)}
         ${job.matched_at ? `<span class="meta-pill" title="Matched on">Matched ${job.matched_at}</span>` : ''}
         ${postedPillHtml(job)}
         ${job.applicants ? `<span class="meta-pill" title="Applicant count when the job was scraped">Applicants: ${escHtml(job.applicants)}</span>` : ''}
         ${applicantPosPillHtml(job)}
       </div>
+
+      ${renderCompanyHistory(job)}
 
       <div class="progress-panel">
       ${renderProgressBlock(job)}
@@ -1664,24 +1720,9 @@ function renderCard(job) {
         ${fetchBtn}
       </div>
 
-      ${renderCompanyHistory(job)}
-
-      ${job.recommend_reason ? `<div class="recommend-reason"><span class="recommend-reason-label">Why AI recommends this</span>${escHtml(job.recommend_reason)}</div>` : ''}
-      ${job.summary ? `<div class="card-summary">${escHtml(job.summary)}</div>` : ''}
-
-      <details class="job-description" data-job-id="${job._id}" ontoggle="loadJobDescription(this)">
-        <summary>
-          <span>Original description</span>
-          <button type="button" class="jd-copy-btn" data-job-id="${job._id}"
-                  onclick="event.preventDefault(); event.stopPropagation(); copyJobDescription(this)"
-                  title="Copy the full original description">Copy</button>
-        </summary>
-        <div class="job-description-body" data-loaded="0">Expand to load…</div>
-      </details>
-
-          ${doSection}
-          ${lookingSection}
-          ${matchReasons ? `<ul style="font-size:.78rem;color:var(--muted);padding-left:16px;line-height:1.6;">${matchReasons}</ul>` : ''}
+      ${renderAgentReason(job)}
+      ${renderLocalAiBlock(job, doSection, lookingSection, matchReasons)}
+      ${renderOriginalDescription(job)}
       </div>
         <div class="card-split-track">
           ${renderApplicantPositionBlock(job)}

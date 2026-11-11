@@ -102,7 +102,7 @@ python3 src/sources/run_sources.py --dry-run                    # print what wou
 python3 src/sources/run_sources.py --no-match --no-telegram     # save only
 ```
 
-Telegram gets one summary (`🌐 API sources done … • Arbeitnow: 259 listed, 4 new saved, …`) and then this run's match cards. Cards for jobs from these sources include the company and the source label. The Tracker and Unmatched pages show the same label as a coloured ◆ badge: **ATS** (teal), **Bundesagentur** (red), **Arbeitnow API** (blue), **Adzuna API** (amber). Hover the badge to see the site, e.g. `jobs.ashbyhq.com`. The Source filter has the same four options.
+Telegram gets one summary (`🌐 API sources done … • Arbeitnow: 259 listed, 4 new saved, …`) and then this run's match cards. Cards for jobs from these sources include the company and the source label. The Tracker and Unmatched pages show the same label as a coloured diamond badge: **ATS** (teal), **Bundesagentur** (red), **Arbeitnow API** (blue), **Adzuna API** (amber). Hover the badge to see the site, e.g. `jobs.ashbyhq.com`. The Source filter has the same four options.
 
 ---
 

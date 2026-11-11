@@ -218,6 +218,25 @@ function scoreCls(score) {
   return 'score-lo';
 }
 
+function scoreRingHtml(score, { size = '' } = {}) {
+  const n = Number(score);
+  const has = Number.isFinite(n);
+  const pct = has ? Math.max(0, Math.min(100, n * 10)) : 0;
+  const label = !has ? '—' : (n % 1 === 0 ? String(n) : n.toFixed(1));
+  const cls = has ? scoreCls(n) : 'score-pending';
+  const sizeCls = size ? ` ${size}` : '';
+  const title = has ? `Match score ${label} of 10` : 'No score';
+  return `
+    <div class="score-ring ${cls}${sizeCls}" role="img" aria-label="${escHtml(title)}" title="${escHtml(title)}">
+      <svg viewBox="0 0 36 36" aria-hidden="true">
+        <circle class="score-ring-track" cx="18" cy="18" r="15.5" fill="none" pathLength="100" />
+        <circle class="score-ring-fill" cx="18" cy="18" r="15.5" fill="none" pathLength="100"
+                stroke-linecap="round" stroke-dasharray="${pct} 100" />
+      </svg>
+      <span class="score-ring-num">${escHtml(label)}</span>
+    </div>`;
+}
+
 function escHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;')
@@ -265,19 +284,19 @@ const BOARD_LABEL = { linkedin: 'LinkedIn', indeed: 'Indeed' };
 function rowChannelHtml(job) {
   const src = String(job.source || '').toLowerCase();
   const rec = AGENT_LABEL[String(job.recommended_by || '').toLowerCase()];
-  if (rec) return `<span class="channel-chip ch-ai" title="Recommended by ${escHtml(rec)}">✦ ${escHtml(rec)}</span>`;
+  if (rec) return `<span class="channel-chip ch-ai" title="Recommended by ${escHtml(rec)}">${escHtml(rec)}</span>`;
   const badge = SOURCE_BADGE[src];
   if (badge) {
     const label = badge.label.replace(/ API$/, '');
-    return `<span class="channel-chip ch-api ch-${escHtml(src)}" title="${escHtml(badge.title)}">◆ ${escHtml(label)}</span>`;
+    return `<span class="channel-chip ch-api ch-${escHtml(src)}" title="${escHtml(badge.title)}">${escHtml(label)}</span>`;
   }
   /* jobs.created_at is set by the scrapers too, so inferred origin "manual"
      is not a Log job. The board source is the scraper channel. */
   if (BOARD_LABEL[src]) {
-    return `<span class="channel-chip ch-scraper" title="Found by the LinkedIn / Indeed scraper">▸ Scraper</span>`;
+    return `<span class="channel-chip ch-scraper" title="Found by the LinkedIn / Indeed scraper">Scraper</span>`;
   }
   if (src === 'manual') {
-    return `<span class="channel-chip ch-manual" title="Logged by hand via Log Job">● Log job</span>`;
+    return `<span class="channel-chip ch-manual" title="Logged by hand via Log Job">Log job</span>`;
   }
   return src ? `<span class="meta-pill source-pill">${escHtml(job.source || '')}</span>` : '';
 }
@@ -334,6 +353,7 @@ function renderCard(job) {
   card.innerHTML = `
     <div class="card-row" role="button" tabindex="0" aria-expanded="false" onclick="toggleCardExpand(this)">
       <span class="row-chevron">▸</span>
+      ${scoreRingHtml(score)}
       <div class="row-main">
         <div class="row-title">${escHtml(job.title || '(No Title)')}</div>
         <div class="row-line2">
@@ -347,7 +367,6 @@ function renderCard(job) {
         ${rowChannelHtml(job)}
         <span class="status-pill ${statusCls}" data-status-pill>${statusLabel}</span>
         ${openLink}
-        <div class="score-badge ${scoreCls(score)}">${score.toFixed(1)}</div>
       </div>
     </div>
 
@@ -357,7 +376,7 @@ function renderCard(job) {
           <div class="card-title">${escHtml(job.title || '(No Title)')}</div>
           <div class="card-company">${escHtml(job.company || '')}${job.location ? ' · ' + escHtml(job.location) : ''}${rowViaHtml(job, 'card-via')}</div>
         </div>
-        <div class="score-badge ${scoreCls(score)}">${score.toFixed(1)}</div>
+        ${scoreRingHtml(score, { size: 'score-lg' })}
       </div>
 
       <div class="card-meta">

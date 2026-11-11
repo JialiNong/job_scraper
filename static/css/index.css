@@ -296,7 +296,7 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 /* With the panel open the list is narrower: keep rows to title, status and score.
    Only while the Jobs view shows: on Overview the panel is hidden, so the page
    takes the full width again (the panel reopens on going back to Jobs). */
-.app:has(#jobsView:not([hidden]) .job-grid.layout-compact .card.expanded) .row-meta > :not(.status-pill):not(.score-badge) { display: none; }
+.app:has(#jobsView:not([hidden]) .job-grid.layout-compact .card.expanded) .row-meta > :not(.status-pill) { display: none; }
 .card.expanded .edit-info-btn { opacity: 1; }
 @media (max-width: 1080px) {
   .job-grid.layout-compact .card.expanded .card-body {
@@ -1010,7 +1010,8 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   white-space: nowrap;
 }
 
-/* Match (job + progress/notes) then track (Q&A / highlights). */
+/* Match column: identity → company history → progress → AI → original JD.
+   Track column: applicant # / Q&A / highlights. */
 .card-split {
   display: flex;
   flex-direction: column;
@@ -1028,8 +1029,6 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   flex-direction: column;
   gap: 18px;
 }
-/* Expanded list row: left = job info / AI / description / actions / match,
-   right = progress / applicant # / notes / Q&A / highlights */
 .job-grid.layout-compact .card-split-track {
   padding-top: 18px;
   border-top: 1px solid var(--border);
@@ -1048,7 +1047,7 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 
 .status-pill.s-pending { color: var(--pending); }
 .status-pill.s-applied { color: var(--applied); }
-.status-pill.s-reapplied { color: var(--applied); background: color-mix(in srgb, var(--applied) 14%, transparent); }
+.status-pill.s-reapplied { color: var(--applied); }
 .status-pill.s-rejected { color: var(--rejected); }
 .status-pill.s-interview { color: var(--interview); }
 .status-pill.s-offer { color: var(--offer); }
@@ -1194,7 +1193,7 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 
 /* Meta row */
 .source-pill.site-pill { text-transform: none; }
-/* API source badges (src/sources/): one colour per source, like the ✦ agent badge */
+/* API source badges (src/sources/): one colour per source, like the agent badge */
 .meta-pill.origin-pipeline { color: var(--repost); }
 .meta-pill.origin-manual   { color: var(--success); }
 
@@ -1212,6 +1211,37 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   font-size: .72rem; font-weight: 600;
   color: var(--ai);
   margin-bottom: 2px;
+}
+
+/* Local Run AI: ring + summary side by side, like the match card mock */
+.ai-local {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.ai-local-lead {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.ai-local-lead .score-ring { margin-top: 1px; }
+.ai-local-lead .card-summary {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font-size: .9rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+.ai-match-reasons {
+  font-size: .78rem;
+  color: var(--muted);
+  padding-left: 16px;
+  line-height: 1.6;
 }
 
 /* Original job description (list / expanded body) */
@@ -1282,11 +1312,7 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
   color: var(--warning);
 }
-.score-badge.score-pending {
-  background: transparent;
-  color: var(--warning);
-  border: 2px dashed color-mix(in srgb, var(--warning) 60%, transparent);
-}
+.score-pending .score-ring-num { color: var(--muted); }
 .country-pill {
   font-size: .75rem;
   font-weight: 600;
@@ -1803,7 +1829,7 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 .company-seen-pill { border-color: var(--interview); }
 .company-seen-pill.seen-rejected { border-color: var(--rejected); }
 .company-history {
-  margin: 10px 0 4px;
+  margin: 0;
   border: 1px solid var(--border);
   border-radius: 8px;
   background: var(--surface2);
@@ -1902,6 +1928,12 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   }
   .job-grid.layout-compact .card.expanded .card-title { font-size: 1.05rem; }
   .job-grid.layout-compact .card.expanded .card-body { padding: 12px 14px calc(24px + env(safe-area-inset-bottom, 0px)); }
+  .ai-local { padding: 10px 12px; gap: 8px; }
+  .ai-local-lead { gap: 12px; }
+  .score-ring { --ring-size: 36px; }
+  .score-ring.score-lg { --ring-size: 48px; }
+  .score-ring .score-ring-num { font-size: .78rem; }
+  .score-ring.score-lg .score-ring-num { font-size: 1rem; }
   .info-edit { gap: 4px; }
   .info-edit-row { gap: 4px; }
   .info-action-row { gap: 4px; }
@@ -1962,10 +1994,9 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 }
 
 /* ── List rows: where the eye goes ──────────────────────────────────
-   1 the job title, 2 your status, 3 the score, 4 how the job got here.
-   Company, place, board and history sit in a quiet second line. The three
-   right-hand columns have fixed widths so they line up down the list. */
-.job-grid.layout-compact .card-row { gap: 16px; padding: 12px 16px; min-height: 68px; }
+   1 the score ring, 2 the job title, 3 your status (outlined), 4 channel.
+   Company, place, board and history sit in a quiet second line. */
+.job-grid.layout-compact .card-row { gap: 14px; padding: 12px 16px; min-height: 68px; }
 .row-title-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .row-title-line .row-title { min-width: 0; }
 .row-title-line .row-highlights { flex: none; display: inline-flex; gap: 4px; }
@@ -1995,27 +2026,21 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 .job-grid.layout-compact .row-meta { gap: 12px; }
 .row-channel { width: 108px; display: flex; justify-content: flex-end; }
 
-/* Status: solid when it needs you or is a milestone (Not applied, Interview,
-   Offer); a pale tint while waiting or done (Applied, Rejected, side statuses) */
+/* Status: outlined so the list stays a line of type, not a row of stamps.
+   Color still carries the state; the fill that made pills feel flat is gone. */
 .status-pill {
-  min-width: 100px;
-  padding: 4px 10px;
-  border: 0;
+  min-width: 0;
+  padding: 4px 12px;
   text-align: center;
   font-size: .78rem;
-  background: color-mix(in srgb, currentColor 13%, transparent);
+  background: transparent;
+  border: 1.5px solid currentColor;
 }
-.status-pill.s-pending   { color: var(--on-solid); background: var(--pending); }
-.status-pill.s-interview { color: var(--on-solid); background: var(--interview); }
-.status-pill.s-offer     { color: var(--on-solid); background: var(--offer); }
+.status-pill.s-pending   { color: var(--pending); }
+.status-pill.s-interview { color: var(--interview); }
+.status-pill.s-offer     { color: var(--offer); }
 
-/* Score: a numeral on a disc tinted by band; low scores get no fill */
-.score-badge { font-weight: 800; }
-.job-grid.layout-compact .score-badge { width: 44px; height: 44px; font-size: .98rem; }
-.score-badge.score-hi  { border-color: transparent; background: color-mix(in srgb, var(--offer) 14%, var(--surface)); }
-.score-badge.score-mid { border-color: transparent; background: color-mix(in srgb, var(--warning) 14%, var(--surface)); }
-/* Not scored yet: an empty, quiet circle (it used to be the loudest thing in the row) */
-.score-badge.score-pending { color: var(--muted); border: 1.5px dashed var(--border); background: transparent; }
+.job-grid.layout-compact .score-ring { --ring-size: 40px; }
 
 /* Narrow rows (phone, or next to the panel): company and place only */
 @container jobrow (max-width: 720px) {

@@ -6,7 +6,7 @@
 .job-grid.layout-compact .card.expanded .card-body { padding-top: 16px; }
 
 .status-pill.s-unmatched { color: var(--muted); }
-.status-pill.s-watchlist { color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, transparent); }
+.status-pill.s-watchlist { color: var(--warning); }
 
 /* Which gate rejected the job */
 .gate-pill { color: var(--duplicate); background: color-mix(in srgb, var(--duplicate) 12%, var(--surface)); }

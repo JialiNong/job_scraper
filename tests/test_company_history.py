@@ -166,6 +166,21 @@ class TrackerUiTests(unittest.TestCase):
         self.assertIn("/applicant-position", HTML)
         self.assertIn("renderApplicantPositionBlock(job)", HTML)
 
+    def test_details_panel_reading_order(self):
+        js = (ROOT / "static" / "js" / "index.js").read_text()
+        hist = js.find("${renderCompanyHistory(job)}")
+        progress = js.find("renderProgressBlock(job)")
+        agent = js.find("${renderAgentReason(job)}")
+        local = js.find("${renderLocalAiBlock(")
+        desc = js.find("${renderOriginalDescription(job)}")
+        self.assertTrue(0 < hist < progress < agent < local < desc)
+        self.assertNotIn("${countryPillHtml(job)}", js)
+        header = js.split('class="card-header"', 1)[1].split("card-meta", 1)[0]
+        self.assertNotIn("score-badge", header)
+        self.assertIn("from Run AI on this site", js)
+        self.assertIn("scoreRingHtml(job)", js)
+        self.assertIn("class=\"score-ring", js)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -105,6 +105,27 @@ def js_metrics(page):
         recommendedBy: selectStyle('#recommendedBy'),
         timeoutsSelect: selectStyle('.toolbar select'),
         sideSelect: selectStyle('.status-side-select'),
+        headerScore: document.querySelectorAll(
+          '.card.expanded .card-header .score-badge, .card.expanded .card-header .score-ring'
+        ).length,
+        localScore: document.querySelectorAll('.card.expanded .ai-local .score-ring').length,
+        listRingBeforeTitle: (() => {
+          const row = document.querySelector('.job-grid .card-row');
+          if (!row) return false;
+          const ring = row.querySelector(':scope > .score-ring');
+          const title = row.querySelector('.row-title');
+          return !!(ring && title && (ring.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING));
+        })(),
+        statusOutline: (() => {
+          const el = document.querySelector('.status-pill');
+          if (!el) return null;
+          const cs = getComputedStyle(el);
+          return { bg: cs.backgroundColor, bw: cs.borderTopWidth };
+        })(),
+        countryInBody: document.querySelectorAll('.card.expanded .card-body .country-pill').length,
+        panelOrder: [...document.querySelectorAll(
+          '.card.expanded .card-split-match > .company-history, .card.expanded .card-split-match > .progress-panel, .card.expanded .card-split-match > .recommend-reason, .card.expanded .card-split-match > .ai-local, .card.expanded .card-split-match > .job-description'
+        )].map(el => el.className.split(/\\s+/)[0]),
       };
     }"""
     )
@@ -172,6 +193,18 @@ def tap_scrim_top(page, scrim_id):
     page.wait_for_timeout(200)
 
 
+def status_outlined(info):
+    if not info:
+        return False
+    bg = (info.get("bg") or "").replace(" ", "")
+    try:
+        bw = float(str(info.get("bw") or "0").replace("px", "") or 0)
+    except ValueError:
+        bw = 0
+    transparent = bg in ("transparent", "rgba(0,0,0,0)", "rgb(0,0,0,0)")
+    return transparent and bw >= 1
+
+
 def phone_select_ok(style):
     if not style:
         return False, "missing"
@@ -228,6 +261,13 @@ def run_phone(page, base, run: Runner):
     run.check("phone filters: tap scrim closes", m["popHidden"] and not m["lock"],
               f"hidden={m['popHidden']} lock={m['lock']}")
 
+    m = js_metrics(page)
+    run.shot(page, "phone-list.png")
+    run.check("phone list: score ring before title", m["listRingBeforeTitle"])
+    run.check("phone list: status pill is outlined",
+              status_outlined(m.get("statusOutline")),
+              f"outline={m.get('statusOutline')}")
+
     page.click(".card-row")
     page.wait_for_timeout(350)
     m = js_metrics(page)
@@ -240,6 +280,19 @@ def run_phone(page, base, run: Runner):
     run.check("phone details: mask band above the sheet",
               m["bodyTop"] not in (None, "0px", "auto"),
               f"top={m['bodyTop']}")
+    run.check("phone details: no country pill under the title",
+              m["countryInBody"] == 0, f"count={m['countryInBody']}")
+    run.check("phone details: score ring lives in AI match, not the title row",
+              m["headerScore"] == 0 and m["localScore"] == 1,
+              f"header={m['headerScore']} local={m['localScore']}")
+    order = m.get("panelOrder") or []
+    run.check("phone details: AI match before original description",
+              "ai-local" in order and "job-description" in order
+              and order.index("ai-local") < order.index("job-description"),
+              f"order={order}")
+    page.locator(".card.expanded .ai-local").scroll_into_view_if_needed()
+    page.wait_for_timeout(150)
+    run.shot(page, "phone-details-ai.png")
 
     tap_scrim_top(page, "panelScrim")
     m = js_metrics(page)
@@ -265,6 +318,9 @@ def run_phone(page, base, run: Runner):
 
     page.goto(base + "/unmatched")
     wait_cards(page)
+    m = js_metrics(page)
+    run.shot(page, "phone-unmatched-list.png")
+    run.check("phone Unmatched list: score ring before title", m["listRingBeforeTitle"])
     open_filters(page)
     page.select_option("#scorePreset", "custom")
     page.wait_for_timeout(150)
@@ -303,6 +359,13 @@ def run_desktop(page, base, run: Runner):
     run.check("desktop filters: click outside closes", m["popHidden"],
               f"hidden={m['popHidden']}")
 
+    m = js_metrics(page)
+    run.shot(page, "desktop-list.png")
+    run.check("desktop list: score ring before title", m["listRingBeforeTitle"])
+    run.check("desktop list: status pill is outlined",
+              status_outlined(m.get("statusOutline")),
+              f"outline={m.get('statusOutline')}")
+
     page.click(".card-row")
     page.wait_for_timeout(350)
     m = js_metrics(page)
@@ -310,6 +373,17 @@ def run_desktop(page, base, run: Runner):
     run.check("desktop details: side drawer, no mask, page unlocked",
               m["expanded"] and m["bodyTop"] == "0px" and m["panelScrimHidden"] and not m["lock"],
               f"top={m['bodyTop']} scrimHidden={m['panelScrimHidden']} lock={m['lock']}")
+    run.check("desktop details: score ring lives in AI match, not the title row",
+              m["headerScore"] == 0 and m["localScore"] == 1,
+              f"header={m['headerScore']} local={m['localScore']}")
+    order = m.get("panelOrder") or []
+    run.check("desktop details: progress before AI, description last",
+              "progress-panel" in order and "ai-local" in order and "job-description" in order
+              and order.index("progress-panel") < order.index("ai-local") < order.index("job-description"),
+              f"order={order}")
+    page.locator(".card.expanded .ai-local").scroll_into_view_if_needed()
+    page.wait_for_timeout(150)
+    run.shot(page, "desktop-details-ai.png")
 
     page.get_by_role("button", name="+ Applied").click()
     page.locator(".tl-modal-backdrop").wait_for(state="visible")

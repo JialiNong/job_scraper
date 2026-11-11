@@ -180,7 +180,7 @@
   .row-meta .origin-pill { display: none; }
 }
 @container jobrow (max-width: 720px) {
-  .row-meta > :not(.status-pill):not(.score-badge):not(.row-open):not(.status-row) { display: none; }
+  .row-meta > :not(.status-pill):not(.row-open):not(.status-row) { display: none; }
   /* Two lines, so two jobs with the same long prefix can still be told apart */
   .row-title {
     white-space: normal;
@@ -196,27 +196,65 @@
 /* ── Pills & score ─────────────────────────────────────────────── */
 .status-pill {
   flex-shrink: 0;
-  font-size: .75rem; font-weight: 700;
-  padding: 2px 9px;
+  font-size: .75rem; font-weight: 650;
+  padding: 3px 11px;
   border-radius: 999px;
   border: 1.5px solid currentColor;
   white-space: nowrap;
   background: transparent;
+  line-height: 1.2;
 }
-.score-badge {
-  flex-shrink: 0;
-  width: 40px; height: 40px;
-  border-radius: 50%;
-  display: flex; align-items: center; justify-content: center;
-  font: 700 .85rem/1 var(--f-display);
-  font-variant-numeric: tabular-nums;
-  border: 2.5px solid var(--border);
+/* Score is a stroke ring (fill = score × 10%), numeral 0–10 in the hole. */
+.score-ring {
+  --ring-size: 40px;
+  --ring-stroke: 2.55;
+  position: relative;
+  flex: none;
+  width: var(--ring-size);
+  height: var(--ring-size);
   color: var(--muted);
 }
-.job-grid.layout-compact .score-badge { width: 36px; height: 36px; font-size: .8rem; order: 99; }
-.score-hi  { color: var(--offer);   border-color: var(--offer);   background: color-mix(in srgb, var(--offer) 10%, transparent); }
-.score-mid { color: var(--warning); border-color: var(--warning); background: color-mix(in srgb, var(--warning) 10%, transparent); }
-.score-lo  { color: var(--rejected); border-color: color-mix(in srgb, var(--rejected) 60%, transparent); }
+.score-ring svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transform: rotate(-90deg);
+}
+.score-ring-track,
+.score-ring-fill {
+  stroke-width: var(--ring-stroke);
+}
+.score-ring-track {
+  stroke: color-mix(in srgb, currentColor 22%, var(--border));
+}
+.score-ring-fill { stroke: currentColor; }
+.score-ring-num {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font: 800 .86rem/1 var(--f-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  color: currentColor;
+  pointer-events: none;
+}
+.score-ring.score-lg {
+  --ring-size: 52px;
+  --ring-stroke: 2.45;
+}
+.score-ring.score-lg .score-ring-num { font-size: 1.12rem; }
+.score-hi  { color: var(--offer); }
+.score-mid { color: var(--warning); }
+.score-lo  { color: var(--rejected); }
+.score-pending { color: var(--muted); }
+.score-pending .score-ring-track {
+  stroke: var(--border);
+  stroke-dasharray: 3.5 5;
+}
+.score-pending .score-ring-fill { opacity: 0; }
+.score-pending .score-ring-num { color: var(--muted); font-weight: 700; }
 
 .card-meta { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .meta-pill {
@@ -231,9 +269,17 @@
 .source-pill { text-transform: capitalize; }
 
 /* Channel = how the job got here (ATS, agent, Log job, Scraper). Shared with
-   the Tracker list so Unmatched does not label a scraped job "LinkedIn". */
+   the Tracker list so Unmatched does not label a scraped job "LinkedIn".
+   Marks are CSS stamps in one --ch-mark box — Unicode glyphs (▪ ◆ ✦ ●)
+   sit on different em squares, so they never looked the same size. */
+.channel-chip,
+.meta-pill.source-badge,
+.meta-pill.origin-pill,
+.meta-pill.recommended-pill {
+  --ch-mark: 0.58em;
+  display: inline-flex; align-items: center; gap: 0.42em;
+}
 .channel-chip {
-  display: inline-flex; align-items: center;
   max-width: 100%;
   padding: 3px 9px;
   border-radius: 6px;
@@ -241,6 +287,39 @@
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   color: var(--muted);
   background: var(--surface2);
+}
+.channel-chip.ch-scraper::before,
+.channel-chip.ch-manual::before,
+.channel-chip.ch-api::before,
+.channel-chip.ch-ai::before,
+.meta-pill.source-badge::before,
+.meta-pill.origin-pipeline::before,
+.meta-pill.origin-manual::before,
+.meta-pill.recommended-pill::before {
+  content: "";
+  flex: none;
+  width: var(--ch-mark);
+  height: var(--ch-mark);
+  background: currentColor;
+}
+/* Square = scraper */
+.channel-chip.ch-scraper::before,
+.meta-pill.origin-pipeline::before { border-radius: 1px; }
+/* Circle = Log job */
+.channel-chip.ch-manual::before,
+.meta-pill.origin-manual::before { border-radius: 50%; }
+/* Diamond = API / ATS. Side is mark/√2 so the rotated box matches the others. */
+.channel-chip.ch-api::before,
+.meta-pill.source-badge::before {
+  width: calc(var(--ch-mark) * 0.72);
+  height: calc(var(--ch-mark) * 0.72);
+  transform: rotate(45deg);
+  border-radius: 0.5px;
+}
+/* Four-point star = agent */
+.channel-chip.ch-ai::before,
+.meta-pill.recommended-pill::before {
+  clip-path: polygon(50% 0%, 65% 35%, 100% 50%, 65% 65%, 50% 100%, 35% 65%, 0% 50%, 35% 35%);
 }
 .channel-chip.ch-api    { color: var(--repost);  background: color-mix(in srgb, var(--repost) 14%, var(--surface)); }
 .channel-chip.ch-ai     { color: var(--ai);      background: color-mix(in srgb, var(--ai) 14%, var(--surface)); }
@@ -341,6 +420,13 @@
   .job-grid { grid-template-columns: minmax(0, 1fr); }
   .count-label { margin-left: 0; flex-basis: 100%; }
   .toast { left: 16px; right: 16px; bottom: 16px; }
+}
+
+@media (max-width: 760px) {
+  .score-ring { --ring-size: 36px; }
+  .score-ring.score-lg { --ring-size: 48px; }
+  .score-ring .score-ring-num { font-size: .78rem; }
+  .score-ring.score-lg .score-ring-num { font-size: 1rem; }
 }
 
 /* Checkbox hit area stays a bit larger than the 30px phone controls */
