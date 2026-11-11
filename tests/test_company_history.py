@@ -181,6 +181,21 @@ class TrackerUiTests(unittest.TestCase):
         self.assertIn("scoreRingHtml(job)", js)
         self.assertIn("class=\"score-ring", js)
 
+    def test_cards_board_starts_collapsed(self):
+        css = (ROOT / "static" / "css" / "job_list.css").read_text()
+        self.assertIn(".job-grid.layout-cards .card:not(.expanded) .card-body { display: none; }", css)
+        self.assertIn("position: fixed;", css)
+        self.assertIn("collapseOtherCards(card);", HTML)
+        um = page_source("unmatched")
+        self.assertIn("function toggleCardExpand(rowEl) {", um)
+        self.assertIn('class="panel-close"', um)
+        self.assertIn("function closeCardPanel", um)
+        self.assertIn('class="row-sub"', um)
+        self.assertNotIn("row-line2", um)
+        shell = (ROOT / "templates" / "_shell.html").read_text()
+        self.assertIn('target="_blank" rel="noopener"', shell)
+        self.assertIn("{% if active == 'tracker' %} target=\"_blank\"", shell)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -92,10 +92,7 @@ function setLayout(mode) {
   document.querySelectorAll('#layoutToggle button').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.layout === mode);
   });
-  // Collapse all expanded cards when switching to compact
-  if (mode === 'compact') {
-    grid.querySelectorAll('.card.expanded').forEach(c => c.classList.remove('expanded'));
-  }
+  grid.querySelectorAll('.card.expanded').forEach(c => setCardOpen(c, false));
   syncPanelScrim();
 }
 
@@ -122,8 +119,8 @@ function ensurePanelScrim() {
 
 function syncPanelScrim() {
   const scrim = ensurePanelScrim();
-  const compactOpen = document.querySelector('#jobGrid.layout-compact .card.expanded');
-  scrim.hidden = !(compactOpen && stackedDetails());
+  const open = document.querySelector('#jobGrid .card.expanded');
+  scrim.hidden = !(open && stackedDetails());
   if (typeof syncOverlayLock === 'function') syncOverlayLock();
 }
 
@@ -140,7 +137,6 @@ function setCardOpen(card, open, { focus = false } = {}) {
 }
 
 function toggleCardExpand(rowEl) {
-  if (currentLayout !== 'compact') return;
   const card = rowEl.closest('.card');
   if (!card) return;
   const open = !card.classList.contains('expanded');
@@ -161,13 +157,14 @@ function closeCardPanel(btn) {
 }
 
 document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Escape' || currentLayout !== 'compact') return;
+  if (e.key !== 'Escape') return;
   if (document.querySelector('.tl-modal-backdrop')) return;
   if (filterPopOpen && filterPopOpen()) return;
   const tag = (document.activeElement?.tagName || '').toLowerCase();
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
-  const open = document.querySelector('#jobGrid .card.expanded');
-  if (open) setCardOpen(open, false, { focus: true });
+  const open = document.querySelectorAll('#jobGrid .card.expanded');
+  if (!open.length) return;
+  open.forEach(card => setCardOpen(card, false, { focus: true }));
 });
 window.matchMedia('(max-width: 1080px)').addEventListener('change', syncPanelScrim);
 
@@ -2156,10 +2153,8 @@ function expandDateGroupForCard(card) {
 function openMatchedCard(card) {
   if (!card) return;
   expandDateGroupForCard(card);
-  if (currentLayout === 'compact') {
-    collapseOtherCards(card);
-    setCardOpen(card, true);
-  }
+  collapseOtherCards(card);
+  setCardOpen(card, true);
   card.classList.add('open-flash');
   card.scrollIntoView({ behavior: 'smooth', block: 'center' });
   setTimeout(() => card.classList.remove('open-flash'), 2800);
@@ -2194,7 +2189,7 @@ async function focusOpenJobFromQuery() {
     `;
     const injected = renderCard(job);
     injected.classList.add('open-flash');
-    if (currentLayout === 'compact') injected.classList.add('expanded');
+    injected.classList.add('expanded');
     syncPanelScrim();
 
     const empty = grid.querySelector('.empty');

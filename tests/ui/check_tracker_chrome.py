@@ -187,6 +187,46 @@ def wait_cards(page):
     page.wait_for_timeout(200)
 
 
+def cards_face(page):
+    return page.evaluate(
+        """() => {
+          const vis = (el) => {
+            if (!el) return false;
+            const cs = getComputedStyle(el);
+            if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+            const r = el.getBoundingClientRect();
+            return r.width > 1 && r.height > 1;
+          };
+          const card = document.querySelector('.job-grid.layout-cards .card');
+          if (!card) return { hasCard: false };
+          const title = card.querySelector('.card-row .row-title') || card.querySelector('.card-title');
+          const apply = card.querySelector('.card-actions-row, a.btn-apply');
+          const extra = card.querySelector('.progress-panel, .reason-box, .card-meta');
+          const body = card.querySelector('.card-body');
+          const closer = card.querySelector('.panel-close');
+          const row = card.querySelector('.card-row');
+          return {
+            hasCard: true,
+            expanded: card.classList.contains('expanded'),
+            rowRing: vis(card.querySelector('.card-row .score-ring')),
+            headerRing: vis(card.querySelector('.card-header .score-ring')),
+            title: vis(title),
+            titleSize: title ? parseFloat(getComputedStyle(title).fontSize) : 0,
+            company: vis(card.querySelector('.row-company, .card-company')),
+            loc: vis(card.querySelector('.row-loc')),
+            locInSub: vis(card.querySelector('.card-row .row-sub .row-loc')),
+            locInMeta: vis(card.querySelector('.card-row .row-meta .row-loc')),
+            apply: vis(apply),
+            extra: vis(extra),
+            rowVisible: vis(row),
+            drawer: body ? getComputedStyle(body).position === 'fixed' : false,
+            closer: vis(closer),
+            bodyTop: body ? getComputedStyle(body).top : null,
+          };
+        }"""
+    )
+
+
 def check_got_interview_chip(page, run: Runner, prefix: str):
     chip = page.locator('.stat-chip[data-status="got_interview"]')
     run.check(f"{prefix}: Got interview chip is visible", chip.is_visible())
@@ -197,6 +237,18 @@ def check_got_interview_chip(page, run: Runner, prefix: str):
               f"class={chip.get_attribute('class')}")
     page.locator('.stat-chip[data-status="active"]').click()
     wait_cards(page)
+
+
+def nav_targets(page):
+    return page.evaluate(
+        """() => {
+          const map = {};
+          document.querySelectorAll('.nav a').forEach(a => {
+            map[a.getAttribute('href')] = a.getAttribute('target') || '';
+          });
+          return map;
+        }"""
+    )
 
 
 def open_filters(page):
@@ -248,6 +300,11 @@ def phone_select_ok(style):
 def run_phone(page, base, run: Runner):
     page.goto(base + "/")
     wait_cards(page)
+    nav = nav_targets(page)
+    run.check("phone tracker nav: sibling pages open in a new tab",
+              nav.get("/manual-apply") == "_blank" and nav.get("/timeouts") == "_blank"
+              and nav.get("/unmatched") == "_blank" and nav.get("/") == "",
+              f"nav={nav}")
 
     open_filters(page)
     m = js_metrics(page)
@@ -338,6 +395,10 @@ def run_phone(page, base, run: Runner):
 
     page.goto(base + "/manual-apply")
     page.locator("#jobStatus").wait_for(state="visible")
+    nav = nav_targets(page)
+    run.check("phone Log Job nav: sibling pages stay in this tab",
+              nav.get("/timeouts") == "" and nav.get("/unmatched") == "" and nav.get("/") == "",
+              f"nav={nav}")
     m = js_metrics(page)
     run.shot(page, "phone-log-job.png")
     ok, why = phone_select_ok(m["jobStatus"])
@@ -347,6 +408,10 @@ def run_phone(page, base, run: Runner):
 
     page.goto(base + "/unmatched")
     wait_cards(page)
+    nav = nav_targets(page)
+    run.check("phone unmatched nav: sibling pages stay in this tab",
+              nav.get("/manual-apply") == "" and nav.get("/timeouts") == "" and nav.get("/") == "",
+              f"nav={nav}")
     m = js_metrics(page)
     run.shot(page, "phone-unmatched-list.png")
     run.check("phone Unmatched list: score ring before title", m["listRingBeforeTitle"])
@@ -365,6 +430,10 @@ def run_phone(page, base, run: Runner):
 
     page.goto(base + "/timeouts")
     page.locator(".toolbar select").first.wait_for(state="visible")
+    nav = nav_targets(page)
+    run.check("phone timeouts nav: sibling pages stay in this tab",
+              nav.get("/manual-apply") == "" and nav.get("/unmatched") == "" and nav.get("/") == "",
+              f"nav={nav}")
     m = js_metrics(page)
     run.shot(page, "phone-timeouts.png")
     ok, why = phone_select_ok(m["timeoutsSelect"])
@@ -374,6 +443,11 @@ def run_phone(page, base, run: Runner):
 def run_desktop(page, base, run: Runner):
     page.goto(base + "/")
     wait_cards(page)
+    nav = nav_targets(page)
+    run.check("desktop tracker nav: sibling pages open in a new tab",
+              nav.get("/manual-apply") == "_blank" and nav.get("/timeouts") == "_blank"
+              and nav.get("/unmatched") == "_blank" and nav.get("/") == "",
+              f"nav={nav}")
 
     open_filters(page)
     m = js_metrics(page)
@@ -438,33 +512,89 @@ def run_desktop(page, base, run: Runner):
     page.get_by_role("button", name="Cards").click()
     page.wait_for_timeout(250)
     run.shot(page, "desktop-cards.png")
-    cards = page.evaluate(
-        """() => {
-          const card = document.querySelector('.job-grid.layout-cards .card');
-          if (!card) return { hasCard: false };
-          const ring = card.querySelector('.card-header .score-ring');
-          const title = card.querySelector('.card-title');
-          const apply = card.querySelector('.card-actions-row');
-          const later = card.querySelector('.company-history, .progress-panel');
-          const cs = ring ? getComputedStyle(ring) : null;
-          const t = (el) => el ? el.getBoundingClientRect().top : null;
-          return {
-            hasCard: true,
-            ringVisible: !!(cs && cs.display !== 'none' && cs.visibility !== 'hidden'),
-            titleSize: title ? parseFloat(getComputedStyle(title).fontSize) : 0,
-            applyBeforeLater: apply && later ? t(apply) <= t(later) + 1 : true,
-          };
-        }"""
-    )
-    run.check("desktop cards: score ring in the header",
-              cards.get("hasCard") and cards.get("ringVisible"),
-              f"cards={cards}")
+    face = cards_face(page)
+    run.check("desktop cards: collapsed to score, title, company, location",
+              face.get("hasCard") and face.get("rowRing") and face.get("title")
+              and face.get("company") and face.get("locInSub") and not face.get("locInMeta")
+              and not face.get("expanded") and not face.get("apply"),
+              f"face={face}")
     run.check("desktop cards: title reads as a headline",
-              cards.get("titleSize", 0) >= 22,
-              f"size={cards.get('titleSize')}")
-    run.check("desktop cards: Apply sits above history/progress",
-              cards.get("applyBeforeLater"),
-              f"cards={cards}")
+              face.get("titleSize", 0) >= 22,
+              f"size={face.get('titleSize')}")
+    before_h = page.evaluate(
+        "() => document.querySelector('.job-grid.layout-cards .card').getBoundingClientRect().height"
+    )
+    page.locator(".job-grid.layout-cards .card-row").first.click()
+    page.wait_for_timeout(250)
+    run.shot(page, "desktop-cards-expanded.png")
+    face = cards_face(page)
+    after_h = page.evaluate(
+        "() => document.querySelector('.job-grid.layout-cards .card.expanded').getBoundingClientRect().height"
+    )
+    run.check("desktop cards: click opens a side sheet",
+              face.get("expanded") and face.get("drawer") and face.get("bodyTop") == "0px"
+              and face.get("closer") and face.get("rowVisible"),
+              f"face={face}")
+    run.check("desktop cards: board card stays short",
+              face.get("drawer") and after_h < before_h + 48,
+              f"before={before_h} after={after_h}")
+    m = js_metrics(page)
+    run.check("desktop cards: sheet score lives in AI match, not the title row",
+              m["headerScore"] == 0 and m["localScore"] == 1,
+              f"header={m['headerScore']} local={m['localScore']}")
+    page.locator(".job-grid.layout-cards .card.expanded .panel-close").click()
+    page.wait_for_timeout(200)
+    face = cards_face(page)
+    run.check("desktop cards: Close returns to the board",
+              not face.get("expanded") and face.get("rowVisible") and not face.get("apply"),
+              f"face={face}")
+
+    tracker_url = page.url
+    with page.expect_popup() as pop_info:
+        page.locator('.nav a[href="/unmatched"]').click()
+    um = pop_info.value
+    um.wait_for_url("**/unmatched")
+    wait_cards(um)
+    run.check("desktop tracker nav: Unmatched opens a new tab",
+              "/unmatched" in um.url and page.url == tracker_url,
+              f"tracker={page.url} unmatched={um.url}")
+    nav = nav_targets(um)
+    run.check("desktop unmatched nav: sibling pages stay in this tab",
+              nav.get("/manual-apply") == "" and nav.get("/timeouts") == "" and nav.get("/") == "",
+              f"nav={nav}")
+    um.get_by_role("button", name="Cards").click()
+    um.wait_for_timeout(250)
+    run.shot(um, "desktop-unmatched-cards.png")
+    face = cards_face(um)
+    run.check("desktop unmatched cards: collapsed to score, title, company, location",
+              face.get("hasCard") and face.get("rowRing") and face.get("title")
+              and face.get("company") and face.get("locInSub") and not face.get("locInMeta")
+              and not face.get("expanded")
+              and not face.get("extra"),
+              f"face={face}")
+    before_h = um.evaluate(
+        "() => document.querySelector('.job-grid.layout-cards .card').getBoundingClientRect().height"
+    )
+    um.locator(".job-grid.layout-cards .card-row").first.click()
+    um.wait_for_timeout(250)
+    run.shot(um, "desktop-unmatched-cards-expanded.png")
+    face = cards_face(um)
+    after_h = um.evaluate(
+        "() => document.querySelector('.job-grid.layout-cards .card.expanded').getBoundingClientRect().height"
+    )
+    run.check("desktop unmatched cards: click opens a side sheet",
+              face.get("expanded") and face.get("drawer") and face.get("bodyTop") == "0px"
+              and face.get("closer") and face.get("rowVisible"),
+              f"face={face}")
+    run.check("desktop unmatched cards: board card stays short",
+              face.get("drawer") and after_h < before_h + 48,
+              f"before={before_h} after={after_h}")
+    um.locator(".job-grid.layout-cards .card.expanded .panel-close").click()
+    um.wait_for_timeout(200)
+    face = cards_face(um)
+    run.check("desktop unmatched cards: Close returns to the board",
+              not face.get("expanded") and face.get("rowVisible"),
+              f"face={face}")
 
 
 def main():

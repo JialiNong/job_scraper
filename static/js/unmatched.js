@@ -25,18 +25,75 @@ function setLayout(mode) {
   document.querySelectorAll('#layoutToggle button').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.layout === mode);
   });
-  if (mode === 'compact') {
-    grid.querySelectorAll('.card.expanded').forEach(c => c.classList.remove('expanded'));
-  }
+  grid.querySelectorAll('.card.expanded').forEach(c => setCardOpen(c, false));
+}
+
+function stackedDetails() {
+  return window.matchMedia('(max-width: 1080px)').matches;
+}
+
+function ensurePanelScrim() {
+  let el = document.getElementById('panelScrim');
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = 'panelScrim';
+  el.className = 'panel-scrim';
+  el.hidden = true;
+  el.setAttribute('role', 'button');
+  el.setAttribute('aria-label', 'Close details');
+  el.addEventListener('click', () => {
+    const open = document.querySelector('#jobGrid .card.expanded');
+    if (open) setCardOpen(open, false, { focus: true });
+  });
+  document.body.appendChild(el);
+  return el;
+}
+
+function syncPanelScrim() {
+  const scrim = ensurePanelScrim();
+  const open = document.querySelector('#jobGrid.layout-cards .card.expanded');
+  scrim.hidden = !(open && stackedDetails());
+  if (typeof syncOverlayLock === 'function') syncOverlayLock();
+}
+
+function setCardOpen(card, open, { focus = false } = {}) {
+  card.classList.toggle('expanded', open);
+  const row = card.querySelector('.card-row');
+  if (row) row.setAttribute('aria-expanded', String(open));
+  syncPanelScrim();
+  if (!focus) return;
+  const target = open ? card.querySelector('.card-title') : row;
+  target?.focus({ preventScroll: true });
+}
+
+function collapseOtherCards(keep) {
+  document.querySelectorAll('#jobGrid .card.expanded').forEach(c => {
+    if (c !== keep) setCardOpen(c, false);
+  });
+}
+
+function closeCardPanel(btn) {
+  const card = btn.closest('.card');
+  if (card) setCardOpen(card, false, { focus: true });
 }
 
 function toggleCardExpand(rowEl) {
-  if (currentLayout !== 'compact') return;
   const card = rowEl.closest('.card');
   if (!card) return;
-  const open = card.classList.toggle('expanded');
-  rowEl.setAttribute('aria-expanded', String(open));
+  const open = !card.classList.contains('expanded');
+  if (currentLayout === 'cards') collapseOtherCards(card);
+  setCardOpen(card, open, { focus: open && currentLayout === 'cards' });
 }
+
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (typeof filterPopOpen === 'function' && filterPopOpen()) return;
+  const tag = (document.activeElement?.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  const open = document.querySelector('#jobGrid .card.expanded');
+  if (open) setCardOpen(open, false, { focus: true });
+});
+window.matchMedia('(max-width: 1080px)').addEventListener('change', syncPanelScrim);
 
 /* ── Toast ───────────────────────────────────────────────────────── */
 function showToast(msg, type = 'ok') {
@@ -356,13 +413,13 @@ function renderCard(job) {
       ${scoreRingHtml(score)}
       <div class="row-main">
         <div class="row-title">${escHtml(job.title || '(No Title)')}</div>
-        <div class="row-line2">
+        <div class="row-sub">
           <span class="row-company">${escHtml(job.company || '')}</span>
+          ${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">${escHtml(job.location)}</span>` : ''}
           ${rowViaHtml(job)}
         </div>
       </div>
       <div class="row-meta">
-        ${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">${escHtml(job.location)}</span>` : ''}
         ${gatePill}
         ${rowChannelHtml(job)}
         <span class="status-pill ${statusCls}" data-status-pill>${statusLabel}</span>
@@ -371,6 +428,7 @@ function renderCard(job) {
     </div>
 
     <div class="card-body">
+      <button type="button" class="panel-close" onclick="event.stopPropagation(); closeCardPanel(this)" aria-label="Close details" title="Close (Esc)">×</button>
       <div class="card-header">
         <div class="card-title-block">
           <div class="card-title">${escHtml(job.title || '(No Title)')}</div>
@@ -531,7 +589,7 @@ function consumeOpenJobId() {
 
 function openUnmatchedCard(card) {
   if (!card) return;
-  if (currentLayout === 'compact' && !card.classList.contains('expanded')) {
+  if (!card.classList.contains('expanded')) {
     const row = card.querySelector('.card-row');
     if (row) toggleCardExpand(row);
   }
@@ -566,13 +624,14 @@ async function focusOpenJobFromQuery() {
       `Opened from URL (not on this page/filter) — <strong>${escHtml(job.title || '')}</strong>`;
     const injected = renderCard(job);
     injected.classList.add('open-flash');
-    if (currentLayout === 'compact') injected.classList.add('expanded');
     const empty = grid.querySelector('.empty');
     if (empty) empty.remove();
     const spinner = grid.querySelector('.spinner');
     if (spinner) spinner.remove();
     grid.insertBefore(banner, grid.firstChild);
     grid.insertBefore(injected, banner.nextSibling);
+    collapseOtherCards(injected);
+    setCardOpen(injected, true);
     injected.scrollIntoView({ behavior: 'smooth', block: 'center' });
     setTimeout(() => injected.classList.remove('open-flash'), 2800);
     showToast('Opened unmatched job');

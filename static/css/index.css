@@ -2005,27 +2005,6 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
    Title is the headline (Garamond, large). Company stays quiet sans.
    Location is a chip so place is a fact, not more grey type. */
 .job-grid.layout-compact .card-row { gap: 14px; padding: 14px 16px; min-height: 76px; }
-.row-title-line { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.row-title-line .row-title { min-width: 0; }
-.row-title-line .row-highlights { flex: none; display: inline-flex; gap: 4px; }
-.row-title-line .row-highlights:empty { display: none; }
-.row-sub {
-  display: flex; align-items: center; gap: 8px;
-  margin-top: 6px; min-width: 0;
-  font-size: .78rem; color: var(--muted);
-  white-space: nowrap; overflow: hidden;
-}
-.row-sub > * { flex: none; }
-.row-sub .row-company { color: var(--muted); font-weight: 600; font-size: inherit; margin: 0; }
-/* Hug the place name; only ellipsis when this line is actually full
-   (the old 18em cap cut chips while the row still had room). */
-.row-sub .row-loc {
-  flex: 1 1 auto;
-  min-width: 0;
-  max-width: max-content;
-}
-.row-sub .row-via { color: var(--muted); font-weight: 400; }
-.card-company .row-loc { flex: 0 1 auto; max-width: 100%; }
 /* History is context, not an alarm: neutral text, a dot for how it went */
 .row-seen { display: inline-flex; align-items: center; gap: 6px; }
 .row-seen.seen-applied::before,
@@ -2061,15 +2040,11 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   .row-title { font-size: 1.22rem; }
 }
 
-/* Cards: title + score + Apply first — the board is for scanning, not a form. */
-.job-grid.layout-cards .card-header > .score-ring { order: -1; }
-.job-grid.layout-cards .card-header { align-items: flex-start; gap: 14px; }
-.job-grid.layout-cards .card-split-match > * { order: 10; }
-.job-grid.layout-cards .card-header { order: 1; }
-.job-grid.layout-cards .card-actions-row { order: 2; }
-.job-grid.layout-cards .ai-local { order: 3; }
-.job-grid.layout-cards .recommend-reason { order: 4; }
-.job-grid.layout-cards .ai-local-lead .score-ring { display: none; }
+/* Cards board is for scanning. The open sheet matches List details. */
+.job-grid.layout-cards .card-header > .score-ring { display: none; }
+.job-grid.layout-cards .card.expanded .card-title {
+  font-size: 1.55rem; line-height: 1.18;
+}
 
 /* ── Details panel: real section headings ───────────────────────── */
 .progress-title, .qa-label, .highlights-label, .panel-heading,

@@ -15,14 +15,16 @@
     <a href="/" {% if active == 'tracker' %}aria-current="page"{% endif %}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 14h8"/></svg>Tracker
     </a>
-    <a href="/manual-apply" {% if active == 'log' %}aria-current="page"{% endif %}>
+    {# From Tracker, the other pages open in a new tab so the job list stays put.
+       Switching among Log / Timeouts / Unmatched stays in this tab. #}
+    <a href="/manual-apply"{% if active == 'tracker' %} target="_blank" rel="noopener" title="Opens in a new tab"{% endif %}{% if active == 'log' %} aria-current="page"{% endif %}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>Log a job
     </a>
-    <a href="/timeouts" {% if active == 'timeouts' %}aria-current="page"{% endif %}>
+    <a href="/timeouts"{% if active == 'tracker' %} target="_blank" rel="noopener" title="Opens in a new tab"{% endif %}{% if active == 'timeouts' %} aria-current="page"{% endif %}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg>Timeouts
       <b class="nav-count" id="timeoutNavCount"></b>
     </a>
-    <a href="/unmatched" {% if active == 'unmatched' %}aria-current="page"{% endif %}>
+    <a href="/unmatched"{% if active == 'tracker' %} target="_blank" rel="noopener" title="Opens in a new tab"{% endif %}{% if active == 'unmatched' %} aria-current="page"{% endif %}>
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h10M4 18h6"/></svg>Unmatched
       <b class="nav-count" id="unmatchedNavCount"></b>
     </a>
