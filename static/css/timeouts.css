@@ -45,7 +45,7 @@
 }
 .card:last-child { border-bottom: 0; }
 .card > div:first-child { min-width: 0; }
-.card h3 { font: 700 1rem/1.3 var(--f-display); }
+.card h3 { font: 600 1.05rem/1.3 var(--f-display); }
 .meta { margin-top: 5px; color: var(--muted); font-size: .84rem; display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; }
 .pill {
   border-radius: 5px;

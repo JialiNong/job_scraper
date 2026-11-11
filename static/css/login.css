@@ -18,8 +18,8 @@ body {
 }
 
 .login-logo {
-  font: 800 1.75rem/1 var(--f-display);
-  letter-spacing: -0.02em;
+  font: 600 1.85rem/1.1 var(--f-display);
+  letter-spacing: -0.03em;
   color: var(--text);
   margin-bottom: 8px;
 }

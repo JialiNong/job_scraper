@@ -62,7 +62,7 @@
 }
 .row-line2 .row-company { min-width: 0; margin-top: 0; }
 .row-line2 .row-via { flex: none; font-weight: 400; }
-.tag-label { font: 700 .95rem/1.3 var(--f-display); color: var(--text); margin-bottom: 4px; }
+.tag-label { font: 600 .98rem/1.3 var(--f-display); color: var(--text); margin-bottom: 4px; }
 
 .pager {
   display: flex; align-items: center; justify-content: center;
@@ -97,7 +97,7 @@
 .watchlist-chip:hover { background: var(--surface2); }
 .watchlist-chip.active { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, var(--surface)); }
 .watchlist-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warning); flex-shrink: 0; }
-.watchlist-count { font-family: var(--f-display); font-variant-numeric: tabular-nums; color: var(--muted); }
+.watchlist-count { font-family: var(--f-body); font-variant-numeric: tabular-nums; color: var(--muted); }
 
 /* ── Status select on card ─────────────────────────────────────── */
 .status-row { display: flex; gap: 8px; align-items: center; margin-top: 2px; }

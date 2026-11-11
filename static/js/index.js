@@ -1533,7 +1533,10 @@ function cardCompanyHtml(company, location) {
     ? `<button type="button" class="company-link" title="Show every Tracker job at this company"
                onclick="event.stopPropagation(); filterByCompany(${escHtml(JSON.stringify(name))})">${escHtml(name)}</button>`
     : '';
-  return link + (location ? ' · ' + escHtml(location) : '');
+  const loc = location
+    ? `<span class="row-loc" title="${escHtml(location)}">${escHtml(location)}</span>`
+    : '';
+  return `${link}${loc}`;
 }
 
 /* ── Applicant position at apply time (LinkedIn) ─────────────────── */
@@ -1687,6 +1690,7 @@ function renderCard(job) {
             </div>
           </div>
         </div>
+        ${scoreRingHtml(job, { size: 'score-lg' })}
       </div>
 
       <div class="card-meta">
@@ -3169,14 +3173,13 @@ async function saveJobInfo(btn) {
     if (card) {
       const rowTitle = card.querySelector('.row-title');
       const rowCompany = card.querySelector('.row-company');
-      const rowLoc = card.querySelector('.row-loc');
+      const rowLocs = card.querySelectorAll('.row-loc');
       if (rowTitle) rowTitle.textContent = payload.title || '(No Title)';
       if (rowCompany) rowCompany.textContent = payload.company || '';
-      if (rowLoc) {
-        // Always rendered in the sub line; empty hides itself (CSS :empty)
+      rowLocs.forEach((rowLoc) => {
         rowLoc.textContent = payload.location || '';
         rowLoc.title = payload.location || '';
-      }
+      });
     }
 
     // Switch back to view mode

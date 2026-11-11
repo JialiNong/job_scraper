@@ -374,7 +374,7 @@ function renderCard(job) {
       <div class="card-header">
         <div class="card-title-block">
           <div class="card-title">${escHtml(job.title || '(No Title)')}</div>
-          <div class="card-company">${escHtml(job.company || '')}${job.location ? ' · ' + escHtml(job.location) : ''}${rowViaHtml(job, 'card-via')}</div>
+          <div class="card-company">${escHtml(job.company || '')}${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">${escHtml(job.location)}</span>` : ''}${rowViaHtml(job, 'card-via')}</div>
         </div>
         ${scoreRingHtml(score, { size: 'score-lg' })}
       </div>

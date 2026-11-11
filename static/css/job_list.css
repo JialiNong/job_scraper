@@ -68,7 +68,7 @@
 .date-group-header {
   grid-column: 1 / -1;
   display: flex; align-items: center; gap: 10px;
-  font: 700 .86rem/1.3 var(--f-display);
+  font: 600 .9rem/1.3 var(--f-display);
   color: var(--text);
   padding: 12px 2px 6px;
   cursor: pointer;
@@ -102,12 +102,21 @@
 .card-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
 .card-title-block { flex: 1; min-width: 0; }
 .card-title {
-  font: 700 1.05rem/1.3 var(--f-display);
+  display: flex; align-items: flex-start; gap: 8px;
+  font: 500 1.55rem/1.18 var(--f-display);
+  letter-spacing: -0.03em;
   color: var(--text);
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+}
+.card-title-text {
+  min-width: 0;
+  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
   overflow: hidden;
 }
-.card-company { font-size: .88rem; color: var(--muted); margin-top: 3px; }
+.card-company {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-top: 8px;
+  font-size: .84rem; font-weight: 500; color: var(--muted);
+}
 .card-summary { font-size: .88rem; color: var(--muted); line-height: 1.55; }
 
 .card.open-flash {
@@ -156,13 +165,13 @@
 .row-chevron { display: none; }
 .row-main { flex: 1; min-width: 0; }
 .row-title {
-  font: 700 1.04rem/1.3 var(--f-display);
-  letter-spacing: -0.01em;
+  font: 500 1.36rem/1.18 var(--f-display);
+  letter-spacing: -0.03em;
   color: var(--text);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .row-company {
-  font-size: .82rem; color: var(--muted); margin-top: 1px;
+  font-size: .78rem; font-weight: 500; color: var(--muted); margin-top: 1px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .row-meta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
@@ -188,15 +197,22 @@
   }
 }
 .row-loc {
-  font-size: .8rem; color: var(--muted);
-  max-width: 150px;
+  display: inline-block;
+  max-width: 100%;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface2);
+  color: var(--text);
+  font-size: .72rem; font-weight: 600;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  vertical-align: middle;
 }
+.row-loc:empty { display: none; }
 
 /* ── Pills & score ─────────────────────────────────────────────── */
 .status-pill {
   flex-shrink: 0;
-  font-size: .75rem; font-weight: 650;
+  font-size: .75rem; font-weight: 600;
   padding: 3px 11px;
   border-radius: 999px;
   border: 1.5px solid currentColor;
@@ -234,7 +250,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  font: 800 .86rem/1 var(--f-display);
+  font: 700 .86rem/1 var(--f-body);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.03em;
   color: currentColor;

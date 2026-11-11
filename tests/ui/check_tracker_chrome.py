@@ -105,9 +105,9 @@ def js_metrics(page):
         recommendedBy: selectStyle('#recommendedBy'),
         timeoutsSelect: selectStyle('.toolbar select'),
         sideSelect: selectStyle('.status-side-select'),
-        headerScore: document.querySelectorAll(
+        headerScore: [...document.querySelectorAll(
           '.card.expanded .card-header .score-badge, .card.expanded .card-header .score-ring'
-        ).length,
+        )].filter(el => getComputedStyle(el).display !== 'none').length,
         localScore: document.querySelectorAll('.card.expanded .ai-local .score-ring').length,
         listRingBeforeTitle: (() => {
           const row = document.querySelector('.job-grid .card-row');
@@ -397,6 +397,41 @@ def run_desktop(page, base, run: Runner):
               m["tlVisible"] and tl_z > body_z,
               f"tlZ={m['tlZ']} bodyZ={m['bodyZ']}")
     page.click(".tl-modal .tl-cancel")
+
+    closer = page.locator(".card.expanded .panel-close")
+    if closer.count():
+        closer.click()
+    page.wait_for_timeout(200)
+    page.get_by_role("button", name="Cards").click()
+    page.wait_for_timeout(250)
+    run.shot(page, "desktop-cards.png")
+    cards = page.evaluate(
+        """() => {
+          const card = document.querySelector('.job-grid.layout-cards .card');
+          if (!card) return { hasCard: false };
+          const ring = card.querySelector('.card-header .score-ring');
+          const title = card.querySelector('.card-title');
+          const apply = card.querySelector('.card-actions-row');
+          const later = card.querySelector('.company-history, .progress-panel');
+          const cs = ring ? getComputedStyle(ring) : null;
+          const t = (el) => el ? el.getBoundingClientRect().top : null;
+          return {
+            hasCard: true,
+            ringVisible: !!(cs && cs.display !== 'none' && cs.visibility !== 'hidden'),
+            titleSize: title ? parseFloat(getComputedStyle(title).fontSize) : 0,
+            applyBeforeLater: apply && later ? t(apply) <= t(later) + 1 : true,
+          };
+        }"""
+    )
+    run.check("desktop cards: score ring in the header",
+              cards.get("hasCard") and cards.get("ringVisible"),
+              f"cards={cards}")
+    run.check("desktop cards: title reads as a headline",
+              cards.get("titleSize", 0) >= 22,
+              f"size={cards.get('titleSize')}")
+    run.check("desktop cards: Apply sits above history/progress",
+              cards.get("applyBeforeLater"),
+              f"cards={cards}")
 
 
 def main():
