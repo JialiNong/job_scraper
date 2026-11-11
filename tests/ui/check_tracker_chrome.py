@@ -148,6 +148,15 @@ def js_metrics(page):
           const cs = getComputedStyle(el);
           return { clamp: cs.webkitLineClamp, overflow: cs.overflow };
         })(),
+        companyChips: (() => {
+          const field = document.querySelector('.search-field');
+          const chips = [...document.querySelectorAll('.search-chip')];
+          return {
+            inSearch: chips.length > 0 && !!field && chips.every(c => field.contains(c)),
+            count: chips.length,
+            toolbarOld: !!document.getElementById('companyFilterChip'),
+          };
+        })(),
       };
     }"""
     )
@@ -337,6 +346,24 @@ def summary_unclamped(info):
     return clamp in ("none", "unset", "")
 
 
+def check_company_search_chips(page, base, run, label):
+    page.goto(base + "/?company=Acme")
+    wait_cards(page)
+    m = js_metrics(page)
+    run.shot(page, f"{label.split()[0]}-company-search.png")
+    info = m.get("companyChips") or {}
+    run.check(f"{label} search: company filter is a chip inside the search box",
+              info.get("inSearch") and info.get("count") == 1 and not info.get("toolbarOld"),
+              f"chips={info}")
+    page.locator(".search-chip button").click()
+    page.wait_for_timeout(250)
+    m = js_metrics(page)
+    info = m.get("companyChips") or {}
+    run.check(f"{label} search: chip × removes that company",
+              info.get("count") == 0,
+              f"chips={info}")
+
+
 def phone_select_ok(style):
     if not style:
         return False, "missing"
@@ -457,6 +484,8 @@ def run_phone(page, base, run: Runner):
               f"visible={m['batchVisible']} in={m['batchInView']}")
     page.click("#selectModeBtn")
 
+    check_company_search_chips(page, base, run, "phone")
+
     page.goto(base + "/manual-apply")
     page.locator("#jobStatus").wait_for(state="visible")
     nav = nav_targets(page)
@@ -573,6 +602,8 @@ def run_desktop(page, base, run: Runner):
               m["tlVisible"] and tl_z > body_z,
               f"tlZ={m['tlZ']} bodyZ={m['bodyZ']}")
     page.click(".tl-modal .tl-cancel")
+
+    check_company_search_chips(page, base, run, "desktop")
 
     closer = page.locator(".card.expanded .panel-close")
     if closer.count():

@@ -35,13 +35,48 @@ def _company_key(company) -> str:
     return re.sub(r"\s+", " ", str(company or "")).strip().casefold()
 
 
+def _arg_values(args, key: str) -> list:
+    """One or more query values (Flask getlist, or a dict / list in tests)."""
+    if hasattr(args, "getlist"):
+        values = list(args.getlist(key))
+    else:
+        raw = args.get(key) if hasattr(args, "get") else None
+        if raw is None:
+            values = []
+        elif isinstance(raw, (list, tuple)):
+            values = list(raw)
+        else:
+            values = [raw]
+    return [str(v) for v in values if str(v).strip()]
+
+
+def companies_match_clause(companies) -> dict:
+    """OR of exact company matches. One name stays a single clause."""
+    clauses = []
+    seen = set()
+    for raw in companies or []:
+        name = re.sub(r"\s+", " ", str(raw or "")).strip()
+        key = name.casefold()
+        if not name or key in seen:
+            continue
+        seen.add(key)
+        clause = company_match_clause(name)
+        if clause:
+            clauses.append(clause)
+    if not clauses:
+        return {}
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$or": clauses}
+
+
 def _jobs_list_query_from_args(args) -> dict:
     """Mongo query for Tracker list filters (status, source, origin, country, search, company, dates, applied day, highlights)."""
     status_filter = args.get("status")
     source_filter = args.get("source")
     country_filter = args.get("country")
     search_query = (args.get("q") or "").strip()
-    company_filter = (args.get("company") or "").strip()
+    company_names = _arg_values(args, "company")
     date_from = (args.get("date_from") or "").strip() or None
     date_to = (args.get("date_to") or "").strip() or None
     applied_on = (args.get("applied_on") or "").strip()
@@ -62,8 +97,9 @@ def _jobs_list_query_from_args(args) -> dict:
                 {"company": {"$regex": search_query, "$options": "i"}},
             ]
         })
-    if company_filter:
-        clauses.append(company_match_clause(company_filter))
+    company_clause = companies_match_clause(company_names)
+    if company_clause:
+        clauses.append(company_clause)
     if date_from or date_to:
         time_filter: dict = {}
         start = _parse_filter_date(date_from)

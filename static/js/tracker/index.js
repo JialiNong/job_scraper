@@ -6,7 +6,7 @@
 /* ── State ───────────────────────────────────────────────────────── */
 let currentStatusFilter = 'active';
 let highlightsOnly = false;
-let companyFilter = ''; // exact company (click a company name on a card)
+let companyFilters = []; // exact companies (chips in the search box)
 let appliedOnFilter = ''; // YYYY-MM-DD: jobs applied that day (heatmap → /?applied=…)
 let debounceTimer = null;
 let dateDebounceTimer = null;
@@ -153,11 +153,52 @@ function toggleStatsExpanded() {
   setStatsExpanded(!document.getElementById('statsBar').classList.contains('stats-expanded'));
 }
 
-/* ── Company filter (click a company name) ───────────────────────── */
+/* ── Company filter (chips inside the search box) ─────────────────── */
+function companyKey(name) {
+  return String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+function uniqueCompanies(names) {
+  const out = [];
+  const seen = new Set();
+  for (const raw of names || []) {
+    const name = String(raw || '').trim();
+    const key = companyKey(name);
+    if (!name || seen.has(key)) continue;
+    seen.add(key);
+    out.push(name);
+  }
+  return out;
+}
+
 function applyCompanyFilterUI() {
-  const chip = document.getElementById('companyFilterChip');
-  document.getElementById('companyFilterName').textContent = companyFilter;
-  chip.hidden = !companyFilter;
+  const wrap = document.getElementById('companyFilterChips');
+  if (!wrap) return;
+  wrap.replaceChildren(...companyFilters.map(name => {
+    const chip = document.createElement('span');
+    chip.className = 'search-chip';
+    chip.title = `Jobs at ${name}`;
+    const label = document.createElement('span');
+    label.className = 'cfc-name';
+    label.textContent = name;
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.title = `Remove ${name}`;
+    btn.setAttribute('aria-label', `Remove ${name}`);
+    btn.addEventListener('click', ev => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      removeCompanyFilter(name);
+    });
+    chip.append(label, btn);
+    return chip;
+  }));
+  const input = document.getElementById('searchInput');
+  if (input) {
+    input.placeholder = companyFilters.length
+      ? 'Search titles, or click a company to add'
+      : 'Search title or company';
+  }
 }
 
 /** Tracker URL filtered to one company (opened in a new tab from company history). */
@@ -168,13 +209,13 @@ function companyPageUrl(name) {
 /** Keep ?company= / ?applied= in the address bar so a refresh keeps the filter. */
 function syncFilterParams() {
   const params = new URLSearchParams(location.search);
-  if (companyFilter) params.set('company', companyFilter);
-  else params.delete('company');
+  params.delete('company');
+  companyFilters.forEach(name => params.append('company', name));
   if (appliedOnFilter) params.set('applied', appliedOnFilter);
   else params.delete('applied');
   const qs = params.toString();
   history.replaceState({}, '', qs ? `/?${qs}` : '/');
-  const parts = [companyFilter, appliedOnFilter && `Applied ${appliedOnFilter}`].filter(Boolean);
+  const parts = [...companyFilters, appliedOnFilter && `Applied ${appliedOnFilter}`].filter(Boolean);
   document.title = parts.length ? `${parts.join(' · ')} · Job Tracker` : 'Job Tracker';
 }
 
@@ -200,14 +241,24 @@ function resetToolbarFilters() {
 function filterByCompany(name) {
   const company = String(name || '').trim();
   if (!company) return;
-  companyFilter = company;
+  if (companyFilters.some(c => companyKey(c) === companyKey(company))) {
+    applyCompanyFilterUI();
+    return;
+  }
+  const first = companyFilters.length === 0;
+  companyFilters.push(company);
   syncFilterParams();
-  // Show every job ever seen at this company, whatever the other filters were.
-  resetToolbarFilters();
   applyCompanyFilterUI();
   showTrackerView('jobs');
-  setStatusFilter('all');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  if (first) {
+    // First chip: every job at that company, whatever the other filters were.
+    resetToolbarFilters();
+    setStatusFilter('all');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  currentPage = 1;
+  loadJobs();
 }
 
 function filterByAppliedDay(dateStr) {
@@ -231,8 +282,20 @@ function clearAppliedFilter() {
   loadJobs();
 }
 
+function removeCompanyFilter(name) {
+  const key = companyKey(name);
+  const next = companyFilters.filter(c => companyKey(c) !== key);
+  if (next.length === companyFilters.length) return;
+  companyFilters = next;
+  syncFilterParams();
+  applyCompanyFilterUI();
+  currentPage = 1;
+  loadJobs();
+}
+
 function clearCompanyFilter() {
-  companyFilter = '';
+  if (!companyFilters.length) return;
+  companyFilters = [];
   syncFilterParams();
   applyCompanyFilterUI();
   currentPage = 1;
@@ -389,7 +452,7 @@ function currentJobListParams() {
   if (highlightsOnly) params.set('highlights', 'true');
   if (source !== 'all') params.set('source', source);
   if (search) params.set('q', search);
-  if (companyFilter) params.set('company', companyFilter);
+  companyFilters.forEach(name => params.append('company', name));
   if (appliedOnFilter) params.set('applied_on', appliedOnFilter);
   if (dates.from) params.set('date_from', dates.from);
   if (dates.to)   params.set('date_to',   dates.to);
@@ -598,19 +661,39 @@ function refreshAll() {
 
 window.__pendingOpenJobId = consumeOpenJobId();
 const initialParams = new URLSearchParams(location.search);
-const initialCompany = (initialParams.get('company') || '').trim();
+const initialCompanies = uniqueCompanies(initialParams.getAll('company'));
 const initialApplied = (initialParams.get('applied') || '').trim();
+
+const searchField = document.getElementById('searchField');
+const searchInput = document.getElementById('searchInput');
+if (searchField && searchInput) {
+  searchField.addEventListener('click', ev => {
+    if (ev.target.closest('button')) return;
+    searchInput.focus();
+  });
+  searchInput.addEventListener('keydown', ev => {
+    if (ev.key !== 'Backspace' || searchInput.value || !companyFilters.length) return;
+    ev.preventDefault();
+    removeCompanyFilter(companyFilters[companyFilters.length - 1]);
+  });
+}
 
 setLayout(currentLayout);
 // ?company=… / ?applied=YYYY-MM-DD → open straight into that view
 if (initialApplied) {
-  if (initialCompany) {
-    companyFilter = initialCompany;
+  if (initialCompanies.length) {
+    companyFilters = initialCompanies;
     applyCompanyFilterUI();
   }
   filterByAppliedDay(initialApplied);
-} else if (initialCompany) {
-  filterByCompany(initialCompany);
+} else if (initialCompanies.length) {
+  companyFilters = initialCompanies;
+  syncFilterParams();
+  resetToolbarFilters();
+  applyCompanyFilterUI();
+  showTrackerView('jobs');
+  setStatusFilter('all');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 } else {
   loadJobs();
 }

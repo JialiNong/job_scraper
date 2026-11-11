@@ -86,7 +86,10 @@
 
     <div class="toolbar">
       <label class="search">{{ search_icon() }}
-        <input type="search" id="searchInput" placeholder="Search title or company" aria-label="Search title or company" oninput="debounceLoad()" />
+        <div class="search-field" id="searchField">
+          <span class="search-chips" id="companyFilterChips"></span>
+          <input type="search" id="searchInput" placeholder="Search title or company" aria-label="Search title or company" oninput="debounceLoad()" />
+        </div>
       </label>
       <div class="filter-pop">
         <button type="button" class="ui-btn" id="filterBtn" aria-expanded="false" aria-controls="filterPop" onclick="toggleFilterPop(event)">Filters</button>
@@ -142,10 +145,6 @@
         <button type="button" data-layout="compact" onclick="setLayout('compact')" title="List with a details panel">List</button>
         <button type="button" data-layout="cards" onclick="setLayout('cards')" title="Cards: score, title, company, location — tap for a details sheet">Cards</button>
       </div>
-      <span class="company-filter-chip" id="companyFilterChip" hidden title="Showing every Tracker job at this company">
-        <span class="cfc-name" id="companyFilterName"></span>
-        <button type="button" onclick="clearCompanyFilter()" title="Clear company filter" aria-label="Clear company filter">×</button>
-      </span>
       <span class="company-filter-chip" id="appliedFilterChip" hidden title="Jobs applied or reapplied on this day">
         Applied <span class="cfc-name" id="appliedFilterName"></span>
         <button type="button" onclick="clearAppliedFilter()" title="Clear applied-day filter" aria-label="Clear applied-day filter">×</button>

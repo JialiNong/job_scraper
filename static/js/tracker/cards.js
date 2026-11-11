@@ -248,7 +248,7 @@ function renderCompanyHistory(job) {
 function cardCompanyHtml(company, location) {
   const name = String(company || '');
   const link = name
-    ? `<button type="button" class="company-link" title="Show every Tracker job at this company"
+    ? `<button type="button" class="company-link" title="Add this company to the search filter"
                onclick="event.stopPropagation(); filterByCompany(${escHtml(JSON.stringify(name))})">${escHtml(name)}</button>`
     : '';
   const loc = location

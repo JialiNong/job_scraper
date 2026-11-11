@@ -21,7 +21,11 @@ if str(SRC) not in sys.path:
 import core.db_mongo as db_mongo  # noqa: E402
 
 with patch.object(db_mongo, "ensure_indexes"):
-    from web.list_query import _jobs_list_query_from_args, company_match_clause  # noqa: E402
+    from web.list_query import (  # noqa: E402
+        _jobs_list_query_from_args,
+        companies_match_clause,
+        company_match_clause,
+    )
     from web.serialize import (  # noqa: E402
         _serialize,
         attach_company_history,
@@ -75,6 +79,19 @@ class CompanyMatchTests(unittest.TestCase):
     def test_list_query_includes_company_filter(self):
         query = _jobs_list_query_from_args({"company": "Acme", "status": "all"})
         self.assertIn(company_match_clause("Acme"), query.get("$and", [query]))
+
+    def test_list_query_ors_several_companies(self):
+        query = _jobs_list_query_from_args({
+            "company": ["Acme", "Globex"],
+            "status": "all",
+        })
+        self.assertIn(
+            companies_match_clause(["Acme", "Globex"]),
+            query.get("$and", [query]),
+        )
+        clause = companies_match_clause(["Acme", "Globex"])
+        self.assertEqual(len(clause["$or"]), 2)
+        self.assertEqual(companies_match_clause(["Acme", "acme", ""]), company_match_clause("Acme"))
 
 
 class CompanyHistoryTests(unittest.TestCase):
@@ -156,9 +173,13 @@ class TrackerUiTests(unittest.TestCase):
         self.assertIn(".stats-bar:not(.stats-expanded)", HTML)
 
     def test_company_filter_wired(self):
-        self.assertIn("params.set('company', companyFilter)", HTML)
+        self.assertIn("params.append('company', name)", HTML)
         self.assertIn("function filterByCompany", HTML)
+        self.assertIn("function removeCompanyFilter", HTML)
         self.assertIn("function clearCompanyFilter", HTML)
+        self.assertIn('id="searchField"', HTML)
+        self.assertIn('id="companyFilterChips"', HTML)
+        self.assertNotIn("getElementById('companyFilterChip')", HTML)
         # Edit info re-renders the clickable company link
         self.assertIn("cardCompanyHtml(payload.company, payload.location)", HTML)
 
