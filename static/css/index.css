@@ -34,6 +34,10 @@
 .dot-applied    { background: var(--applied); }
 .dot-rejected   { background: var(--rejected); }
 .dot-interview  { background: var(--interview); }
+.dot-got_interview {
+  background: color-mix(in srgb, var(--interview) 35%, var(--surface));
+  box-shadow: inset 0 0 0 1.5px var(--interview);
+}
 .dot-offer      { background: var(--offer); }
 .dot-unsuitable { background: var(--unsuitable); }
 .dot-closed     { background: var(--closed); }
@@ -1237,6 +1241,10 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   font-size: .9rem;
   line-height: 1.5;
   color: var(--text);
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  overflow-wrap: anywhere;
 }
 .ai-match-reasons {
   font-size: .78rem;
@@ -1871,10 +1879,9 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 }
 .applicant-pos-wrap .ap-hint { color: var(--muted); font-size: .72rem; flex-basis: 100%; }
 
-/* Tracker cards show a 3-line summary (Unmatched shows it in full) */
+/* Tracker details: full AI summary next to the score (Unmatched is also unclamped) */
 .card-summary {
-  display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
-  overflow: hidden;
+  overflow: visible;
 }
 
 /* ── Narrow screens ───────────────────────────────────────────── */

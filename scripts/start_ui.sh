@@ -8,8 +8,8 @@ PORT="${1:-5050}"
 cd "$PROJECT_DIR" || exit 1
 
 echo "🌐 Starting Job Tracker UI at http://127.0.0.1:${PORT}"
-echo "   HTML templates hot-reload automatically — edit & save, browser refreshes."
-echo "   Python changes restart the server automatically (no manual restart)."
+echo "   HTML/Python saves restart the server; the browser then refreshes."
+echo "   Tracker HTML is not cached, so a refresh also picks up template edits."
 echo "   Press Ctrl+C to stop."
 echo ""
 

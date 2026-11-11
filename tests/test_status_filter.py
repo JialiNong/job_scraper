@@ -21,11 +21,14 @@ with patch.object(db_mongo, "ensure_indexes"):
     from web.list_query import combine_job_list_query, jobs_country_filter_query  # noqa: E402
     from web.serialize import job_country  # noqa: E402
     from web.status import (  # noqa: E402
+        GOT_INTERVIEW_FILTER,
         INTERVIEW_TIMELINE_STEPS,
+        JOURNEY_INTERVIEW_STEPS,
         SIDE_STATUSES,
         application_progress,
         chip_status_counts,
         job_matches_status_filter,
+        job_reached_interview,
         jobs_status_filter_query,
     )
 
@@ -127,6 +130,7 @@ class StatusFilterMatchTests(unittest.TestCase):
         job = _eurowings_unsuitable_interview()
         self.assertTrue(job_matches_status_filter(job, "interview"))
         self.assertTrue(job_matches_status_filter(job, "unsuitable"))
+        self.assertTrue(job_matches_status_filter(job, GOT_INTERVIEW_FILTER))
         self.assertTrue(job_matches_status_filter(job, "all"))
         self.assertFalse(job_matches_status_filter(job, "applied"))
         self.assertFalse(job_matches_status_filter(job, "offer"))
@@ -157,6 +161,7 @@ class StatusFilterMatchTests(unittest.TestCase):
         }
         self.assertTrue(job_matches_status_filter(job, "unsuitable"))
         self.assertFalse(job_matches_status_filter(job, "interview"))
+        self.assertFalse(job_matches_status_filter(job, GOT_INTERVIEW_FILTER))
         self.assertFalse(job_matches_status_filter(job, "applied"))
 
     def test_active_hides_side_statuses(self):
@@ -166,6 +171,58 @@ class StatusFilterMatchTests(unittest.TestCase):
         self.assertTrue(job_matches_status_filter({}, "active"))
         for side in SIDE_STATUSES:
             self.assertFalse(job_matches_status_filter(_job(status=side), "active"))
+
+    def test_got_interview_keeps_later_rejected_and_offer(self):
+        interviewed_then_rejected = _job(
+            status="rejected",
+            application_timeline=[
+                {"step": "applied", "at": APPLIED_AT},
+                {"step": "interview_invite", "at": INTERVIEW_AT},
+                {"step": "interview_1", "at": INTERVIEW_AT},
+                {"step": "rejected", "at": INTERVIEW_AT},
+            ],
+        )
+        offered = _job(
+            status="offer",
+            application_timeline=[
+                {"step": "applied", "at": APPLIED_AT},
+                {"step": "interview_final", "at": INTERVIEW_AT},
+                {"step": "offer", "at": INTERVIEW_AT},
+            ],
+        )
+        self.assertTrue(job_reached_interview(interviewed_then_rejected))
+        self.assertTrue(job_matches_status_filter(interviewed_then_rejected, GOT_INTERVIEW_FILTER))
+        self.assertTrue(job_matches_status_filter(interviewed_then_rejected, "rejected"))
+        self.assertFalse(job_matches_status_filter(interviewed_then_rejected, "interview"))
+        self.assertTrue(job_matches_status_filter(offered, GOT_INTERVIEW_FILTER))
+        self.assertTrue(job_matches_status_filter(offered, "offer"))
+
+    def test_got_interview_skips_rejected_without_interview(self):
+        job = _job(
+            status="rejected",
+            application_timeline=[
+                {"step": "applied", "at": APPLIED_AT},
+                {"step": "rejected", "at": INTERVIEW_AT},
+            ],
+        )
+        self.assertFalse(job_reached_interview(job))
+        self.assertFalse(job_matches_status_filter(job, GOT_INTERVIEW_FILTER))
+        self.assertTrue(job_matches_status_filter(job, "rejected"))
+
+    def test_invite_and_flat_interview_count_as_got_interview(self):
+        invite = _job(
+            status="interview",
+            application_timeline=[
+                {"step": "applied", "at": APPLIED_AT},
+                {"step": "interview_invite", "at": INTERVIEW_AT},
+            ],
+        )
+        flat = _job(status="interview", application_timeline=[], applied_at=APPLIED_AT)
+        applied_only = _job(status="applied")
+        self.assertTrue(job_matches_status_filter(invite, GOT_INTERVIEW_FILTER))
+        self.assertTrue(job_matches_status_filter(invite, "interview"))
+        self.assertTrue(job_matches_status_filter(flat, GOT_INTERVIEW_FILTER))
+        self.assertFalse(job_matches_status_filter(applied_only, GOT_INTERVIEW_FILTER))
 
 
 class StatusFilterQueryTests(unittest.TestCase):
@@ -201,6 +258,22 @@ class StatusFilterQueryTests(unittest.TestCase):
         )
         self.assertEqual(jobs_status_filter_query(None), {})
 
+    def test_got_interview_query_matches_any_interview_step(self):
+        query = jobs_status_filter_query(GOT_INTERVIEW_FILTER)
+        self.assertIn("$or", query)
+        self.assertNotEqual(query, {"status": GOT_INTERVIEW_FILTER})
+        self.assertEqual(
+            set(query["$or"][0]["application_timeline.step"]["$in"]),
+            set(JOURNEY_INTERVIEW_STEPS),
+        )
+        self.assertEqual(
+            query["$or"][1],
+            {
+                "application_timeline.0": {"$exists": False},
+                "status": {"$in": ["interview", "offer"]},
+            },
+        )
+
     def test_search_and_progress_filter_combine_with_and(self):
         status_q = jobs_status_filter_query("interview")
         search_q = {
@@ -222,6 +295,21 @@ class ChipCountTests(unittest.TestCase):
                 {"step": "interview_1", "at": INTERVIEW_AT},
             ]),
             _job(status="applied"),
+            _job(
+                status="rejected",
+                application_timeline=[
+                    {"step": "applied", "at": APPLIED_AT},
+                    {"step": "interview_1", "at": INTERVIEW_AT},
+                    {"step": "rejected", "at": INTERVIEW_AT},
+                ],
+            ),
+            _job(
+                status="rejected",
+                application_timeline=[
+                    {"step": "applied", "at": APPLIED_AT},
+                    {"step": "rejected", "at": INTERVIEW_AT},
+                ],
+            ),
             {"status": "pending", "applied_at": None, "application_timeline": []},
             {
                 "status": "unsuitable",
@@ -233,8 +321,10 @@ class ChipCountTests(unittest.TestCase):
         self.assertEqual(counts.get("interview"), 2)
         self.assertEqual(counts.get("unsuitable"), 2)
         self.assertEqual(counts.get("applied"), 1)
+        self.assertEqual(counts.get("rejected"), 2)
+        self.assertEqual(counts.get(GOT_INTERVIEW_FILTER), 3)
         self.assertEqual(counts.get("pending"), 1)
-        self.assertEqual(counts.get("active"), 3)
+        self.assertEqual(counts.get("active"), 5)
         self.assertNotIn("all", counts)
 
 
@@ -267,6 +357,8 @@ class CountryTests(unittest.TestCase):
 
     def test_default_view_is_active(self):
         self.assertIn("let currentStatusFilter = 'active';", HTML)
+        self.assertIn('data-status="got_interview"', HTML)
+        self.assertIn("function jobReachedInterview", HTML)
         self.assertIn('id="countryFilter"', HTML)
         self.assertIn('<option value="germany" selected>Germany</option>', HTML)
         self.assertIn('<option value="europe">', HTML)

@@ -126,6 +126,12 @@ def js_metrics(page):
         panelOrder: [...document.querySelectorAll(
           '.card.expanded .card-split-match > .company-history, .card.expanded .card-split-match > .progress-panel, .card.expanded .card-split-match > .recommend-reason, .card.expanded .card-split-match > .ai-local, .card.expanded .card-split-match > .job-description'
         )].map(el => el.className.split(/\\s+/)[0]),
+        summaryClamp: (() => {
+          const el = document.querySelector('.card.expanded .ai-local-lead .card-summary');
+          if (!el) return null;
+          const cs = getComputedStyle(el);
+          return { clamp: cs.webkitLineClamp, overflow: cs.overflow };
+        })(),
       };
     }"""
     )
@@ -181,6 +187,18 @@ def wait_cards(page):
     page.wait_for_timeout(200)
 
 
+def check_got_interview_chip(page, run: Runner, prefix: str):
+    chip = page.locator('.stat-chip[data-status="got_interview"]')
+    run.check(f"{prefix}: Got interview chip is visible", chip.is_visible())
+    chip.click()
+    page.wait_for_timeout(150)
+    run.check(f"{prefix}: Got interview chip activates on tap",
+              "active" in (chip.get_attribute("class") or ""),
+              f"class={chip.get_attribute('class')}")
+    page.locator('.stat-chip[data-status="active"]').click()
+    wait_cards(page)
+
+
 def open_filters(page):
     page.click("#filterBtn")
     page.wait_for_timeout(200)
@@ -203,6 +221,13 @@ def status_outlined(info):
         bw = 0
     transparent = bg in ("transparent", "rgba(0,0,0,0)", "rgb(0,0,0,0)")
     return transparent and bw >= 1
+
+
+def summary_unclamped(info):
+    if not info:
+        return False
+    clamp = str(info.get("clamp") or "").strip().lower()
+    return clamp in ("none", "unset", "")
 
 
 def phone_select_ok(style):
@@ -267,6 +292,7 @@ def run_phone(page, base, run: Runner):
     run.check("phone list: status pill is outlined",
               status_outlined(m.get("statusOutline")),
               f"outline={m.get('statusOutline')}")
+    check_got_interview_chip(page, run, "phone list")
 
     page.click(".card-row")
     page.wait_for_timeout(350)
@@ -285,6 +311,9 @@ def run_phone(page, base, run: Runner):
     run.check("phone details: score ring lives in AI match, not the title row",
               m["headerScore"] == 0 and m["localScore"] == 1,
               f"header={m['headerScore']} local={m['localScore']}")
+    run.check("phone details: AI summary is not ellipsis-clamped",
+              summary_unclamped(m.get("summaryClamp")),
+              f"clamp={m.get('summaryClamp')}")
     order = m.get("panelOrder") or []
     run.check("phone details: AI match before original description",
               "ai-local" in order and "job-description" in order
@@ -365,6 +394,7 @@ def run_desktop(page, base, run: Runner):
     run.check("desktop list: status pill is outlined",
               status_outlined(m.get("statusOutline")),
               f"outline={m.get('statusOutline')}")
+    check_got_interview_chip(page, run, "desktop list")
 
     page.click(".card-row")
     page.wait_for_timeout(350)
@@ -376,6 +406,9 @@ def run_desktop(page, base, run: Runner):
     run.check("desktop details: score ring lives in AI match, not the title row",
               m["headerScore"] == 0 and m["localScore"] == 1,
               f"header={m['headerScore']} local={m['localScore']}")
+    run.check("desktop details: AI summary is not ellipsis-clamped",
+              summary_unclamped(m.get("summaryClamp")),
+              f"clamp={m.get('summaryClamp')}")
     order = m.get("panelOrder") or []
     run.check("desktop details: progress before AI, description last",
               "progress-panel" in order and "ai-local" in order and "job-description" in order

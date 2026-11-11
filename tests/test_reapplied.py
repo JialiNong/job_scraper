@@ -160,5 +160,14 @@ class ReappliedUiTests(unittest.TestCase):
         self.assertIn(".progress-node.step-reapplied", HTML)
 
 
+class HtmlCacheTests(unittest.TestCase):
+    def test_html_pages_are_not_cached(self):
+        import web.web_app as web_app
+        client = web_app.app.test_client()
+        res = client.get("/login")
+        self.assertEqual(res.status_code, 200)
+        self.assertIn("no-store", res.headers.get("Cache-Control", ""))
+
+
 if __name__ == "__main__":
     unittest.main()

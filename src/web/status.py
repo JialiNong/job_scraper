@@ -65,6 +65,9 @@ SIDE_STATUSES = (
 # stay hidden until their own chip (or All) is picked.
 ACTIVE_STATUS_FILTER = "active"
 
+# Lookback chip: ever reached invite / a round / offer (including later rejected).
+GOT_INTERVIEW_FILTER = "got_interview"
+
 # Tracker chips for application progress (derived from timeline / applied_at).
 PROGRESS_STAGES = APPLIED_STATUSES
 INTERVIEW_TIMELINE_STEPS = (
@@ -142,6 +145,18 @@ def _status_from_timeline(timeline: list, fallback: str = "pending") -> str:
     return fallback
 
 
+def job_reached_interview(job: dict) -> bool:
+    """True if the job ever got an invite, a round, or an offer."""
+    raw = job.get("application_timeline")
+    if isinstance(raw, list) and raw:
+        return any(
+            isinstance(item, dict) and item.get("step") in JOURNEY_INTERVIEW_STEPS
+            for item in raw
+        )
+    status = job.get("status") or "pending"
+    return status in ("interview", "offer")
+
+
 def application_progress(job: dict) -> Optional[str]:
     """
     Application stage for Tracker chips: applied / interview / rejected / offer.
@@ -169,6 +184,8 @@ def job_matches_status_filter(job: dict, status_filter: Optional[str]) -> bool:
         return True
     if status_filter == ACTIVE_STATUS_FILTER:
         return (job.get("status") or "pending") not in SIDE_STATUSES
+    if status_filter == GOT_INTERVIEW_FILTER:
+        return job_reached_interview(job)
     if status_filter in PROGRESS_STAGES:
         return application_progress(job) == status_filter
     return (job.get("status") or "pending") == status_filter
@@ -179,13 +196,25 @@ def jobs_status_filter_query(status_filter: Optional[str]) -> dict:
     Mongo clause for a Tracker status chip.
 
     Progress stages match the latest timeline step (or a flat applied-like
-    status / applied_at when there is no timeline). Overlay chips still
-    match the status field so Unsuitable stays a real filter.
+    status / applied_at when there is no timeline). Got interview matches
+    any invite / round / offer step still on the timeline, not only the
+    latest. Overlay chips still match the status field so Unsuitable
+    stays a real filter.
     """
     if not status_filter or status_filter == "all":
         return {}
     if status_filter == ACTIVE_STATUS_FILTER:
         return {"status": {"$nin": list(SIDE_STATUSES)}}
+    if status_filter == GOT_INTERVIEW_FILTER:
+        return {
+            "$or": [
+                {"application_timeline.step": {"$in": list(JOURNEY_INTERVIEW_STEPS)}},
+                {
+                    "application_timeline.0": {"$exists": False},
+                    "status": {"$in": ["interview", "offer"]},
+                },
+            ]
+        }
     if status_filter not in PROGRESS_STAGES:
         return {"status": status_filter}
 
@@ -217,9 +246,10 @@ def chip_status_counts(jobs: list) -> dict:
 
     Overlay chips (pending / side statuses) use the status field.
     Progress chips use application_progress, so a side-status interview
-    increments both Unsuitable and Interview.
+    increments both Unsuitable and Interview. Got interview counts any job
+    that ever reached invite / a round / offer, including later rejected.
     """
-    counts: dict = {ACTIVE_STATUS_FILTER: 0}
+    counts: dict = {ACTIVE_STATUS_FILTER: 0, GOT_INTERVIEW_FILTER: 0}
     for job in jobs:
         status = job.get("status") or "pending"
         if status not in SIDE_STATUSES:
@@ -229,6 +259,8 @@ def chip_status_counts(jobs: list) -> dict:
         progress = application_progress(job)
         if progress:
             counts[progress] = counts.get(progress, 0) + 1
+        if job_reached_interview(job):
+            counts[GOT_INTERVIEW_FILTER] += 1
     return counts
 
 

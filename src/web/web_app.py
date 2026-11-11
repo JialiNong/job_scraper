@@ -109,6 +109,20 @@ def _send_file_max_age(filename):
 app.get_send_file_max_age = _send_file_max_age
 
 
+@app.after_request
+def _html_no_store(response):
+    """
+    Do not let the browser keep a stale Tracker page. Cached HTML still
+    points at old static ?v= hashes, so CSS/JS edits look like they need a
+    server restart. Static files with ?v= stay long-cached.
+    """
+    ctype = response.headers.get("Content-Type", "")
+    if ctype.startswith("text/html"):
+        response.headers["Cache-Control"] = "no-store, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+    return response
+
+
 # Authentication setup (single user; see web/auth.py)
 login_manager.init_app(app)
 
@@ -140,14 +154,19 @@ def main():
 
     print(f"\n🌐 Job Tracker starting at http://{args.host}:{args.port}")
     if args.reload:
-        print("   Auto-reload on: saving a .py file restarts the server.")
+        print("   Auto-reload on: saving a .py or HTML file restarts the server.")
     print("   Press Ctrl+C to stop.\n")
+    extra_files = []
+    if args.reload or args.debug:
+        for dirpath, _dirs, files in os.walk(app.template_folder or ""):
+            extra_files.extend(os.path.join(dirpath, name) for name in files)
     # Reloader only (no interactive debugger) unless --debug is also given.
     app.run(
         host=args.host,
         port=args.port,
         debug=args.debug,
         use_reloader=args.reload or args.debug,
+        extra_files=extra_files or None,
     )
 
 

@@ -75,6 +75,8 @@ const TIMELINE_LABEL = {
 };
 
 const INTERVIEW_STEPS = ['interview_1', 'interview_2', 'interview_3', 'interview_final'];
+const GOT_INTERVIEW_FILTER = 'got_interview';
+const GOT_INTERVIEW_STEPS = new Set(['interview_invite', ...INTERVIEW_STEPS, 'offer']);
 const TERMINAL_STEPS = new Set(['rejected', 'offer']);
 
 /** In-memory timeline cache keyed by job id */
@@ -197,7 +199,7 @@ async function loadStats() {
       const el = document.getElementById(`cnt-${status}`);
       if (el) el.textContent = cnt;
     }
-    ['active','pending','applied','rejected','interview','offer','unsuitable','closed','closed_no_reply','prev_rejected','too_many_questions','repost','duplicate'].forEach(s => {
+    ['active','pending','applied','rejected','interview','got_interview','offer','unsuitable','closed','closed_no_reply','prev_rejected','too_many_questions','repost','duplicate'].forEach(s => {
       if (!data.by_status[s]) {
         const el = document.getElementById(`cnt-${s}`);
         if (el) el.textContent = 0;
@@ -1844,9 +1846,19 @@ function progressStage(status, timeline, appliedAt) {
   return '';
 }
 
+function jobReachedInterview(job) {
+  const timeline = job.application_timeline;
+  if (Array.isArray(timeline) && timeline.length) {
+    return timeline.some(ev => GOT_INTERVIEW_STEPS.has(ev && ev.step));
+  }
+  const status = job.status || 'pending';
+  return status === 'interview' || status === 'offer';
+}
+
 function jobMatchesStatusFilter(job, filter) {
   if (!filter || filter === 'all') return true;
   if (filter === 'active') return !SIDE_STATUSES.includes(job.status || 'pending');
+  if (filter === GOT_INTERVIEW_FILTER) return jobReachedInterview(job);
   if (PROGRESS_STAGES.includes(filter)) {
     return progressStage(job.status, job.application_timeline, job.applied_at) === filter;
   }
