@@ -111,6 +111,3 @@
 .status-select:focus { border-color: var(--accent); }
 .status-select.s-watchlist { border-color: var(--warning); color: var(--warning); }
 
-@media (max-width: 760px) {
-  .layout-toggle { display: none; }
-}

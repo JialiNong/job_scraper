@@ -131,6 +131,23 @@ class TrackerE2E(unittest.TestCase):
         self.page.goto(self.base + "/")
         expect(self.page.locator("#jobGrid .card")).to_have_count(3)
         expect(self.page.locator(f"#card-{PENDING_ID} .row-title")).to_have_text("Backend Engineer")
+        expect(self.page.locator(f"#card-{PENDING_ID} .card-row .score-ring")).to_be_visible()
+        expect(self.page.locator(f"#card-{PENDING_ID} .row-sub")).to_be_visible()
+        expect(self.page.locator(f"#card-{PENDING_ID} .row-applicants")).to_have_text("first 25")
+        expect(self.page.locator(f"#card-{APPLIED_ID} .row-applicants")).to_have_text("#12 at apply")
+        expect(self.page.locator(f"#card-{DELETE_ID} .row-applicants")).to_have_text("200+ applicants")
+
+    def test_status_chip_filters_the_list(self):
+        self.page.goto(self.base + "/")
+        expect(self.page.locator("#jobGrid .card")).to_have_count(3)
+        self.page.locator('.stat-chip[data-status="pending"]').click()
+        expect(self.page.locator("#jobGrid .card")).to_have_count(2)
+        expect(self.page.locator(f"#card-{PENDING_ID}")).to_have_count(1)
+        expect(self.page.locator(f"#card-{APPLIED_ID}")).to_have_count(0)
+        expect(self.page.locator('.stat-chip[data-status="pending"].active')).to_be_visible()
+        self.page.locator('.stat-chip[data-status="applied"]').click()
+        expect(self.page.locator("#jobGrid .card")).to_have_count(1)
+        expect(self.page.locator(f"#card-{APPLIED_ID}")).to_have_count(1)
 
     def test_record_applied_then_invite(self):
         progress = self.open_card(PENDING_ID)
@@ -187,6 +204,19 @@ class TrackerE2E(unittest.TestCase):
         self.assertIsNotNone(self.job(PENDING_ID), "other cards must stay")
 
     # ── Unmatched / Timeouts / Log Job ───────────────────────────────────
+
+    def test_unmatched_card_uses_shared_chrome(self):
+        self.page.goto(self.base + "/unmatched")
+        card = self.page.locator(f"#card-{UNMATCHED_ID}")
+        expect(card.locator(".card-row .score-ring")).to_be_visible()
+        expect(card.locator(".row-sub .row-company")).to_have_text("Umbrella")
+        expect(card.locator(".row-applicants")).to_have_text("80 applicants")
+        expect(card.locator(".card-row .channel-chip")).to_be_visible()
+        expect(card.locator(".card-body")).to_be_hidden()
+        card.locator(".card-row").click()
+        expect(card.locator(".card-body")).to_be_visible()
+        expect(card.locator(".reason-box")).to_contain_text("Java backend required")
+        expect(card.locator(".card-body .score-ring.score-lg")).to_be_visible()
 
     def test_unmatched_can_apply_copies_to_tracker(self):
         self.page.goto(f"{self.base}/unmatched?open={UNMATCHED_ID}")

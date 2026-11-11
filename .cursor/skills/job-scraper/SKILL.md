@@ -91,7 +91,7 @@ Phones have **no hover**. Do not ship desktop-only affordances (`:hover` tooltip
 |---------|-----------------|
 | Hover shows detail / count / preview | Single tap shows the same detail |
 | Click navigates or opens a filtered view | Double-tap (or an explicit link/button) navigates |
-| Copy says “hover” | Copy says “tap” (`TOUCH_UI` / `POINT_VERB` / `[data-point-verb]` in `static/js/index.js`) |
+| Copy says “hover” | Copy says “tap” (`TOUCH_UI` / `POINT_VERB` / `[data-point-verb]` in `static/js/job_list.js`; Overview visuals live in `overview.js` / `overview.css`) |
 
 Patterns already in the Tracker:
 
@@ -132,7 +132,7 @@ If the script fails, fix the UI and re-run before finishing. Mention the result 
 
 ### First-load request order
 
-On Tracker cold entry, **`/api/jobs` is critical path**. Chips (`/api/stats`) and Overview (journey / heatmap / locations) load **after** the first job list (`loadAfterJobList` / `listReady` in `static/js/index.js`). Do not reintroduce parallel `/api/stats` on init without a reason.
+On Tracker cold entry, **`/api/jobs` is critical path**. Chips (`/api/stats`) and Overview (journey / heatmap / locations) load **after** the first job list (`loadAfterJobList` / `listReady` in `static/js/index.js`; Overview fetches in `static/js/overview.js`). Do not reintroduce parallel `/api/stats` on init without a reason. Tracker page assets are split: `job_list.js`/`job_list.css` (shared with Unmatched), `overview.js`/`overview.css`, `cards.js`/`cards.css`, `batch.js`, `timeline.js`, `card-actions.js`, `index.js`/`index.css`.
 
 ## Matching source of truth
 

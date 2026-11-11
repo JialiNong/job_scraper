@@ -1,5 +1,9 @@
 /* Shared by the job-list pages: Tracker (index) and Unmatched.
-   Loaded after base.css, before the page's own CSS. */
+   Loaded after base.css, before the page's own CSS.
+   Pair with static/js/job_list.js. These are the shared card pieces:
+   score ring, list row (title / company / location / via), channel chip,
+   breakdown, toast, details sheet. Page CSS only adds Tracker- or
+   Unmatched-only extras. */
 
 /* ── Toolbar ───────────────────────────────────────────────────── */
 .toolbar {
@@ -469,6 +473,7 @@
 }
 
 @media (max-width: 760px) {
+  .layout-toggle { display: none; }
   .score-ring { --ring-size: 36px; }
   .score-ring.score-lg { --ring-size: 48px; }
   .score-ring .score-ring-num { font-size: .78rem; }
