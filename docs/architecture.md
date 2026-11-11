@@ -318,7 +318,13 @@ job_scraper/
 ├── src/
 │   ├── core/
 │   │   ├── config.py            # keywords, title blacklist, platform URLs
-│   │   ├── db_mongo.py          # Mongo helpers
+│   │   ├── db_mongo.py          # Mongo facade (`from core.db_mongo import …`)
+│   │   ├── mongo/               # Mongo implementation (not flat mongo_*.py siblings)
+│   │   │   ├── client.py        # connection pool, indexes
+│   │   │   ├── jobs.py          # scrape-store CRUD + matcher write-back
+│   │   │   ├── lookup.py        # known-job lookup + timeout review
+│   │   │   └── tracker.py       # unmatched list, application counts, heatmap
+│   │   ├── applied_location.py  # Germany + Remote bubble labels (no Mongo)
 │   │   ├── country.py           # Tracker country (agent field or location guess) + filter query
 │   │   ├── job_url.py           # Log Job URL parse / Indeed jk= / stubs
 │   │   ├── manual_log.py        # Save Link Only / stub save (no Playwright)

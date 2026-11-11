@@ -91,7 +91,7 @@ Phones have **no hover**. Do not ship desktop-only affordances (`:hover` tooltip
 |---------|-----------------|
 | Hover shows detail / count / preview | Single tap shows the same detail |
 | Click navigates or opens a filtered view | Double-tap (or an explicit link/button) navigates |
-| Copy says “hover” | Copy says “tap” (`TOUCH_UI` / `POINT_VERB` / `[data-point-verb]` in `static/js/job_list.js`; Overview visuals live in `overview.js` / `overview.css`) |
+| Copy says “hover” | Copy says “tap” (`TOUCH_UI` / `POINT_VERB` / `[data-point-verb]` in `static/js/shared/job_list.js`; Overview visuals live in `static/js/tracker/overview.js` / `static/css/tracker/overview.css`) |
 
 Patterns already in the Tracker:
 
@@ -132,7 +132,7 @@ If the script fails, fix the UI and re-run before finishing. Mention the result 
 
 ### First-load request order
 
-On Tracker cold entry, **`/api/jobs` is critical path**. Chips (`/api/stats`) and Overview (journey / heatmap / locations) load **after** the first job list (`loadAfterJobList` / `listReady` in `static/js/index.js`; Overview fetches in `static/js/overview.js`). Do not reintroduce parallel `/api/stats` on init without a reason. Tracker page assets are split: `job_list.js`/`job_list.css` (shared with Unmatched), `overview.js`/`overview.css`, `cards.js`/`cards.css`, `batch.js`, `timeline.js`, `card-actions.js`, `index.js`/`index.css`.
+On Tracker cold entry, **`/api/jobs` is critical path**. Chips (`/api/stats`) and Overview (journey / heatmap / locations) load **after** the first job list (`loadAfterJobList` / `listReady` in `static/js/tracker/index.js`; Overview fetches in `static/js/tracker/overview.js`). Do not reintroduce parallel `/api/stats` on init without a reason. Tracker assets live in folders: `static/js/shared/` + `static/css/shared/` (job-list chrome, also used by Unmatched), `static/js/tracker/` + `static/css/tracker/` (overview, cards, batch, timeline, card-actions, page init). Single-file pages stay `static/js/<page>.js`.
 
 ## Matching source of truth
 
@@ -179,6 +179,50 @@ There is no cron / launchd schedule in this project; do not add one. When you ch
 - Keep changes scoped: no drive-by refactors; no new markdown files unless asked (architecture updates are required when flow changes).
 - Do not commit unless the user asks.
 
+### File size, reuse, and structure (hard rule)
+
+When a file you are editing is **past ~500 lines**, stop and look for a split / reuse before adding more. At **~700 lines**, split in the same PR unless the bulk is a data table (city aliases, keyword lists) that would be worse elsewhere.
+
+Split by **responsibility**, not by arbitrary line cuts. **Put related files in a folder** — do not leave a pile of `mongo_*.py` or page scripts as siblings of everything else in `core/` / `static/js/`.
+
+| Smell | What to do |
+|-------|------------|
+| Same helper or CSS block copied on two pages | Extract one shared module / stylesheet into `shared/`; pages keep only their extras |
+| One file mixes connection, CRUD, stats, and pure parsing | One module per concern **inside a package** (`core/mongo/`); keep a **facade** so existing imports do not churn |
+| UI page script also owns card HTML, batch, timeline, and filters | Shared chrome in `static/js/shared/`; that page’s files in `static/js/<page>/` (same for CSS) |
+| A page is a single script | Leave it at `static/js/<page>.js` — do not make a one-file folder |
+| Pure rules (dates, location labels, status) sit next to Mongo / Flask | Move them to a dependency-free module so unit tests need no mongod |
+
+Do not introduce a frontend framework. Tracker JS stays **classic scripts** (globals) because templates use `onclick="…"`. CSS “components” are shared classes in `static/css/shared/job_list.css`, not a component library.
+
+After a split: grep the old names, point tests at the **implementing** module when you `patch` (a facade re-export does not intercept `from core.mongo.tracker import get_collection`), and keep `from core.db_mongo import …` working.
+
+### Frontend
+
+- **Folders, not a flat pile.** Shared chrome goes in `static/js/shared/` and `static/css/shared/`. A page with more than one script/stylesheet gets `static/js/<page>/` and `static/css/<page>/`. A page that is still one file stays `static/js/<page>.js` (Timeouts, Log Job, Unmatched today).
+- Shared job-list chrome (score ring, row, channel chip, breakdown, toast, expand / sheet): `static/js/shared/job_list.js` + `static/css/shared/job_list.css`. Tracker and Unmatched both load that pair first. Shell (`shared/shell.js`) is also shared.
+- Tracker-only: `static/js/tracker/` (`overview.js`, `cards.js`, `batch.js`, `timeline.js`, `card-actions.js`, `index.js`) and `static/css/tracker/` (`overview.css`, `cards.css`, `index.css`).
+- Phone vs desktop and `--phone-ctrl-h`: see **Web UI** above. After template/CSS/JS edits run `./scripts/check_ui.sh`.
+- Unit tests for JS helpers: `tests/js/` (Node) plus a thin `tests/test_*.py` wrapper. `page_source()` concatenates the template and every `static_url()` asset so a missing `<script>` fails.
+- `tests/e2e` is **data** (click, then assert Mongo). Overlay / viewport contracts stay in `check_ui.sh`.
+
+### Backend
+
+- Public Mongo import path stays `core.db_mongo` (facade). Implementation is the **`core.mongo` package** — not `mongo_*.py` files sitting next to `config.py`:
+
+  | Module | Role |
+  |--------|------|
+  | `core/mongo/client.py` | connection pool, `get_collection`, indexes |
+  | `core/mongo/jobs.py` | scrape-store CRUD, matcher write-back, scraper counters |
+  | `core/mongo/lookup.py` | known-job lookup across collections + timeout review |
+  | `core/mongo/tracker.py` | unmatched list, application counts, heatmap |
+  | `core/applied_location.py` | Germany + Remote bubble labels (**no Mongo**, so not inside `mongo/`) |
+  | `core/country.py` | Tracker country chips (**no Mongo**) |
+  | `web/status.py` | status / timeline rules (**no Flask**, no Mongo) |
+
+- Unit tests in `tests/test_*.py` must not need mongod: mock collections or test pure functions. E2E (`./scripts/run_e2e.sh`) starts a throwaway DB, clicks a real flow, then asserts Mongo.
+- Do not copy title / language / match-gate logic into a second scraper or route; extend the shared helper.
+
 ## Config knobs (where to edit)
 
 | Concern | Location |
@@ -197,7 +241,7 @@ There is no cron / launchd schedule in this project; do not add one. When you ch
 ## Suggested agent workflow for feature work
 
 1. Read this skill + skim `docs/architecture.md` for the affected stage.
-2. Implement the code / script / bot change.
+2. Implement the code / script / bot change. If the file is past ~500 lines (must-split at ~700), extract shared helpers or split by responsibility in the same PR — see **File size, reuse, and structure**.
 3. If UI changed: apply **Web UI** (touch vs hover, unify `--phone-ctrl-h` / sibling controls, keep job-list-first loading), then run `./scripts/check_ui.sh`.
 4. Update `docs/architecture.md` if flow/commands/filters/gates changed.
 5. If matching changed, keep `docs/matching_rules.md`, the schema in `evaluator.py`, and `MATCH_WEIGHTS` aligned, and run `scripts/tools/eval_matcher.py`.

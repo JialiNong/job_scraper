@@ -1,7 +1,7 @@
 /* Shared by Tracker and Unmatched (classic script, not a module).
-   Card chrome lives in job_list.css: score ring, row (title / company /
-   location / via), channel chip, breakdown, toast, details sheet.
-   Page scripts load after this file. */
+   Card chrome lives in static/css/shared/job_list.css: score ring, row
+   (title / company / location / via), channel chip, breakdown, toast,
+   details sheet. Page scripts load after this file. */
 
 const TOUCH_UI = !!window.matchMedia?.('(hover: none)').matches;
 const POINT_VERB = TOUCH_UI ? 'tap' : 'hover';

@@ -218,6 +218,20 @@ class TrackerE2E(unittest.TestCase):
         expect(card.locator(".reason-box")).to_contain_text("Java backend required")
         expect(card.locator(".card-body .score-ring.score-lg")).to_be_visible()
 
+    def test_unmatched_search_filters_the_list(self):
+        self.page.goto(self.base + "/unmatched")
+        expect(self.page.locator("#jobGrid .card")).to_have_count(1)
+        self.page.fill("#searchInput", "Java")
+        expect(self.page.locator(f"#card-{UNMATCHED_ID}")).to_have_count(1)
+        self.page.fill("#searchInput", "zzzz-no-such-job")
+        expect(self.page.locator("#jobGrid .card")).to_have_count(0)
+        expect(self.page.get_by_text("No Unmatched Jobs")).to_be_visible()
+        self.assertEqual(
+            self.db.jobs.count_documents({"job_id": "4200000001"}),
+            1,
+            "search must not delete the unmatched job",
+        )
+
     def test_unmatched_can_apply_copies_to_tracker(self):
         self.page.goto(f"{self.base}/unmatched?open={UNMATCHED_ID}")
         self.page.select_option(f"select.status-select[data-id='{UNMATCHED_ID}']", "watchlist")
@@ -237,6 +251,14 @@ class TrackerE2E(unittest.TestCase):
             lambda: self.db.timeout_jobs.find_one({"_id": TIMEOUT_ID})["review_status"] == "added",
             "timeout marked added",
         )
+
+    def test_log_job_lookup_finds_existing_tracker_card(self):
+        url = "https://www.linkedin.com/jobs/view/4100000001/"
+        self.page.goto(self.base + "/manual-apply")
+        self.page.fill("#urlBox", url)
+        expect(self.page.get_by_text("Already on Tracker").first).to_be_visible()
+        expect(self.page.get_by_text("Backend Engineer")).to_be_visible()
+        self.assertEqual(self.db.matched_jobs.count_documents({}), 3)
 
     def test_log_job_link_only(self):
         url = "https://www.linkedin.com/jobs/view/4400000001/"

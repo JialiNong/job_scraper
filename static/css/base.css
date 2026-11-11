@@ -1,6 +1,8 @@
 /* Shared by every page (loaded first): colour tokens (light + dark), type,
    the app shell (sidebar + main column) and a few shared controls.
-   Page-specific rules stay in static/css/<page>.css.
+   Page-specific rules stay in static/css/<page>.css (or static/css/<page>/
+   when that page has more than one stylesheet). Shared job-list chrome is
+   static/css/shared/job_list.css.
 
    Layout: status/nav sidebar on the left; main column = page head, then a
    quiet list (the Tracker's pipeline rail lives on its Overview tab). */

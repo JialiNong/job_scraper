@@ -78,7 +78,7 @@ if not app.debug and not os.getenv("FLASK_ENV") == "development":
 @app.context_processor
 def _static_url_helper():
     """
-    {{ static_url('js/index.js') }} → /static/js/index.js?v=<mtime>.
+    {{ static_url('js/tracker/index.js') }} → /static/js/tracker/index.js?v=<mtime>.
     The version changes whenever the file is saved, so browsers never run a
     stale cached copy after an edit or deploy.
     """

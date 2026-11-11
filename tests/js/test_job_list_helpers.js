@@ -9,7 +9,7 @@ const path = require("path");
 const vm = require("vm");
 
 const ROOT = path.resolve(__dirname, "../..");
-const src = fs.readFileSync(path.join(ROOT, "static/js/job_list.js"), "utf8");
+const src = fs.readFileSync(path.join(ROOT, "static/js/shared/job_list.js"), "utf8");
 
 const media = { matches: false, addEventListener() {} };
 const document = {

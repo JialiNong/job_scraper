@@ -171,7 +171,7 @@ class TrackerUiTests(unittest.TestCase):
         self.assertIn("rowApplicantsHtml(job)", um)
 
     def test_details_panel_reading_order(self):
-        js = (ROOT / "static" / "js" / "cards.js").read_text()
+        js = (ROOT / "static" / "js" / "tracker" / "cards.js").read_text()
         hist = js.find("${renderCompanyHistory(job)}")
         progress = js.find("renderProgressBlock(job)")
         agent = js.find("${renderAgentReason(job)}")
@@ -181,13 +181,13 @@ class TrackerUiTests(unittest.TestCase):
         self.assertNotIn("${countryPillHtml(job)}", js)
         header = js.split('class="card-header"', 1)[1].split("card-meta", 1)[0]
         self.assertNotIn("score-badge", header)
-        shared = (ROOT / "static" / "js" / "job_list.js").read_text()
+        shared = (ROOT / "static" / "js" / "shared" / "job_list.js").read_text()
         self.assertIn("from Run AI on this site", shared)
         self.assertIn("scoreRingHtml(job)", js)
         self.assertIn("class=\"score-ring", shared)
 
     def test_cards_board_starts_collapsed(self):
-        css = (ROOT / "static" / "css" / "job_list.css").read_text()
+        css = (ROOT / "static" / "css" / "shared" / "job_list.css").read_text()
         self.assertIn(".job-grid.layout-cards .card:not(.expanded) .card-body { display: none; }", css)
         self.assertIn("position: fixed;", css)
         self.assertIn("collapseOtherCards(card);", HTML)

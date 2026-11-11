@@ -36,7 +36,9 @@ job_tracker/
 ├── src/
 │   ├── core/                          # Shared infrastructure
 │   │   ├── config.py                  # Central configuration
-│   │   ├── db_mongo.py                # MongoDB operations
+│   │   ├── db_mongo.py                # Mongo facade (`from core.db_mongo import …`)
+│   │   ├── mongo/                     # Mongo implementation (client, jobs, lookup, tracker)
+│   │   ├── applied_location.py        # Germany + Remote bubble labels (no Mongo)
 │   │   └── scraper_utils.py           # Shared utilities
 │   ├── sources/                       # Job APIs + company ATS boards (run_sources.py)
 │   ├── scrapers/                      # Optional browser collectors (see the end of this README)

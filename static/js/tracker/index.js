@@ -1,7 +1,8 @@
 /* Tracker page (templates/index.html) script. Classic script, not a module:
    inline onclick="..." handlers in the page call these globals.
-   Shared card chrome: job_list.js. Overview / cards / batch / timeline /
-   card-actions load before this file; init stays here. */
+   Shared card chrome: ../shared/job_list.js. Sibling files in this folder
+   (overview / cards / batch / timeline / card-actions) load before this
+   file; init stays here. */
 /* ── State ───────────────────────────────────────────────────────── */
 let currentStatusFilter = 'active';
 let highlightsOnly = false;

@@ -193,7 +193,7 @@ class StatsQueryTests(unittest.TestCase):
     def test_count_applied_applications_uses_application_query(self):
         mock_col = MagicMock()
         mock_col.count_documents.return_value = 7
-        with patch.object(db_mongo, "get_collection", return_value=mock_col):
+        with patch("core.mongo.tracker.get_collection", return_value=mock_col):
             self.assertEqual(count_applied_applications(), 7)
         mock_col.count_documents.assert_called_once_with(APPLICATION_QUERY)
 
@@ -201,7 +201,7 @@ class StatsQueryTests(unittest.TestCase):
         mock_col = MagicMock()
         mock_col.count_documents.return_value = 198
         mock_col.aggregate.return_value = iter([{"n": 1}])
-        with patch.object(db_mongo, "get_collection", return_value=mock_col):
+        with patch("core.mongo.tracker.get_collection", return_value=mock_col):
             self.assertEqual(count_applied_applications(), 199)
 
     def test_location_stats_count_reapplies(self):
@@ -215,7 +215,7 @@ class StatsQueryTests(unittest.TestCase):
                 ],
             },
         ]
-        with patch.object(db_mongo, "get_collection", return_value=mock_col):
+        with patch("core.mongo.tracker.get_collection", return_value=mock_col):
             result = get_applied_location_stats()
         self.assertEqual(result["total"], 3)
         self.assertEqual(sum(row["count"] for row in result["locations"]), 3)
@@ -229,7 +229,7 @@ class StatsQueryTests(unittest.TestCase):
             {"location": "European Economic Area (Remote)"},
             {"location": "Manching, Bavaria, Germany"},
         ]
-        with patch.object(db_mongo, "get_collection", return_value=mock_col):
+        with patch("core.mongo.tracker.get_collection", return_value=mock_col):
             result = get_applied_location_stats()
         names = {row["name"] for row in result["locations"]}
         self.assertEqual(names, {"Berlin", "Remote", "Manching"})
@@ -247,7 +247,7 @@ class StatsQueryTests(unittest.TestCase):
     def test_location_stats_use_application_query(self):
         mock_col = MagicMock()
         mock_col.find.return_value = [{"location": "Berlin, Germany"}]
-        with patch.object(db_mongo, "get_collection", return_value=mock_col):
+        with patch("core.mongo.tracker.get_collection", return_value=mock_col):
             result = get_applied_location_stats()
         mock_col.find.assert_called_once()
         self.assertEqual(mock_col.find.call_args[0][0], APPLICATION_QUERY)
@@ -258,7 +258,7 @@ class StatsQueryTests(unittest.TestCase):
         mock_db["matched_jobs"].find.return_value = [
             {"job_id": "abc", "source": "linkedin"},
         ]
-        with patch.object(db_mongo, "get_db", return_value=mock_db):
+        with patch("core.mongo.tracker.get_db", return_value=mock_db):
             keys = get_applied_job_keys()
         mock_db["matched_jobs"].find.assert_called_once()
         self.assertEqual(mock_db["matched_jobs"].find.call_args[0][0], APPLICATION_QUERY)
