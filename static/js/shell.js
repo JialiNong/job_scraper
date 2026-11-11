@@ -2,6 +2,58 @@
    on the job-list pages.
    Loaded before the page script. */
 
+function isPhoneUi() {
+  return window.matchMedia('(max-width: 760px), (max-height: 520px)').matches;
+}
+
+let overlayLockY = 0;
+
+function setOverlayLock(on) {
+  const root = document.documentElement;
+  const locked = root.classList.contains('ui-lock');
+  if (on && !locked) {
+    overlayLockY = window.scrollY || window.pageYOffset;
+    root.classList.add('ui-lock');
+    document.body.style.top = `-${overlayLockY}px`;
+  } else if (!on && locked) {
+    root.classList.remove('ui-lock');
+    document.body.style.top = '';
+    window.scrollTo(0, overlayLockY);
+  }
+}
+
+function filterPopOpen() {
+  const pop = document.getElementById('filterPop');
+  return Boolean(pop && !pop.hidden);
+}
+
+function syncOverlayLock() {
+  const filterLock = isPhoneUi() && filterPopOpen();
+  const panelScrim = document.getElementById('panelScrim');
+  const panelLock = Boolean(panelScrim && !panelScrim.hidden);
+  setOverlayLock(filterLock || panelLock);
+}
+
+function ensureFilterScrim() {
+  let el = document.getElementById('filterScrim');
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = 'filterScrim';
+  el.className = 'pop-scrim';
+  el.hidden = true;
+  el.setAttribute('aria-hidden', 'true');
+  el.addEventListener('click', () => closeFilterPop({ returnFocus: true }));
+  document.body.appendChild(el);
+  return el;
+}
+
+function syncFilterScrim() {
+  if (!document.getElementById('filterPop')) return;
+  const scrim = ensureFilterScrim();
+  scrim.hidden = !(isPhoneUi() && filterPopOpen());
+  syncOverlayLock();
+}
+
 function toggleFilterPop(event) {
   if (event) event.stopPropagation();
   const pop = document.getElementById('filterPop');
@@ -9,7 +61,8 @@ function toggleFilterPop(event) {
   if (!pop || !btn) return;
   pop.hidden = !pop.hidden;
   btn.setAttribute('aria-expanded', String(!pop.hidden));
-  if (!pop.hidden) pop.querySelector('select, input')?.focus();
+  syncFilterScrim();
+  if (!pop.hidden && !isPhoneUi()) pop.querySelector('select, input')?.focus();
 }
 
 /* With returnFocus (Esc), focus goes back to the Filters button instead of <body> */
@@ -19,6 +72,7 @@ function closeFilterPop({ returnFocus = false } = {}) {
   if (!pop || pop.hidden) return;
   pop.hidden = true;
   if (btn) btn.setAttribute('aria-expanded', 'false');
+  syncFilterScrim();
   if (returnFocus && btn) btn.focus();
 }
 
@@ -54,3 +108,5 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('change', (e) => {
   if (e.target.closest && e.target.closest('#filterPop')) updateFilterCount();
 });
+window.matchMedia('(max-width: 760px)').addEventListener('change', syncFilterScrim);
+window.matchMedia('(max-height: 520px)').addEventListener('change', syncFilterScrim);

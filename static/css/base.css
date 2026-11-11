@@ -263,6 +263,28 @@ h1, h2, h3 { font-family: var(--f-display); letter-spacing: -0.01em; text-wrap: 
 .pop .filter-group { display: flex; gap: 6px; align-items: center; }
 .pop .filter-group.hidden-filter { display: none; }
 
+/* Phone: dimmed layer behind the Filters sheet (and Tracker details). */
+.pop-scrim {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 110;
+  background: var(--scrim);
+  cursor: pointer;
+}
+html.ui-lock,
+html.ui-lock body {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+html.ui-lock body {
+  position: fixed;
+  width: 100%;
+  height: 100%;
+  left: 0;
+  right: 0;
+}
+
 /* ── Phone: sidebar becomes a top bar ──────────────────────────────
    Also on short screens (a phone in landscape): a full-height sidebar
    would not fit there. Keep this query in sync with the stats-bar
@@ -294,41 +316,61 @@ h1, h2, h3 { font-family: var(--f-display); letter-spacing: -0.01em; text-wrap: 
   .toolbar { gap: 6px; }
   .search svg { left: 9px; width: 14px; height: 14px; }
 
-  /* One control height across Tracker / Unmatched / Timeouts / Log Job */
-  .ui-btn,
-  .filter-highlights,
-  .toolbar select,
-  .toolbar input[type="search"],
-  .toolbar input[type="date"],
-  .toolbar input[type="number"],
-  .pop select,
-  .pop input,
-  .watchlist-chip,
-  .row-open,
-  .status-select,
-  .page-btn,
-  .pager button,
-  #pager button,
-  .pagination-btn,
-  .pagination button,
-  .btn,
-  .btn-apply,
-  .btn-run-ai,
-  .btn-fetch-details,
-  .btn-save,
-  .btn-add-qa,
-  .btn-open,
-  .hl-add-btn,
-  .progress-btn,
-  .status-side-select,
-  .info-save-btn,
-  .info-cancel-btn,
-  .info-input,
-  .delete-job-btn,
-  .option-input,
-  .batch-fetch-bar .batch-fetch-btn,
-  .batch-fetch-bar .btn-fetch-details,
-  .batch-fetch-bar .btn-run-ai {
+  /* An absolute Filters pop expands the document; pin it in the viewport. */
+  html, body, .app { overflow-x: hidden; }
+  html .pop:not([hidden]) {
+    position: fixed;
+    top: auto;
+    left: 12px;
+    right: 12px;
+    bottom: calc(12px + env(safe-area-inset-bottom, 0px));
+    width: auto;
+    max-width: none;
+    max-height: min(72dvh, calc(100dvh - 24px - env(safe-area-inset-bottom, 0px)));
+    overflow-x: hidden;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    z-index: 120;
+    -webkit-overflow-scrolling: touch;
+  }
+  html .pop-scrim:not([hidden]) { display: block; }
+
+  /* html prefix: page CSS loads after this file and would otherwise win.
+     One control height across Tracker / Unmatched / Timeouts / Log Job. */
+  html .ui-btn,
+  html .filter-highlights,
+  html .toolbar select,
+  html .toolbar input[type="search"],
+  html .toolbar input[type="date"],
+  html .toolbar input[type="number"],
+  html .pop select,
+  html .pop input,
+  html .watchlist-chip,
+  html .row-open,
+  html .status-select,
+  html .page-btn,
+  html .pager button,
+  html #pager button,
+  html .pagination-btn,
+  html .pagination button,
+  html .btn,
+  html .btn-apply,
+  html .btn-run-ai,
+  html .btn-fetch-details,
+  html .btn-save,
+  html .btn-add-qa,
+  html .btn-open,
+  html .hl-add-btn,
+  html .progress-btn,
+  html .status-side-select,
+  html .info-save-btn,
+  html .info-cancel-btn,
+  html .info-input,
+  html .delete-job-btn,
+  html .option-input,
+  html .batch-fetch-bar .batch-fetch-btn,
+  html .batch-fetch-bar .btn-fetch-details,
+  html .batch-fetch-bar .btn-run-ai {
     box-sizing: border-box;
     min-height: var(--phone-ctrl-h);
     height: var(--phone-ctrl-h);
@@ -336,57 +378,85 @@ h1, h2, h3 { font-family: var(--f-display); letter-spacing: -0.01em; text-wrap: 
     padding-bottom: 0;
     font-size: .78rem;
   }
-  .ui-btn,
-  .filter-highlights,
-  .watchlist-chip,
-  .row-open,
-  .page-btn,
-  .pager button,
-  #pager button,
-  .pagination-btn,
-  .pagination button,
-  .btn,
-  .btn-apply,
-  .btn-run-ai,
-  .btn-fetch-details,
-  .btn-save,
-  .btn-add-qa,
-  .btn-open,
-  .hl-add-btn,
-  .progress-btn,
-  .info-save-btn,
-  .info-cancel-btn,
-  .delete-job-btn,
-  .batch-fetch-bar .batch-fetch-btn,
-  .batch-fetch-bar .btn-fetch-details,
-  .batch-fetch-bar .btn-run-ai {
+  html .ui-btn,
+  html .filter-highlights,
+  html .watchlist-chip,
+  html .row-open,
+  html .page-btn,
+  html .pager button,
+  html #pager button,
+  html .pagination-btn,
+  html .pagination button,
+  html .btn,
+  html .btn-apply,
+  html .btn-run-ai,
+  html .btn-fetch-details,
+  html .btn-save,
+  html .btn-add-qa,
+  html .btn-open,
+  html .hl-add-btn,
+  html .progress-btn,
+  html .info-save-btn,
+  html .info-cancel-btn,
+  html .delete-job-btn,
+  html .batch-fetch-bar .batch-fetch-btn,
+  html .batch-fetch-bar .btn-fetch-details,
+  html .batch-fetch-bar .btn-run-ai {
     display: inline-flex;
     align-items: center;
     line-height: 1;
   }
-  .toolbar input[type="search"] {
+  html .toolbar input[type="search"] {
     display: block;
     width: 100%;
     padding-left: 28px;
     font-size: 16px; /* avoid iOS zoom; height stays --phone-ctrl-h */
     line-height: 1.25;
   }
-  /* Selects / inputs: keep height, let the browser vertically center the text.
-     Page CSS that sets padding: 7px must not win on phone — reset here last. */
-  .toolbar select,
-  .status-select,
-  .option-input,
-  .info-input,
-  .status-side-select,
-  .pop select,
-  .pop input {
-    font-size: 16px; /* avoid iOS zoom */
+  html .option-input,
+  html .info-input,
+  html .pop input,
+  html .toolbar input[type="date"],
+  html .toolbar input[type="number"] {
+    font-size: 16px;
     line-height: calc(var(--phone-ctrl-h) - 2px);
     padding: 0 8px;
   }
-  .watchlist-chip { gap: 6px; padding-inline: 10px; }
-  .row-open { padding-inline: 8px; }
-  .batch-fetch-bar .batch-fetch-btn,
-  .batch-fetch-bar .btn-fetch-details,
-  .batch-fetch-bar .btn-run-ai { padding-inline: 10px; }
+  /* Same native-select recipe everywhere: hide the UA arrow, leave room for
+     a chevron, extra top padding so WebKit does not sit the value high. */
+  html .toolbar select,
+  html .pop select,
+  html select.option-input,
+  html .status-select,
+  html .status-side-select {
+    -webkit-appearance: none;
+    appearance: none;
+    font-size: 16px;
+    line-height: 1.15;
+    padding: 2px 26px 0 8px;
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 12px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23576665' d='M2.6 4.2 6 7.6l3.4-3.4'/%3E%3C/svg%3E");
+  }
+  html .toolbar select,
+  html .status-side-select { background-color: var(--surface); }
+  html .pop select,
+  html select.option-input,
+  html .status-select { background-color: var(--bg); }
+  html .watchlist-chip { gap: 6px; padding-inline: 10px; }
+  html .row-open { padding-inline: 8px; }
+  html .batch-fetch-bar .batch-fetch-btn,
+  html .batch-fetch-bar .btn-fetch-details,
+  html .batch-fetch-bar .btn-run-ai { padding-inline: 10px; }
+}
+@media (max-width: 760px) and (prefers-color-scheme: dark),
+       (max-height: 520px) and (prefers-color-scheme: dark) {
+  html .toolbar select,
+  html .pop select,
+  html select.option-input,
+  html .status-select,
+  html .status-side-select {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23919e9a' d='M2.6 4.2 6 7.6l3.4-3.4'/%3E%3C/svg%3E");
+  }
 }

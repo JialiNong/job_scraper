@@ -103,7 +103,7 @@
 .status-row { display: flex; gap: 8px; align-items: center; margin-top: 2px; }
 .status-select {
   flex: 1;
-  background: var(--bg);
+  background-color: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);

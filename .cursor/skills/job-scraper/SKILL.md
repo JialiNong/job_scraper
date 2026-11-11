@@ -6,9 +6,10 @@ description: >-
   Telegram bot, Web UI). Use whenever editing scrapers, matching, config,
   shell pipelines, bot commands, docs/, architecture, or Tracker UI
   (templates/static CSS/JS). Enforces English docs/comments, phone vs desktop
-  interaction parity, unified phone control sizing, keeps docs/architecture.md
-  in sync with flow changes, and requires an impact check of related
-  UI/data/filters/environments in the same PR.
+  interaction parity, unified phone control sizing, a UI chrome check
+    (`./scripts/check_ui.sh`) after template/CSS/JS edits, keeps
+    docs/architecture.md in sync with flow changes, and requires an impact
+    check of related UI/data/filters/environments in the same PR.
 ---
 
 # Job Scraper — Project Skill
@@ -111,6 +112,24 @@ If the user points at one tall / short / uneven control on phone, **do not only 
 
 Same idea for color/weight (e.g. pale Save buttons): match the established solid primary style across Save / Add / confirm actions, not only the button named in chat.
 
+### UI chrome check (different layer from E2E)
+
+`tests/e2e` is for **data**: click a real flow, then assert MongoDB. Do not put overlay / viewport / select-centering contracts there.
+
+After any edit under `templates/`, `static/css/`, or `static/js/`, run **`./scripts/check_ui.sh`** in the same turn (throwaway mongod + server; never the real DB). It checks:
+
+| Surface | Phone (~390×844) | Desktop (~1280×800) |
+|---------|------------------|---------------------|
+| Filters | fixed sheet in viewport, scrim, body lock, count label, custom date, Escape + tap-scrim close | absolute dropdown, no scrim/lock, click-outside close |
+| Job details | sheet in viewport, mask above it, tap scrim closes | side drawer (`top: 0`), no mask, page still scrolls |
+| Log Job / Timeouts selects | shared `--phone-ctrl-h` recipe (appearance none, padding, 16px) | (phone recipe only) |
+| Unmatched Filters | same sheet contract + custom score | — |
+| Batch bar / timeline modal | bar stays on screen | datetime modal z-index above the drawer |
+
+Look at the screenshots under the path the script prints (`/tmp/job-ui-chrome/` unless `UI_CHECK_OUT` is set). A green exit code is not a substitute for a visual miss (text sitting high, mask too faint).
+
+If the script fails, fix the UI and re-run before finishing. Mention the result in the final report.
+
 ### First-load request order
 
 On Tracker cold entry, **`/api/jobs` is critical path**. Chips (`/api/stats`) and Overview (journey / heatmap / locations) load **after** the first job list (`loadAfterJobList` / `listReady` in `static/js/index.js`). Do not reintroduce parallel `/api/stats` on init without a reason.
@@ -179,7 +198,7 @@ There is no cron / launchd schedule in this project; do not add one. When you ch
 
 1. Read this skill + skim `docs/architecture.md` for the affected stage.
 2. Implement the code / script / bot change.
-3. If UI changed: apply **Web UI** (touch vs hover, unify `--phone-ctrl-h` / sibling controls, keep job-list-first loading).
+3. If UI changed: apply **Web UI** (touch vs hover, unify `--phone-ctrl-h` / sibling controls, keep job-list-first loading), then run `./scripts/check_ui.sh`.
 4. Update `docs/architecture.md` if flow/commands/filters/gates changed.
 5. If matching changed, keep `docs/matching_rules.md`, the schema in `evaluator.py`, and `MATCH_WEIGHTS` aligned, and run `scripts/tools/eval_matcher.py`.
 6. Impact check: grep usages of every touched function / field / component; update neighbors from the checklist in the same PR.

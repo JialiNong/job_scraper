@@ -300,15 +300,25 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
 .card.expanded .edit-info-btn { opacity: 1; }
 @media (max-width: 1080px) {
   .job-grid.layout-compact .card.expanded .card-body {
-    top: auto; left: 0; width: auto;
-    max-height: 86vh;
+    top: 12vh; left: 0; width: auto;
+    max-height: none;
+    z-index: 90;
     border-left: 0; border-top: 1px solid var(--border);
     border-radius: 16px 16px 0 0;
     box-shadow: 0 -16px 40px var(--shadow);
     padding: 18px 18px calc(32px + env(safe-area-inset-bottom, 0px));
   }
   .app:has(#jobsView:not([hidden]) .job-grid.layout-compact .card.expanded) .main { padding-right: 28px; }
+  .panel-scrim:not([hidden]) {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 85;
+    background: var(--scrim);
+    cursor: pointer;
+  }
 }
+.panel-scrim { display: none; }
 @media (max-width: 760px) {
   .app:has(#jobsView:not([hidden]) .job-grid.layout-compact .card.expanded) .main { padding-right: 16px; }
 }
@@ -1452,7 +1462,7 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   color: var(--muted);
 }
 .status-side-select {
-  background: var(--surface);
+  background-color: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--muted);
@@ -1882,8 +1892,6 @@ body:has(.batch-fetch-bar.select-mode) .toast { bottom: 96px; }
   .rail-out .funnel-label { font-size: .78rem; margin-top: 0; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .rail-out .funnel-pct { font-size: .72rem; white-space: nowrap; }
   .progress-panel { padding: 10px; gap: 8px; }
-  .progress-btn { padding: 3px 9px; }
-  .status-side-select { padding: 2px 6px; }
 
   .layout-toggle { display: none; }
   .job-grid.layout-compact .card.expanded .panel-close {

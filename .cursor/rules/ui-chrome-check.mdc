@@ -1,0 +1,17 @@
+---
+description: After Tracker UI edits, run the overlay/layout chrome check (not Mongo E2E)
+globs: templates/**,static/css/**,static/js/**
+---
+
+# UI chrome check (different layer from E2E)
+
+`tests/e2e` asserts MongoDB after clicks. That is the wrong trigger for CSS, overlays, phone layout, or select styling.
+
+When you edit Tracker templates / `static/css` / `static/js`, **before finishing**:
+
+1. Run `./scripts/check_ui.sh`
+2. If it fails, fix the UI and re-run
+3. Glance at the screenshots it prints (`/tmp/job-ui-chrome/`) for visual misses the asserts cannot catch
+4. In the final report, say that the UI chrome check passed (or what failed and how you fixed it)
+
+Do not add these overlay checks to `tests/e2e`. Do not skip the script because you already clicked around once in a browser.

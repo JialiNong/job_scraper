@@ -94,6 +94,35 @@ function setLayout(mode) {
   if (mode === 'compact') {
     grid.querySelectorAll('.card.expanded').forEach(c => c.classList.remove('expanded'));
   }
+  syncPanelScrim();
+}
+
+function stackedDetails() {
+  return window.matchMedia('(max-width: 1080px)').matches;
+}
+
+function ensurePanelScrim() {
+  let el = document.getElementById('panelScrim');
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = 'panelScrim';
+  el.className = 'panel-scrim';
+  el.hidden = true;
+  el.setAttribute('role', 'button');
+  el.setAttribute('aria-label', 'Close details');
+  el.addEventListener('click', () => {
+    const open = document.querySelector('#jobGrid .card.expanded');
+    if (open) setCardOpen(open, false, { focus: true });
+  });
+  document.body.appendChild(el);
+  return el;
+}
+
+function syncPanelScrim() {
+  const scrim = ensurePanelScrim();
+  const compactOpen = document.querySelector('#jobGrid.layout-compact .card.expanded');
+  scrim.hidden = !(compactOpen && stackedDetails());
+  if (typeof syncOverlayLock === 'function') syncOverlayLock();
 }
 
 /* Open or close one card's details panel. With focus: opening moves focus to
@@ -102,6 +131,7 @@ function setCardOpen(card, open, { focus = false } = {}) {
   card.classList.toggle('expanded', open);
   const row = card.querySelector('.card-row');
   if (row) row.setAttribute('aria-expanded', String(open));
+  syncPanelScrim();
   if (!focus) return;
   const target = open ? card.querySelector('.card-title-text') : row;
   target?.focus({ preventScroll: true });
@@ -131,11 +161,13 @@ function closeCardPanel(btn) {
 document.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape' || currentLayout !== 'compact') return;
   if (document.querySelector('.tl-modal-backdrop')) return;
+  if (filterPopOpen && filterPopOpen()) return;
   const tag = (document.activeElement?.tagName || '').toLowerCase();
   if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
   const open = document.querySelector('#jobGrid .card.expanded');
   if (open) setCardOpen(open, false, { focus: true });
 });
+window.matchMedia('(max-width: 1080px)').addEventListener('change', syncPanelScrim);
 
 /* ── Toast ───────────────────────────────────────────────────────── */
 function showToast(msg, type = 'ok', ms = 2500) {
@@ -2106,6 +2138,7 @@ async function focusOpenJobFromQuery() {
     const injected = renderCard(job);
     injected.classList.add('open-flash');
     if (currentLayout === 'compact') injected.classList.add('expanded');
+    syncPanelScrim();
 
     const empty = grid.querySelector('.empty');
     if (empty) empty.remove();

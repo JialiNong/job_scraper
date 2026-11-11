@@ -13,5 +13,5 @@ Minimum:
 
 1. Grep every touched function, field, and component.
 2. Walk the skill checklist for form fields, new data fields, statuses/flags, UI, environments, and tests.
-3. For UI: phone vs desktop interaction (no hover-only paths) and unify sibling control sizing (`--phone-ctrl-h`), not only the node the user named.
+3. For UI: phone vs desktop interaction (no hover-only paths), unify sibling control sizing (`--phone-ctrl-h`), and run `./scripts/check_ui.sh` (overlay/layout contracts — not Mongo E2E).
 4. List the related areas you checked in the PR body and the final report.

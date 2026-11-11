@@ -19,7 +19,7 @@
 .toolbar select,
 .toolbar input[type="date"],
 .toolbar input[type="number"] {
-  background: var(--surface);
+  background-color: var(--surface);
   border: 1px solid var(--border);
   border-radius: 6px;
   color: var(--text);
@@ -341,28 +341,6 @@
   .job-grid { grid-template-columns: minmax(0, 1fr); }
   .count-label { margin-left: 0; flex-basis: 100%; }
   .toast { left: 16px; right: 16px; bottom: 16px; }
-}
-@media (max-width: 760px) {
-  .toolbar select,
-  .toolbar input[type="date"],
-  .toolbar input[type="number"] {
-    height: var(--phone-ctrl-h);
-    min-height: var(--phone-ctrl-h);
-    padding: 0 8px;
-    font-size: 16px;
-    line-height: calc(var(--phone-ctrl-h) - 2px);
-  }
-  .toolbar select {
-    -webkit-appearance: none;
-    appearance: none;
-    padding: 2px 26px 0 8px;
-    line-height: 1.15;
-    background-color: var(--surface);
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23576665' d='M2.6 4.2 6 7.6l3.4-3.4'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 8px center;
-    background-size: 12px;
-  }
 }
 
 /* Checkbox hit area stays a bit larger than the 30px phone controls */
