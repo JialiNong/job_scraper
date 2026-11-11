@@ -1,34 +1,30 @@
-# Job Scraper - AI-Powered Job Search Assistant
+# Job Tracker - AI-Powered Job Search Assistant
 
-Collects job listings from LinkedIn and Indeed (browser), public job APIs (Arbeitnow, Bundesagentur für Arbeit; Adzuna opt-in) and company ATS boards (Greenhouse, Lever, Ashby, Personio, Recruitee, Workable), uses AI to score each match, and notifies you on Telegram.
+A personal job-search assistant for Germany. It collects listings from public job APIs (Arbeitnow, Bundesagentur für Arbeit; Adzuna opt-in) and company ATS boards (Greenhouse, Lever, Ashby, Personio, Recruitee, Workable), uses AI to score each job against my CV, sends the best matches to Telegram, and tracks every application in a mobile-friendly web dashboard.
 
 All job sources and their setup: **[docs/job_sources.md](docs/job_sources.md)**.
 
 ### How it runs
 
-**API sources: daily in the cloud.** GitHub Actions (`.github/workflows/api-sources.yml`) runs `src/sources/run_sources.py` every morning, so your Mac can stay off. Run it locally with:
+**Job sources: daily in the cloud.** GitHub Actions (`.github/workflows/api-sources.yml`) runs `src/sources/run_sources.py` every morning, so my Mac can stay off. Run it locally with:
 
 ```bash
 python3 src/sources/run_sources.py              # Arbeitnow + Bundesagentur + ATS, last 1 day
 python3 src/sources/run_sources.py --dry-run    # preview, no writes
 ```
 
-**LinkedIn + Indeed: on demand from Telegram.** These need your Mac's Chrome, so they run with one command:
-
-```
-/jobs [days] [linkedin_hours] [pages]
-```
-
-Indeed and LinkedIn are scraped in parallel; each source is AI-matched as soon as its scrape finishes, and today's match cards arrive once both are done.
+**Tracker: always on.** The web UI runs on Render (free plan) with MongoDB Atlas, so I can review matches and update application status from my phone.
 
 ## Features
 
-- **Multi-platform scraping** – Indeed and LinkedIn, in parallel
-- **API sources** – Arbeitnow, Bundesagentur and 80 company ATS boards (Adzuna opt-in), daily on GitHub Actions
-- **AI matching** – OpenAI scores each job 0–10 against your profile
+- **Job sources** – Arbeitnow, Bundesagentur and 80 company ATS boards (Adzuna opt-in), daily on GitHub Actions
+- **AI matching** – a two-layer OpenAI evaluator labels each job against my CV and matching rules, looks up the company once, and turns the labels into a 0–10 score in code
+- **Matcher evals** – check a model or rule change against my own past Tracker decisions before relying on it
 - **Smart deduplication** – already-analyzed jobs are skipped automatically
-- **Human-like behavior** – random delays to avoid detection
-- **Telegram control** – start a run with `/jobs` from your phone
+- **Web tracker** – application status and timeline, notes, Unmatched and Timeouts views, stats, and a log-a-job form; login-protected and mobile-responsive
+- **Agent API** – coding agents can write recommended jobs straight into the tracker
+- **Telegram** – daily match cards pushed to my phone
+- **Tests** – unit tests plus browser E2E tests that run automatically after Claude Code edits the web code
 - **MongoDB storage** – all data persisted for querying
 
 ---
@@ -36,15 +32,16 @@ Indeed and LinkedIn are scraped in parallel; each source is AI-matched as soon a
 ## Project Structure
 
 ```
-job_scraper/
+job_tracker/
 ├── src/
 │   ├── core/                          # Shared infrastructure
 │   │   ├── config.py                  # Central configuration
 │   │   ├── db_mongo.py                # MongoDB operations
 │   │   └── scraper_utils.py           # Shared utilities
-│   ├── scrapers/                      # Job scrapers
-│   │   ├── indeed_scraper.py          # Indeed scraper (--days window)
-│   │   ├── linkedin_scraper.py        # LinkedIn scraper (--hours window)
+│   ├── sources/                       # Job APIs + company ATS boards (run_sources.py)
+│   ├── scrapers/                      # Optional browser collectors (see the end of this README)
+│   │   ├── indeed_scraper.py
+│   │   ├── linkedin_scraper.py
 │   │   └── manual_apply_scraper.py    # Manual job URL logger (default: Not Applied)
 │   ├── matching/
 │   │   ├── ai_matcher.py              # Matching entry point (pipeline / CLI)
@@ -59,17 +56,18 @@ job_scraper/
 │   │   └── routes/                    # Blueprints: pages, jobs, unmatched, timeouts,
 │   │                                  #   stats, log_job, ai_tasks (no URL prefix)
 │   └── tg/                            # Telegram (bot commands + push messages)
-│       ├── bot.py                     # Bot: receives /jobs, /indeed_ok
+│       ├── bot.py                     # Bot commands
 │       ├── client.py                  # Push: Bot API sendMessage helper
 │       └── digest.py                  # Today's match cards → Telegram
 ├── docs/
 │   ├── architecture.md                # How the system works (canonical flow doc)
+│   ├── job_sources.md                 # Every job source and its setup
 │   ├── user_profile.md                # Your resume — required for AI
 │   ├── matching_rules.md              # Rules the model applies (hard fails, labels)
 │   ├── deployment/                    # Render setup + deployment report
 │   └── archive/testing/               # Past one-off test / verification reports
 ├── scripts/
-│   ├── run_jobs.sh                    # Pipeline behind Telegram /jobs
+│   ├── run_jobs.sh                    # Optional browser pipeline (see the end of this README)
 │   ├── start_ui.sh                    # Start Job Tracker web UI
 │   ├── lib/pipeline_common.sh         # Shared shell helpers for run_jobs.sh
 │   ├── db/cleanup_excluded_titles.py  # One-off DB cleanup by title blacklist
@@ -93,7 +91,7 @@ job_scraper/
 
 ```bash
 pip3 install -r requirements.txt
-playwright install chromium
+playwright install chromium   # used by the E2E tests
 ```
 
 ### 2. Configure `.env`
@@ -117,7 +115,7 @@ FLASK_SECRET_KEY=<random_hex_string>
 
 ### 3. Generate password hash for web UI
 
-The web UI now requires login. Generate a password hash:
+The web UI requires login. Generate a password hash:
 
 ```bash
 python3 scripts/tools/generate_password_hash.py
@@ -136,52 +134,14 @@ This will prompt you for a password and output a hash. Copy the `TRACKER_PASSWOR
 ### 5. Test run
 
 ```bash
-# Quick smoke test — 1 page each, 3 jobs analyzed
-python3 src/scrapers/indeed_scraper.py -k "frontend" -p 1
-python3 src/scrapers/linkedin_scraper.py -k "frontend" -p 1
+# Preview today's jobs from the APIs and ATS boards, then score 3 of them
+python3 src/sources/run_sources.py --dry-run
+python3 src/sources/run_sources.py
 python3 src/matching/ai_matcher.py -l 3
 
 # View results (web UI)
 ./scripts/start_ui.sh
 ```
-
----
-
-## Running a scrape
-
-### From Telegram (normal use)
-
-Start the bot (`python3 src/tg/bot.py`), then send:
-
-| Command | Indeed | LinkedIn | Pages per keyword |
-|---|---|---|---|
-| `/jobs` | last 1 day | last 24 h | config default (3) |
-| `/jobs 7` | last 7 days | last 168 h | config default |
-| `/jobs 3 120` | last 3 days | last 120 h | config default |
-| `/jobs 3 72 2` | last 3 days | last 72 h | 2 |
-
-- `days` must be 1, 3, 7 or 14 (Indeed's date filter).
-- `linkedin_hours` defaults to `days × 24`.
-- `pages` applies to both platforms; to set it you must also give `days` and `linkedin_hours`.
-
-Other bot commands: `/start`, `/test` (health checks) and `/indeed_ok` (resume Indeed after a human-verification check; the inline **Continue** button does the same).
-
-### From the shell
-
-```bash
-caffeinate -i ./scripts/run_jobs.sh                              # both last 24h
-caffeinate -i ./scripts/run_jobs.sh --days 3 --hours 72 --pages 2
-```
-
-Execution order:
-
-1. Launch or reuse Chrome (remote debug mode)
-2. In parallel: Indeed lane and LinkedIn lane — each scrapes, then AI-matches its own source (Telegram ping after each step)
-3. Push today's match cards to Telegram
-4. Desktop notification — shows counts
-5. Chrome closed only if this run started it
-
-Only one run at a time: a second `/jobs` while one is running is refused (`logs/pipeline.pid`).
 
 ---
 
@@ -201,7 +161,7 @@ Any uncaught JavaScript error fails the test.
 - It **never touches your real data**: the harness refuses to start unless the server
   points at `127.0.0.1` + a database ending in `_e2e`, with AI / Telegram keys blank.
 - Needs `mongod` (`brew install mongodb/brew/mongodb-community`; no service needs to
-  run) and Playwright (already used by the scrapers; it drives your installed Chrome).
+  run) and Playwright (it drives your installed Chrome).
 - Seed data and fixed card ids live in `tests/e2e/harness.py`. When you change a
   page's buttons or ids, update the selectors in `tests/e2e/test_tracker_e2e.py`.
 
@@ -225,16 +185,6 @@ DEFAULT_KEYWORDS = [
     "forward deployed engineer",
 ]
 ```
-
-### Scraping limits
-
-```python
-FULL_MAX_PAGES = 3              # Default pages per keyword (both platforms)
-INDEED_JOBS_PER_PAGE = 15       # Indeed cards per page (also the start= step)
-LINKEDIN_JOBS_PER_PAGE = 30     # LinkedIn cards per page
-```
-
-`scripts/run_jobs.sh` reads these values at start; `/jobs … [pages]` overrides `FULL_MAX_PAGES` for one run.
 
 ### Match threshold — `.env`
 
@@ -263,19 +213,6 @@ python3 scripts/tools/eval_matcher.py --unapplied --limit 100  # recent jobs you
 
 ## CLI Reference
 
-### Scrapers
-
-| Option | Short | Default | Applies to |
-|--------|-------|---------|-----------|
-| `--keywords` | `-k` | `DEFAULT_KEYWORDS` | `indeed_scraper`, `linkedin_scraper` |
-| `--max-pages` | `-p` | `3` | all scrapers |
-| `--max-jobs` | `-j` | Indeed `15`, LinkedIn `30` | all scrapers |
-
-```bash
-python3 src/scrapers/indeed_scraper.py -k "react developer" -p 2
-python3 src/scrapers/linkedin_scraper.py -k "frontend" "full stack" -p 3
-```
-
 ### AI Matcher
 
 | Option | Short | Default |
@@ -285,8 +222,8 @@ python3 src/scrapers/linkedin_scraper.py -k "frontend" "full stack" -p 3
 | `--threshold` | `-t` | `7.0` |
 
 ```bash
-python3 src/matching/ai_matcher.py -l 5              # test with 5 jobs
-python3 src/matching/ai_matcher.py -s indeed -t 7.5  # Indeed only, stricter
+python3 src/matching/ai_matcher.py -l 5                    # test with 5 jobs
+python3 src/matching/ai_matcher.py -s arbeitnow -t 7.5     # one source only, stricter
 ```
 
 ---
@@ -301,7 +238,7 @@ python3 src/matching/ai_matcher.py -s indeed -t 7.5  # Indeed only, stricter
   title:       "Senior Frontend Developer",
   company:     "Tech GmbH",
   location:    "Berlin, Germany",
-  source:      "linkedin",          // linkedin / indeed / arbeitnow / arbeitsagentur / adzuna / ats
+  source:      "arbeitnow",         // arbeitnow / arbeitsagentur / adzuna / ats / …
   link:        "https://...",
   description: "...",
   status:      "new",
@@ -340,8 +277,8 @@ from core.db_mongo import get_collection
 
 matched = get_collection("matched_jobs")
 matched.update_one(
-    {"job_id": "abc123", "source": "linkedin"},
-    {"$set": {"status": "applied", "notes": "Applied via LinkedIn"}}
+    {"job_id": "abc123", "source": "arbeitnow"},
+    {"$set": {"status": "applied", "notes": "Applied via company site"}}
 )
 ```
 
@@ -359,10 +296,6 @@ matched.update_one(
 
 ```bash
 tail -f logs/main.log                          # pipeline summary
-tail -f logs/indeed_YYYYMMDD_HHMMSS.log        # Indeed scrape detail
-tail -f logs/linkedin_YYYYMMDD_HHMMSS.log      # LinkedIn scrape detail
-tail -f logs/matcher_indeed_YYYYMMDD_HHMMSS.log    # AI matcher (Indeed lane)
-tail -f logs/matcher_linkedin_YYYYMMDD_HHMMSS.log  # AI matcher (LinkedIn lane)
 
 # Clean up logs older than 7 days
 find logs/ -name "*.log" -mtime +7 -delete
@@ -371,25 +304,6 @@ find logs/ -name "*.log" -mtime +7 -delete
 ---
 
 ## Troubleshooting
-
-### Chrome won't connect
-
-```bash
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
-  --remote-debugging-port=9222 \
-  --user-data-dir="/tmp/chrome_selenium"
-```
-
-### LinkedIn / Indeed login expired
-
-Manually reopen Chrome with the scraper's profile and log in again:
-
-```bash
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
-  --user-data-dir="/tmp/chrome_selenium"
-```
-
-Then visit linkedin.com / indeed.com, log in, and tick **"Keep me logged in"**. Sessions typically last ~30 days.
 
 ### MongoDB connection failed
 
@@ -401,11 +315,10 @@ Check `MONGO_URI` in `.env` and ensure your IP is whitelisted in MongoDB Atlas.
 
 ### No new jobs to process
 
-All existing jobs already have `matched_at` set. Run the scrapers first to fetch today's listings:
+All existing jobs already have `matched_at` set. Fetch today's listings first:
 
 ```bash
-python3 src/scrapers/indeed_scraper.py
-python3 src/scrapers/linkedin_scraper.py
+python3 src/sources/run_sources.py
 ```
 
 ---
@@ -418,19 +331,11 @@ Monitor usage at https://platform.openai.com/usage. If the account runs out of c
 
 ---
 
-## Notes
-
-- **Personal use only** — respect Indeed and LinkedIn Terms of Service
-- Built-in delays: 4–8 s between jobs, 15–30 s between pages
-- Chrome uses `/tmp/chrome_selenium` as its profile directory
-
----
-
 ## Mobile Access & Deployment
 
 ### Web UI Authentication
 
-The job tracker web UI now requires login for security. Access is protected by:
+The job tracker web UI requires login for security. Access is protected by:
 - Session-based authentication using Flask-Login
 - Username/password credentials from environment variables
 - bcrypt-hashed passwords (never store plain text)
@@ -442,19 +347,15 @@ The UI is fully **mobile-responsive** and works on phones (375-430px width):
 - Readable cards and status dropdowns
 - Mobile-optimized layout
 
-### Current Deployment
+### Running locally
 
-The app currently runs **locally on macOS** via `./scripts/start_ui.sh`:
-- Flask dev server on `127.0.0.1:5050`
-- Accessed only from the local machine
-- Scrapes are started on demand via Telegram `/jobs`
-- MongoDB Atlas for database (cloud)
+`./scripts/start_ui.sh` starts the Flask dev server on `127.0.0.1:5050`, using MongoDB Atlas as the database.
 
 ---
 
 ## Deploy to Render (Recommended)
 
-Deploy the web UI to Render's free plan for mobile access. **Scrapers stay on your Mac** (they need Chrome/Playwright).
+Deploy the web UI to Render's free plan for mobile access.
 
 ### Prerequisites
 
@@ -481,7 +382,7 @@ Deploy the web UI to Render's free plan for mobile access. **Scrapers stay on yo
 3. **New Blueprint** in Render dashboard:
    - Click "New +" → "Blueprint"
    - Connect your GitHub repository
-   - Select the `job_scraper` repository
+   - Select the `job_tracker` repository
    - Render detects `render.yaml` automatically
    - Click "Apply"
 
@@ -514,15 +415,15 @@ Deploy the web UI to Render's free plan for mobile access. **Scrapers stay on yo
 ### Architecture After Deployment
 
 ```
-┌─────────────────────┐         ┌──────────────────────┐         ┌─────────────┐
-│   Mac (Local)       │         │  Render (Free)       │         │  MongoDB    │
-│                     │         │                      │         │  Atlas      │
-│  • Indeed scraper   │────────▶│  • Flask Web UI      │────────▶│             │
-│  • LinkedIn scraper │  writes │  • Read-only tracker │  reads  │  • Jobs     │
-│  • AI matcher       │   jobs  │  • Update status     │  writes │  • Matches  │
-│  • Chrome/Playwright│         │  • Mobile access     │ status  │             │
-│  • Telegram /jobs   │         │  • Gunicorn          │         │             │
-└─────────────────────┘         └──────────────────────┘         └─────────────┘
+┌──────────────────────┐         ┌──────────────────────┐         ┌─────────────┐
+│ Collectors           │         │  Render (Free)       │         │  MongoDB    │
+│                      │         │                      │         │  Atlas      │
+│ • Job APIs + ATS     │────────▶│  • Flask Web UI      │────────▶│             │
+│   (GitHub Actions)   │  writes │  • Tracker + status  │  reads  │  • Jobs     │
+│ • AI matcher         │   jobs  │  • Agent API         │  writes │  • Matches  │
+│ • Telegram digest    │         │  • Mobile access     │ status  │             │
+│                      │         │  • Gunicorn          │         │             │
+└──────────────────────┘         └──────────────────────┘         └─────────────┘
                                           │
                                           ├─────► 📱 iPhone
                                           ├─────► 📱 Android
@@ -571,10 +472,6 @@ After pushing changes to GitHub:
 
 ## Alternative Deployment Options
 
-### Deploying for Mobile Access
-
-To access the tracker from your phone, you need to deploy the web UI to a hosting service:
-
 #### Railway
 
 Railway offers free tier and simple Python deployment:
@@ -587,8 +484,6 @@ Railway offers free tier and simple Python deployment:
 2. Push to GitHub and connect Railway to your repo
 3. Add environment variables in Railway dashboard (same as Render)
 4. Deploy
-
-**Note**: Job scrapers (Playwright/Chrome) won't work on Railway. Only deploy the web UI for tracking. Keep scrapers running locally on your Mac.
 
 #### Fly.io
 
@@ -615,15 +510,102 @@ Ngrok will give you a public URL (e.g., `https://abc123.ngrok.io`) that you can 
 - **MongoDB Atlas**: Already configured (connection string in `.env`)
 - **OpenAI**: Already configured (API key in `.env`)
 
-### Recommended Setup
+---
 
-**For Personal Use** (what you have now):
-- Scrapers run locally on Mac, started via Telegram `/jobs` (need Chrome/Playwright)
-- Web UI deployed to Railway/Render for mobile access
-- MongoDB Atlas for cloud database
-- Both Mac and web UI connect to same MongoDB
+<details>
+<summary><b>Appendix: optional browser collection (personal use)</b></summary>
 
-This way:
-- Mac scrapers collect jobs automatically
-- Check and update status from phone anytime via deployed web UI
-- All data syncs through MongoDB
+<br>
+
+For personal use only, the tracker can also collect listings from my own logged-in Indeed and LinkedIn sessions in Chrome on my Mac. This is optional and not part of the daily cloud run. **Respect each site's Terms of Service.**
+
+### Running it
+
+From Telegram (start the bot with `python3 src/tg/bot.py`):
+
+| Command | Indeed | LinkedIn | Pages per keyword |
+|---|---|---|---|
+| `/jobs` | last 1 day | last 24 h | config default (3) |
+| `/jobs 7` | last 7 days | last 168 h | config default |
+| `/jobs 3 120` | last 3 days | last 120 h | config default |
+| `/jobs 3 72 2` | last 3 days | last 72 h | 2 |
+
+- `days` must be 1, 3, 7 or 14 (Indeed's date filter).
+- `linkedin_hours` defaults to `days × 24`.
+- `pages` applies to both platforms; to set it you must also give `days` and `linkedin_hours`.
+
+Other bot commands: `/start`, `/test` (health checks) and `/indeed_ok` (resume Indeed after a human-verification check; the inline **Continue** button does the same).
+
+From the shell:
+
+```bash
+caffeinate -i ./scripts/run_jobs.sh                              # both last 24h
+caffeinate -i ./scripts/run_jobs.sh --days 3 --hours 72 --pages 2
+```
+
+Execution order:
+
+1. Launch or reuse Chrome (remote debug mode)
+2. In parallel: Indeed lane and LinkedIn lane — each collects, then AI-matches its own source (Telegram ping after each step)
+3. Push today's match cards to Telegram
+4. Desktop notification — shows counts
+5. Chrome closed only if this run started it
+
+Only one run at a time: a second `/jobs` while one is running is refused (`logs/pipeline.pid`).
+
+Quick smoke test:
+
+```bash
+python3 src/scrapers/indeed_scraper.py -k "frontend" -p 1
+python3 src/scrapers/linkedin_scraper.py -k "frontend" -p 1
+python3 src/matching/ai_matcher.py -l 3
+```
+
+### Limits — `src/core/config.py`
+
+```python
+FULL_MAX_PAGES = 3              # Default pages per keyword (both platforms)
+INDEED_JOBS_PER_PAGE = 15       # Indeed cards per page (also the start= step)
+LINKEDIN_JOBS_PER_PAGE = 30     # LinkedIn cards per page
+```
+
+`scripts/run_jobs.sh` reads these values at start; `/jobs … [pages]` overrides `FULL_MAX_PAGES` for one run. Built-in delays: 4–8 s between jobs, 15–30 s between pages.
+
+### CLI options
+
+| Option | Short | Default | Applies to |
+|--------|-------|---------|-----------|
+| `--keywords` | `-k` | `DEFAULT_KEYWORDS` | `indeed_scraper`, `linkedin_scraper` |
+| `--max-pages` | `-p` | `3` | all collectors |
+| `--max-jobs` | `-j` | Indeed `15`, LinkedIn `30` | all collectors |
+
+```bash
+python3 src/scrapers/indeed_scraper.py -k "react developer" -p 2
+python3 src/scrapers/linkedin_scraper.py -k "frontend" "full stack" -p 3
+python3 src/matching/ai_matcher.py -s indeed -t 7.5
+```
+
+### Logs
+
+```bash
+tail -f logs/indeed_YYYYMMDD_HHMMSS.log            # Indeed run detail
+tail -f logs/linkedin_YYYYMMDD_HHMMSS.log          # LinkedIn run detail
+tail -f logs/matcher_indeed_YYYYMMDD_HHMMSS.log    # AI matcher (Indeed lane)
+tail -f logs/matcher_linkedin_YYYYMMDD_HHMMSS.log  # AI matcher (LinkedIn lane)
+```
+
+### Troubleshooting
+
+**Chrome won't connect:**
+
+```bash
+/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
+  --remote-debugging-port=9222 \
+  --user-data-dir="/tmp/chrome_selenium"
+```
+
+**Login expired:** reopen Chrome with the same profile (`--user-data-dir="/tmp/chrome_selenium"`), visit the site, log in and tick **"Keep me logged in"**. Sessions typically last ~30 days.
+
+This lane runs only on the Mac (it needs Chrome/Playwright); it can't run on Render or Railway.
+
+</details>
