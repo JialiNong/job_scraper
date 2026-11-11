@@ -173,11 +173,13 @@ class TrackerUiTests(unittest.TestCase):
     def test_details_panel_reading_order(self):
         js = (ROOT / "static" / "js" / "tracker" / "cards.js").read_text()
         hist = js.find("${renderCompanyHistory(job)}")
-        progress = js.find("renderProgressBlock(job)")
+        progress = js.find("${renderProgressBlock(job)}")
+        applicant = js.find("${renderApplicantPositionBlock(job)}")
+        notes = js.find("${renderNotesBlock(job)}")
         agent = js.find("${renderAgentReason(job)}")
         local = js.find("${renderLocalAiBlock(")
         desc = js.find("${renderOriginalDescription(job)}")
-        self.assertTrue(0 < hist < progress < agent < local < desc)
+        self.assertTrue(0 < hist < progress < applicant < notes < agent < local < desc)
         self.assertNotIn("${countryPillHtml(job)}", js)
         header = js.split('class="card-header"', 1)[1].split("card-meta", 1)[0]
         self.assertNotIn("score-badge", header)

@@ -271,11 +271,13 @@ function renderApplicantPositionBlock(job) {
   const scraped = job.applicants ? `When scraped: ${job.applicants}. ` : '';
   return `
     <div class="applicant-pos-wrap" data-id="${id}" onclick="event.stopPropagation()">
-      <span class="ap-label">Applicant # when I applied</span>
-      <input type="number" min="1" step="1" inputmode="numeric" class="applicant-pos-input" aria-label="Applicant number when I applied"
-             value="${escHtml(job.applicant_position || '')}" placeholder="e.g. 25"
-             onkeydown="if(event.key==='Enter'){event.preventDefault();saveApplicantPosition('${id}');}" />
-      <button type="button" class="btn-save" onclick="saveApplicantPosition('${id}', this)">Save</button>
+      <div class="panel-heading">Applicant # when I applied</div>
+      <div class="ap-row">
+        <input type="number" min="1" step="1" inputmode="numeric" class="applicant-pos-input" aria-label="Applicant number when I applied"
+               value="${escHtml(job.applicant_position || '')}" placeholder="e.g. 25"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();saveApplicantPosition('${id}');}" />
+        <button type="button" class="btn-save" onclick="saveApplicantPosition('${id}', this)">Save</button>
+      </div>
       <span class="ap-hint">${escHtml(scraped)}Read the LinkedIn applicant count right after you apply.</span>
     </div>`;
 }
@@ -437,6 +439,7 @@ function renderCard(job) {
 
       <div class="progress-panel">
       ${renderProgressBlock(job)}
+      ${renderApplicantPositionBlock(job)}
       ${renderNotesBlock(job)}
       </div>
 
@@ -458,7 +461,6 @@ function renderCard(job) {
       ${renderOriginalDescription(job)}
       </div>
         <div class="card-split-track">
-          ${renderApplicantPositionBlock(job)}
           ${renderApplicationQa(job)}
           ${renderHighlightsBlock(job)}
           <div class="card-danger-row">

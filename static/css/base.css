@@ -369,6 +369,7 @@ html.ui-lock body {
   html .info-save-btn,
   html .info-cancel-btn,
   html .info-input,
+  html .applicant-pos-input,
   html .delete-job-btn,
   html .option-input,
   html .batch-fetch-bar .batch-fetch-btn,
@@ -418,6 +419,7 @@ html.ui-lock body {
   }
   html .option-input,
   html .info-input,
+  html .applicant-pos-input,
   html .pop input,
   html .toolbar input[type="date"],
   html .toolbar input[type="number"] {

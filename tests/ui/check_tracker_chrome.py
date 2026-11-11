@@ -105,6 +105,7 @@ def js_metrics(page):
         recommendedBy: selectStyle('#recommendedBy'),
         timeoutsSelect: selectStyle('.toolbar select'),
         sideSelect: selectStyle('.status-side-select'),
+        applicantPosInput: selectStyle('.card.expanded .applicant-pos-input'),
         headerScore: [...document.querySelectorAll(
           '.card.expanded .card-header .score-badge, .card.expanded .card-header .score-ring'
         )].filter(el => getComputedStyle(el).display !== 'none').length,
@@ -123,6 +124,21 @@ def js_metrics(page):
           return { bg: cs.backgroundColor, bw: cs.borderTopWidth };
         })(),
         countryInBody: document.querySelectorAll('.card.expanded .card-body .country-pill').length,
+        applicantInProgress: (() => {
+          const panel = document.querySelector('.card.expanded .progress-panel');
+          if (!panel) return null;
+          const ap = panel.querySelector(':scope > .applicant-pos-wrap');
+          const notes = panel.querySelector(':scope > .notes-wrap');
+          const inTrack = document.querySelector(
+            '.card.expanded .card-split-track .applicant-pos-wrap'
+          );
+          return {
+            inPanel: !!ap,
+            hasNotes: !!notes,
+            apBeforeNotes: !!(ap && notes && (ap.compareDocumentPosition(notes) & Node.DOCUMENT_POSITION_FOLLOWING)),
+            inTrack: !!inTrack,
+          };
+        })(),
         panelOrder: [...document.querySelectorAll(
           '.card.expanded .card-split-match > .company-history, .card.expanded .card-split-match > .progress-panel, .card.expanded .card-split-match > .recommend-reason, .card.expanded .card-split-match > .ai-local, .card.expanded .card-split-match > .job-description'
         )].map(el => el.className.split(/\\s+/)[0]),
@@ -416,6 +432,14 @@ def run_phone(page, base, run: Runner):
               "ai-local" in order and "job-description" in order
               and order.index("ai-local") < order.index("job-description"),
               f"order={order}")
+    ap = m.get("applicantInProgress") or {}
+    run.check("phone details: LinkedIn applicant # sits above notes in progress",
+              ap.get("inPanel") and ap.get("apBeforeNotes") and not ap.get("inTrack"),
+              f"ap={ap}")
+    ap_input = m.get("applicantPosInput") or {}
+    run.check("phone details: applicant # input uses --phone-ctrl-h",
+              ap_input.get("h") == PHONE_CTRL_H,
+              f"input={ap_input}")
     page.locator(".card.expanded .ai-local").scroll_into_view_if_needed()
     page.wait_for_timeout(150)
     run.shot(page, "phone-details-ai.png")
@@ -529,6 +553,10 @@ def run_desktop(page, base, run: Runner):
               "progress-panel" in order and "ai-local" in order and "job-description" in order
               and order.index("progress-panel") < order.index("ai-local") < order.index("job-description"),
               f"order={order}")
+    ap = m.get("applicantInProgress") or {}
+    run.check("desktop details: LinkedIn applicant # sits above notes in progress",
+              ap.get("inPanel") and ap.get("apBeforeNotes") and not ap.get("inTrack"),
+              f"ap={ap}")
     page.locator(".card.expanded .ai-local").scroll_into_view_if_needed()
     page.wait_for_timeout(150)
     run.shot(page, "desktop-details-ai.png")

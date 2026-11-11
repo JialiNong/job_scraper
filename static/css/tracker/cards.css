@@ -29,8 +29,8 @@
   white-space: nowrap;
 }
 
-/* Match column: identity → company history → progress → AI → original JD.
-   Track column: applicant # / Q&A / highlights. */
+/* Match column: identity → company history → progress (applicant # + notes) → AI → original JD.
+   Track column: Q&A / highlights. */
 .card-split {
   display: flex;
   flex-direction: column;
@@ -374,7 +374,7 @@
 }
 .btn-fetch-details:hover { border-color: var(--accent); color: var(--accent); }
 
-/* Application progress + notes: one block, filled together */
+/* Application progress + applicant # + notes: one block, filled together */
 .progress-panel {
   display: flex;
   flex-direction: column;
@@ -591,7 +591,7 @@
   word-break: break-word;
 }
 
-/* Notes sit under Other in the same progress panel */
+/* Applicant # (LinkedIn) then Notes sit under Other in the same progress panel */
 .notes-wrap {
   display: flex; flex-direction: column; gap: 6px;
   padding-top: 10px;
@@ -762,16 +762,26 @@
 
 /* ── Applicant position at apply time (LinkedIn) ───────────────── */
 .applicant-pos-wrap {
-  margin-top: 10px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px dashed var(--border);
   font-size: .78rem;
 }
-.applicant-pos-wrap .ap-label { color: var(--muted); }
+.applicant-pos-wrap .ap-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.applicant-pos-wrap .ap-row .btn-save { align-self: center; }
 .applicant-pos-wrap input {
   width: 90px; padding: 5px 8px; border-radius: 6px;
   border: 1px solid var(--border); background: var(--surface); color: var(--text);
   font: inherit;
 }
-.applicant-pos-wrap .ap-hint { color: var(--muted); font-size: .72rem; flex-basis: 100%; }
+.applicant-pos-wrap .ap-hint { color: var(--muted); font-size: .72rem; }
 
 /* Tracker details: full AI summary next to the score (Unmatched is also unclamped) */
 .card-summary {
@@ -823,7 +833,7 @@
 
 /* ── Details panel: real section headings ───────────────────────── */
 .progress-title, .qa-label, .highlights-label, .panel-heading,
-.recommend-reason-label, .applicant-pos-wrap .ap-label {
+.recommend-reason-label {
   font: 600 .98rem/1.3 var(--f-display);
   color: var(--text);
 }
