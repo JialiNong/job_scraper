@@ -167,14 +167,8 @@ def _extract_linkedin_view_identity(page) -> tuple[str, str, str, str]:
     title = _first_locator_text(page, _LINKEDIN_TITLE_SELECTORS)
     company = _first_locator_text(page, _LINKEDIN_COMPANY_SELECTORS)
     location = _first_locator_text(page, _LINKEDIN_LOCATION_SELECTORS)
-    applicants = _first_locator_text(
-        page,
-        (
-            ".job-details-jobs-unified-top-card__tertiary-description-container",
-            ".num-applicants__caption",
-            ".posted-time-ago__text",
-        ),
-    )
+    from scrapers.linkedin_scraper import extract_linkedin_applicants
+    applicants = extract_linkedin_applicants(page)
     if title.lower() in {"linkedin", "sign in", "join now"}:
         title = ""
     return title, company, location, applicants

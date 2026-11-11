@@ -22,8 +22,10 @@ from core.scraper_utils import (  # noqa: E402
 )
 from scrapers.linkedin_scraper import (  # noqa: E402
     expand_linkedin_see_more,
+    extract_linkedin_applicants,
     extract_linkedin_description,
     linkedin_description_selectors,
+    parse_linkedin_applicants,
 )
 
 
@@ -190,6 +192,57 @@ class LinkedInExtractTests(unittest.TestCase):
         text = extract_linkedin_description(page, "4478768694")
         self.assertIn("German is a plus", text)
         self.assertNotIn("Acme Engineer", text)
+
+
+class LinkedInApplicantsTests(unittest.TestCase):
+    def test_parse_from_classic_tertiary_blob(self):
+        self.assertEqual(
+            parse_linkedin_applicants("Posted 2 hours ago · 47 applicants · Hybrid"),
+            "47 applicants",
+        )
+
+    def test_parse_early_applicant_phrases(self):
+        self.assertEqual(
+            parse_linkedin_applicants("Be among the first 25 applicants"),
+            "Be among the first 25 applicants",
+        )
+        self.assertEqual(
+            parse_linkedin_applicants("Be an early applicant"),
+            "Be an early applicant",
+        )
+        self.assertEqual(
+            parse_linkedin_applicants("Over 200 applicants"),
+            "Over 200 applicants",
+        )
+
+    def test_parse_german_and_ignores_empty(self):
+        self.assertEqual(parse_linkedin_applicants("Über 100 Bewerber"), "Über 100 Bewerber")
+        self.assertEqual(parse_linkedin_applicants("  "), "")
+        self.assertEqual(parse_linkedin_applicants(None), "")
+
+    def test_extract_prefers_classic_selector(self):
+        page = FakePage({
+            ".job-details-jobs-unified-top-card__tertiary-description-container": FakeLocator(
+                1, "Posted 1 day ago · Be among the first 25 applicants"
+            ),
+        })
+        self.assertEqual(
+            extract_linkedin_applicants(page),
+            "Be among the first 25 applicants",
+        )
+
+    def test_extract_sdui_details_and_fallback(self):
+        page = FakePage({
+            '[data-sdui-screen="com.linkedin.sdui.flagshipnav.jobs.SemanticJobDetails"]': FakeLocator(
+                1,
+                "Frontend Engineer\nAcme\nBerlin\nOver 200 applicants\nAbout the job\n" + FULL_JD,
+            ),
+        })
+        self.assertEqual(extract_linkedin_applicants(page), "Over 200 applicants")
+        self.assertEqual(
+            extract_linkedin_applicants(FakePage({}), fallback="Be an early applicant"),
+            "Be an early applicant",
+        )
 
 
 if __name__ == "__main__":

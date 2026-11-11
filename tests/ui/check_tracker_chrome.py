@@ -227,6 +227,45 @@ def cards_face(page):
     )
 
 
+def check_funnel_rail(page, run: Runner, prefix: str, expect_h: int):
+    page.click("#tabOverview")
+    page.wait_for_timeout(250)
+    h = page.locator("#railBar").evaluate(
+        "el => Math.round(el.getBoundingClientRect().height)"
+    )
+    run.check(f"{prefix}: pipeline rail height",
+              abs(h - expect_h) <= 2, f"h={h} want {expect_h}")
+    run.check(f"{prefix}: offer slot is in the pipeline rail",
+              page.locator("#f-offer").count() == 1)
+    run.check(f"{prefix}: got-interview slot is in the pipeline rail",
+              page.locator("#f-interview").count() == 1)
+    page.wait_for_function(
+        """() => {
+          const interview = document.getElementById('fp-interview');
+          const offer = document.getElementById('fp-offer');
+          return !!(interview && offer
+            && interview.textContent.includes('of applied')
+            && offer.textContent.includes('of applied'));
+        }""",
+        timeout=8000,
+    )
+    rates = page.evaluate(
+        """() => ({
+          interview: document.getElementById('fp-interview').textContent,
+          offer: document.getElementById('fp-offer').textContent,
+        })"""
+    )
+    run.check(f"{prefix}: Got interview rate is of applied",
+              "of applied" in rates["interview"] and "of opened" not in rates["interview"],
+              f"text={rates['interview']!r}")
+    run.check(f"{prefix}: Offer rate is of applied",
+              "of applied" in rates["offer"] and "of opened" not in rates["offer"],
+              f"text={rates['offer']!r}")
+    run.shot(page, f"{prefix.split()[0]}-overview.png")
+    page.click("#tabJobs")
+    page.wait_for_timeout(150)
+
+
 def check_got_interview_chip(page, run: Runner, prefix: str):
     chip = page.locator('.stat-chip[data-status="got_interview"]')
     run.check(f"{prefix}: Got interview chip is visible", chip.is_visible())
@@ -350,6 +389,7 @@ def run_phone(page, base, run: Runner):
               status_outlined(m.get("statusOutline")),
               f"outline={m.get('statusOutline')}")
     check_got_interview_chip(page, run, "phone list")
+    check_funnel_rail(page, run, "phone overview", 14)
 
     page.click(".card-row")
     page.wait_for_timeout(350)
@@ -469,6 +509,7 @@ def run_desktop(page, base, run: Runner):
               status_outlined(m.get("statusOutline")),
               f"outline={m.get('statusOutline')}")
     check_got_interview_chip(page, run, "desktop list")
+    check_funnel_rail(page, run, "desktop overview", 92)
 
     page.click(".card-row")
     page.wait_for_timeout(350)

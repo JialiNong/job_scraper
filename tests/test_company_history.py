@@ -165,6 +165,10 @@ class TrackerUiTests(unittest.TestCase):
     def test_applicant_position_ui(self):
         self.assertIn("/applicant-position", HTML)
         self.assertIn("renderApplicantPositionBlock(job)", HTML)
+        self.assertIn("rowApplicantsHtml(job)", HTML)
+        self.assertIn("data-row-applicants", HTML)
+        um = page_source("unmatched")
+        self.assertIn("rowApplicantsHtml(job)", um)
 
     def test_details_panel_reading_order(self):
         js = (ROOT / "static" / "js" / "index.js").read_text()

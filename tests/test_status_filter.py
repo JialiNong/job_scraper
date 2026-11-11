@@ -29,6 +29,7 @@ with patch.object(db_mongo, "ensure_indexes"):
         chip_status_counts,
         job_matches_status_filter,
         job_reached_interview,
+        job_reached_offer,
         jobs_status_filter_query,
     )
 
@@ -223,6 +224,34 @@ class StatusFilterMatchTests(unittest.TestCase):
         self.assertTrue(job_matches_status_filter(invite, "interview"))
         self.assertTrue(job_matches_status_filter(flat, GOT_INTERVIEW_FILTER))
         self.assertFalse(job_matches_status_filter(applied_only, GOT_INTERVIEW_FILTER))
+
+    def test_offer_lookback_and_funnel_markup(self):
+        offered = _job(
+            status="offer",
+            application_timeline=[
+                {"step": "applied", "at": APPLIED_AT},
+                {"step": "interview_final", "at": INTERVIEW_AT},
+                {"step": "offer", "at": INTERVIEW_AT},
+            ],
+        )
+        overlay_offer = _job(
+            status="unsuitable",
+            application_timeline=[
+                {"step": "applied", "at": APPLIED_AT},
+                {"step": "offer", "at": INTERVIEW_AT},
+            ],
+        )
+        applied_only = _job(status="applied")
+        self.assertTrue(job_reached_offer(offered))
+        self.assertTrue(job_reached_offer(overlay_offer))
+        self.assertFalse(job_reached_offer(applied_only))
+        self.assertIn('data-key="interview"', HTML)
+        self.assertIn('id="f-interview"', HTML)
+        self.assertIn('id="f-offer"', HTML)
+        self.assertIn("funnel.interviewed", HTML)
+        self.assertIn("funnel.offer", HTML)
+        self.assertIn("pctOf(interviewed, applied, 'applied')", HTML)
+        self.assertIn("pctOf(offer, applied, 'applied')", HTML)
 
 
 class StatusFilterQueryTests(unittest.TestCase):

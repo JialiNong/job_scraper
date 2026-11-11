@@ -188,11 +188,20 @@
 .row-sub > * { flex: none; }
 .row-sub .row-company { color: var(--muted); font-weight: 600; font-size: inherit; margin: 0; }
 .row-sub .row-loc {
-  flex: 1 1 auto;
-  min-width: 0;
+  flex: 0 1 auto;
+  min-width: 4.5em;
   max-width: max-content;
 }
-.row-sub .row-via { color: var(--muted); font-weight: 400; }
+.row-sub .row-via,
+.row-sub .row-applicants { color: var(--muted); font-weight: 400; }
+.row-sub .row-applicants {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.row-sub .row-applicants:empty,
+.row-sub .row-applicants[hidden] { display: none; }
 .card-company .row-loc { flex: 0 1 auto; max-width: 100%; }
 .row-meta { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
 
@@ -533,6 +542,7 @@
 .job-grid.layout-cards .card-row .row-chevron,
 .job-grid.layout-cards .card-row .row-via,
 .job-grid.layout-cards .card-row .row-seen,
+.job-grid.layout-cards .card-row .row-applicants,
 .job-grid.layout-cards .card-row .row-highlights,
 .job-grid.layout-cards .card-row .row-meta { display: none; }
 .job-grid.layout-cards .row-sub {

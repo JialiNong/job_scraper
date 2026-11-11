@@ -18,6 +18,7 @@ from core.db_mongo import (
     resolve_applied_at,
 )
 from web.status import (
+    GOT_INTERVIEW_FILTER,
     JOURNEY_INTERVIEW_STEPS,
     JOURNEY_TRACK_STEPS,
     MATCH_THRESHOLD,
@@ -87,6 +88,10 @@ def api_stats():
             "ai_matched": ai_matched,
             "ai_unmatched": unmatched,
             "applied": applied_total,
+            # Same lookback as the Got interview chip: invite / round / offer,
+            # including jobs later marked rejected or a side overlay.
+            "interviewed": by_status.get(GOT_INTERVIEW_FILTER, 0),
+            "offer": by_status.get("offer", 0),
         },
     })
 

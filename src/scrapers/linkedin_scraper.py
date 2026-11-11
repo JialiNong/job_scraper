@@ -104,6 +104,56 @@ _SIMILAR_JOBS_SPLIT = re.compile(
     re.I,
 )
 
+# LinkedIn applicant-count phrases (classic top-card and SDUI). First match wins.
+_APPLICANTS_PATTERNS = (
+    re.compile(r"be among the first\s+[\d,]+\s+applicants?", re.I),
+    re.compile(r"sei unter den ersten\s+[\d,]+\s+bewerber(?:innen)?", re.I),
+    re.compile(r"geh[öo]ren sie zu den ersten\s+[\d,]+\s+bewerber(?:innen)?", re.I),
+    re.compile(r"(?:over|über)\s+[\d,]+\+?\s+(?:applicants?|bewerber(?:innen)?)", re.I),
+    re.compile(r"[\d,]+\+\s+(?:applicants?|bewerber(?:innen)?)", re.I),
+    re.compile(r"[\d,]+\s+(?:applicants?|bewerber(?:innen)?)", re.I),
+    re.compile(r"be an early applicant", re.I),
+)
+
+_APPLICANT_SELECTORS = (
+    ".job-details-jobs-unified-top-card__tertiary-description-container",
+    ".num-applicants__caption",
+    ".jobs-unified-top-card__applicant-count",
+    '[class*="num-applicants"]',
+    '[data-sdui-screen="com.linkedin.sdui.flagshipnav.jobs.SemanticJobDetails"]',
+)
+
+
+def parse_linkedin_applicants(raw: str) -> str:
+    """
+    Pull a short applicant-count phrase from LinkedIn chrome text.
+
+    Classic layout stuffed posted-time · applicants · workplace into one
+    tertiary node. SDUI puts the same phrase in a top-card paragraph.
+    """
+    if not raw:
+        return ""
+    text = re.sub(r"\s+", " ", str(raw)).strip()
+    if not text:
+        return ""
+    # Top-card chrome is at the start of SemanticJobDetails innerText;
+    # do not scan the JD / similar-jobs tail.
+    haystack = text[:2000]
+    for pattern in _APPLICANTS_PATTERNS:
+        match = pattern.search(haystack)
+        if match:
+            return match.group(0).strip()
+    return ""
+
+
+def extract_linkedin_applicants(page, fallback: str = "") -> str:
+    """Applicant count from the open detail panel, else a card-level fallback."""
+    for sel in _APPLICANT_SELECTORS:
+        parsed = parse_linkedin_applicants(safe_text(page.locator(sel)))
+        if parsed:
+            return parsed
+    return parse_linkedin_applicants(fallback)
+
 
 def linkedin_description_selectors(job_id: str = "") -> list:
     """About-the-job selectors only — never the whole details column."""
@@ -299,7 +349,7 @@ def _sdui_job_id(component_key: str) -> str:
 
 def _sdui_card_fields(card):
     """
-    Read title, company, location, and job id from one SDUI result card.
+    Read title, company, location, job id, and applicant phrase from one SDUI result card.
 
     Title text is often duplicated, and a verified badge is glued onto the
     first copy. Company and location are the next plain paragraphs.
@@ -349,16 +399,21 @@ def _sdui_card_fields(card):
 
     company = details[0] if details else ""
     location = details[1] if len(details) > 1 else ""
-    return title, company, location, job_id
+    applicants = ""
+    for text in paragraphs:
+        parsed = parse_linkedin_applicants(text)
+        if parsed:
+            applicants = parsed
+            break
+    return title, company, location, job_id, applicants
 
 
 def _save_open_linkedin_job(
-    page, index, title, company, location, status, href_value, job_id, jobs_data
+    page, index, title, company, location, status, href_value, job_id, jobs_data,
+    card_applicants="",
 ):
     """Read the already-open detail panel and save the job when it passes gates."""
-    apply_number = safe_text(
-        page.locator(".job-details-jobs-unified-top-card__tertiary-description-container")
-    )
+    apply_number = extract_linkedin_applicants(page, fallback=card_applicants)
 
     job_desc_text = ""
     for attempt in range(1, DESCRIPTION_FETCH_RETRIES + 1):
@@ -472,7 +527,7 @@ def scrape_sdui_jobs(page, max_jobs=MAX_JOBS_PER_PAGE, keyword=""):
 
             job = cards.nth(index)
             job.scroll_into_view_if_needed()
-            title, company, location, job_id = _sdui_card_fields(job)
+            title, company, location, job_id, card_applicants = _sdui_card_fields(job)
             href_value = f"https://www.linkedin.com/jobs/view/{job_id}/" if job_id else ""
             print(f"Job {index + 1}: {title} | {company} | {location}")
 
@@ -509,6 +564,7 @@ def scrape_sdui_jobs(page, max_jobs=MAX_JOBS_PER_PAGE, keyword=""):
                 href_value,
                 job_id,
                 jobs_data,
+                card_applicants=card_applicants,
             )
         except PlaywrightTimeoutError:
             print(f"Job {index + 1}: timed out while loading details")

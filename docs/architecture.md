@@ -226,6 +226,7 @@ flowchart TD
 | 4. Dedup | `is_job_id_exists()` | Do not re-open known jobs |
 | 4b. Detail timeout | `save_timeout_job()` | Title passed but JD panel missing → `timeout_jobs` for `/timeouts` |
 | 4c. LinkedIn JD body | `extract_linkedin_description()` | About-the-job region only (`JobDetails_AboutTheJob_*`). Expands See more / Mehr anzeigen. Never the whole SDUI `lazy-column` (top card + teaser + similar jobs). |
+| 4c2. LinkedIn applicants | `extract_linkedin_applicants()` | Short phrase from classic top-card or SDUI details (`25 applicants`, `Be among the first 25`). Stored as `applicants`; shown on Tracker / Unmatched List rows. |
 | 4d. JD completeness | `assess_job_description()` | Too short, UI chrome, similar-jobs sidebar, or title/company mismatch → save with `description_incomplete` (or `description_empty`); matcher skips AI |
 | 5. JD language | `is_non_english_job_detail()` · Lingua | **JD body not English** (usually German posts) → **do not save**. UI: German Filtered |
 
@@ -285,9 +286,13 @@ Already-scored jobs are not rematched automatically. To re-score one: Unmatched 
 
 **Unmatched page (`/unmatched`):** any job below the match threshold can be marked **Can Apply** (`user_status=watchlist`). That copies it into `matched_jobs` as `pending` (does not overwrite an existing Tracker row) so it can be tracked or marked applied. This is a manual override when AI scoring was wrong; it is not limited to the 6–7 score band. Filter by hard-fail kind with the gate dropdown; each card shows the quoted reason plus the company / score breakdown.
 
-**Tracker / Unmatched Cards layout:** collapsed cards show score, title, company and location only (same face on both pages: title, then company + location chip). A click or tap opens the same side details sheet as List (with a Close ×); the board card stays in the grid. List layout is unchanged.
+**Tracker / Unmatched Cards layout:** collapsed cards show score, title, company and location only (same face on both pages: title, then company + location chip). A click or tap opens the same side details sheet as List (with a Close ×); the board card stays in the grid.
+
+**Tracker / Unmatched List layout:** the company line also shows LinkedIn applicant count (`applicants` when scraped). On Tracker, a saved `#N at apply` (`applicant_position`) replaces that scraped phrase on the row.
 
 **Sidebar:** from Tracker, Log a job / Timeouts / Unmatched open in a new tab so the job list stays. Switching among those three pages stays in the same tab.
+
+**Overview pipeline rail:** one bar to scale where the full width is every opened job (`title_passed_clicked`). Parts: not in English (grey) · in English not matched · AI matched, with **Applied** inside matched, **Got interview** inside Applied (same lookback as the Got interview chip: invite / a round / offer, including later rejected), and **Offer** inside Got interview. Volume percentages (through Applied) are a share of opened jobs. **Got interview** and **Offer** are a share of Applied (interview rate and offer rate among applications), not of opened jobs. Offer stays in the readout at 0 so the slot is reserved. On a phone the colour strip is 14px; labels sit under the bar.
 
 **Tracker Other statuses:** `unsuitable`, `closed`, `repost`, `duplicate` are overlays on a card. They do **not** clear `applied_at` or `application_timeline`; a job that was applied still shows its progress and still counts in funnel / Journey / Locations / daily-activity applied totals. Reset Not Applied (`pending`) is the explicit wipe: it clears the timeline, `applied_at` and `applicant_position` and is not counted as an application. `repost` is a manual mark when the same role was posted again as a new listing and does not need another application. `duplicate` marks a listing already tracked from another source (e.g. LinkedIn and Indeed for the same role). Tracker chips **Applied / Interview / Offer / Rejected** filter and count by that progress (latest timeline step, or `applied_at` / flat applied-like status when there is no timeline), not exclusively by the `status` field — so an Unsuitable card with an interview step still appears under Interview, with the overlay pill still visible. **Got interview** is a lookback chip: any job that ever reached Invite / a round / Offer, including ones later marked Rejected or a side overlay. Applied→Rejected with no interview step stays on Rejected only. Overlay chips still filter by the side-status field.
 
@@ -295,7 +300,7 @@ AI `special_match` / `special_match_reasons` are still written by the matcher fo
 
 **Tracker company history:** `GET /api/jobs` (and `GET /api/jobs/<id>`) attach `company_history` / `company_history_total` to each job: the other `matched_jobs` rows with the same company (case-insensitive exact match, one query per page). Cards show a "N× before" pill and, when expanded, a "seen this company before" box with each earlier job's outcome (Rejected / Applied · no reply yet / Interview / Not Applied / side status). Clicking a company name sets the `company` list filter (`?company=`, exact match) and resets the other filters so every job at that company is listed.
 
-**Applicant position (LinkedIn):** `applicant_position` is a user-entered integer ("I was applicant #N when I applied"), saved with `PATCH /api/jobs/<id>/applicant-position`. It is separate from the scraped `applicants` text; scrapers and Log Job never write it.
+**Applicant position (LinkedIn):** `applicant_position` is a user-entered integer ("I was applicant #N when I applied"), saved with `PATCH /api/jobs/<id>/applicant-position`. It is separate from the scraped `applicants` text; scrapers and Log Job never write it. Tracker List shows `#N at apply` on the row when this is set, otherwise the scraped count.
 
 ---
 

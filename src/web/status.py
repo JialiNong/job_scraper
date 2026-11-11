@@ -157,6 +157,17 @@ def job_reached_interview(job: dict) -> bool:
     return status in ("interview", "offer")
 
 
+def job_reached_offer(job: dict) -> bool:
+    """True if the job ever reached an offer, even under a later overlay."""
+    raw = job.get("application_timeline")
+    if isinstance(raw, list) and raw:
+        return any(
+            isinstance(item, dict) and item.get("step") == "offer"
+            for item in raw
+        )
+    return (job.get("status") or "") == "offer"
+
+
 def application_progress(job: dict) -> Optional[str]:
     """
     Application stage for Tracker chips: applied / interview / rejected / offer.

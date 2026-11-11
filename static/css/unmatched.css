@@ -24,6 +24,11 @@
 }
 .row-open:hover { border-color: var(--accent); }
 
+/* Open + status already fill the phone row; applicant count stays in details. */
+@container jobrow (max-width: 720px) {
+  .row-sub .row-applicants { display: none; }
+}
+
 .reason-box {
   background: color-mix(in srgb, var(--danger) 8%, var(--surface));
   border: 1px solid color-mix(in srgb, var(--danger) 30%, transparent);

@@ -192,8 +192,9 @@
         <span class="rail-total" id="f-clicked">–</span>
         <span class="rail-total-label">jobs opened after the title check. The bar below is all of them, to scale.</span>
       </div>
-      <!-- To scale: each part's width is its share of all opened jobs.
-           Applied sits inside AI matched (every applied job was matched). -->
+      <!-- To scale: volume parts are a share of opened jobs. Applied sits
+           inside AI matched; Got interview inside Applied; Offer inside
+           Got interview. Interview and Offer rates are of Applied. -->
       <div class="rail-bar" id="railBar">
         <div class="seg seg-german" data-key="german">
           <div class="seg-label"><span class="funnel-num" id="f-german">–</span><span class="funnel-label">Skipped, not in English</span><span class="funnel-pct" id="fp-german"></span></div>
@@ -205,6 +206,12 @@
           <div class="seg-label"><span class="funnel-num" id="f-matched">–</span><span class="funnel-label">AI matched</span><span class="funnel-pct" id="fp-matched"></span></div>
           <div class="seg seg-applied" data-key="applied">
             <div class="seg-label"><span class="funnel-num" id="f-applied">–</span><span class="funnel-label">Applied (incl. rejected)</span><span class="funnel-pct" id="fp-applied"></span></div>
+            <div class="seg seg-interview" data-key="interview" title="Invite, a round, or offer — including jobs later marked rejected">
+              <div class="seg-label"><span class="funnel-num" id="f-interview">–</span><span class="funnel-label">Got interview</span><span class="funnel-pct" id="fp-interview"></span></div>
+              <div class="seg seg-offer" data-key="offer">
+                <div class="seg-label"><span class="funnel-num" id="f-offer">–</span><span class="funnel-label">Offer</span><span class="funnel-pct" id="fp-offer"></span></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

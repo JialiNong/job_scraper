@@ -203,42 +203,42 @@ async function loadStats() {
       }
     });
 
-    // Funnel (new)
-    if (data.funnel) {
-      document.getElementById('f-clicked').textContent = data.funnel.title_clicked;
-      document.getElementById('f-german').textContent  = data.funnel.german_filtered;
-      document.getElementById('f-matched').textContent = data.funnel.ai_matched;
-      document.getElementById('f-applied').textContent = data.funnel.applied;
-      sizeFunnelRail(data.funnel);
-    }
+    if (data.funnel) sizeFunnelRail(data.funnel);
   } catch (_) {}
 }
 
 /* Pipeline rail: one bar, to scale, where the full width is every opened job.
-   Parts: not in English | in English, not matched | AI matched (Applied inside it).
-   Every percentage is a share of all opened jobs, same as the widths. */
+   Parts: not in English | in English, not matched | AI matched
+   (Applied inside it, Got interview inside Applied, Offer inside interview).
+   Volume slices (through Applied) are a share of opened jobs. Got interview
+   and Offer are conversion from Applied, not from opened. Offer stays at 0. */
 function sizeFunnelRail(funnel) {
   const opened = Number(funnel.title_clicked) || 0;
   const german = Number(funnel.german_filtered) || 0;
   const matched = Number(funnel.ai_matched) || 0;
-  const applied = Math.min(Number(funnel.applied) || 0, matched);
+  const applied = Number(funnel.applied) || 0;
+  const appliedSlice = Math.min(applied, matched);
+  const interviewed = Math.min(Number(funnel.interviewed) || 0, applied);
+  const offer = Math.min(Number(funnel.offer) || 0, applied);
   // Manually logged / API jobs can push "matched" past the English count:
   // clamp so the parts never go negative, and scale to their sum.
   const englishRest = Math.max(opened - german - matched, 0);
   const total = german + englishRest + matched;
 
   const fmt = (n) => n.toLocaleString('en-US');
-  const pct = (n) => {
-    if (!total) return '';
-    const p = (n / total) * 100;
-    return `${p > 0 && p < 10 ? p.toFixed(1) : Math.round(p)}% of opened`;
+  const pctOf = (n, of, unit) => {
+    if (!of) return `0% of ${unit}`;
+    const p = (n / of) * 100;
+    return `${p > 0 && p < 10 ? p.toFixed(1) : Math.round(p)}% of ${unit}`;
   };
   const set = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
   set('f-clicked', fmt(opened));
-  set('f-german', fmt(german));      set('fp-german', pct(german));
-  set('f-english', fmt(englishRest)); set('fp-english', pct(englishRest));
-  set('f-matched', fmt(matched));    set('fp-matched', pct(matched));
-  set('f-applied', fmt(applied));    set('fp-applied', pct(applied));
+  set('f-german', fmt(german));      set('fp-german', pctOf(german, total, 'opened'));
+  set('f-english', fmt(englishRest)); set('fp-english', pctOf(englishRest, total, 'opened'));
+  set('f-matched', fmt(matched));    set('fp-matched', pctOf(matched, total, 'opened'));
+  set('f-applied', fmt(applied));    set('fp-applied', pctOf(applied, total, 'opened'));
+  set('f-interview', fmt(interviewed)); set('fp-interview', pctOf(interviewed, applied, 'applied'));
+  set('f-offer', fmt(offer));        set('fp-offer', pctOf(offer, applied, 'applied'));
 
   const bar = document.getElementById('railBar');
   if (!bar) return;
@@ -247,41 +247,54 @@ function sizeFunnelRail(funnel) {
   seg('german').style.width = share(german, total);
   seg('english').style.width = share(englishRest, total);
   seg('matched').style.width = share(matched, total);
-  // Applied is drawn inside the matched part, so its width is relative to matched
-  seg('applied').style.width = share(applied, matched);
-  ['german', 'english', 'matched', 'applied'].forEach(key => {
-    const n = { german, english: englishRest, matched, applied }[key];
-    seg(key).hidden = n === 0;
+  // Applied is a slice of matched. Interview fills Applied by interviewed/applied.
+  // Offer sits inside interview (subset), but its % label is still of Applied.
+  seg('applied').style.width = share(appliedSlice, matched);
+  seg('interview').style.width = share(interviewed, appliedSlice || applied);
+  seg('offer').style.width = share(offer, interviewed);
+  const counts = { german, english: englishRest, matched, applied: appliedSlice, interview: interviewed, offer };
+  ['german', 'english', 'matched', 'applied', 'interview', 'offer'].forEach(key => {
+    seg(key).hidden = counts[key] === 0;
   });
   requestAnimationFrame(placeRailLabels);
 }
 
-/* A part too narrow for its text shows the text under the bar instead */
+function appendRailOutside(seg, outside) {
+  const label = seg.querySelector(':scope > .seg-label');
+  if (!label) return;
+  const item = document.createElement('div');
+  item.className = `rail-out rail-out-${seg.dataset.key}`;
+  const clone = label.cloneNode(true);
+  clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+  item.innerHTML = '<span class="sw"></span>';
+  item.append(...clone.childNodes);
+  outside.appendChild(item);
+}
+
+/* A part too narrow for its text shows the text under the bar instead.
+   Offer is always listed, even at 0, so the slot is reserved. */
 function placeRailLabels() {
   const bar = document.getElementById('railBar');
   const outside = document.getElementById('railOutside');
   if (!bar || !outside) return;
   outside.innerHTML = '';
   bar.querySelectorAll('.seg').forEach(s => s.classList.remove('narrow'));
+  const compact = window.matchMedia('(max-width: 760px)').matches;
   bar.querySelectorAll('.seg').forEach(s => {
     if (s.hidden) return;
     const label = s.querySelector(':scope > .seg-label');
-    // Room for the label: the part's width, minus the Applied block nested in it
     const inner = s.querySelector(':scope > .seg');
     const room = s.clientWidth - (inner && !inner.hidden ? inner.offsetWidth : 0);
-    const need = Math.max(...[...label.children].map(c => c.offsetWidth)) + 24; // + label padding
-    // Phone: bar is a thin strip; labels always sit underneath.
-    const compact = window.matchMedia('(max-width: 760px)').matches;
+    const need = Math.max(...[...label.children].map(c => c.offsetWidth)) + 24;
     if (!compact && need <= room) return;
     s.classList.add('narrow');
-    const item = document.createElement('div');
-    item.className = `rail-out rail-out-${s.dataset.key}`;
-    const clone = label.cloneNode(true);
-    clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
-    item.innerHTML = '<span class="sw"></span>';
-    item.append(...clone.childNodes);
-    outside.appendChild(item);
+    appendRailOutside(s, outside);
   });
+  const offerSeg = bar.querySelector('.seg[data-key="offer"]');
+  if (offerSeg && offerSeg.hidden) {
+    offerSeg.classList.add('narrow');
+    appendRailOutside(offerSeg, outside);
+  }
 }
 
 // Web fonts change text widths once they arrive
@@ -1412,6 +1425,38 @@ function jobViaText(job) {
   return '';
 }
 
+function formatApplicantsLabel(raw) {
+  const text = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const first = text.match(
+    /be among the first\s+([\d,]+)\s+applicants?|sei unter den ersten\s+([\d,]+)|geh[öo]ren sie zu den ersten\s+([\d,]+)/i
+  );
+  if (first) return `first ${first[1] || first[2] || first[3]}`;
+  if (/be an early applicant/i.test(text)) return 'early applicant';
+  const over = text.match(/(?:over|über)\s+([\d,]+)\+?\s+(?:applicants?|bewerber(?:innen)?)/i);
+  if (over) return `${over[1]}+ applicants`;
+  const n = text.match(/([\d,]+)\+?\s+(?:applicants?|bewerber(?:innen)?)/i);
+  if (n) return `${n[1]} applicants`;
+  if (/applicant|bewerber/i.test(text) && text.length <= 48) return text;
+  return '';
+}
+
+function rowApplicantsHtml(job) {
+  const pos = job.applicant_position;
+  const scraped = formatApplicantsLabel(job.applicants);
+  const label = pos ? `#${pos} at apply` : scraped;
+  const title = pos
+    ? `You were roughly applicant #${pos} when you applied`
+    : (scraped ? 'Applicant count when the job was scraped' : '');
+  return `<span class="row-applicants" data-row-applicants title="${escHtml(title)}"${label ? '' : ' hidden'}>${escHtml(label)}</span>`;
+}
+
+function applicantsMetaPillHtml(job) {
+  const label = formatApplicantsLabel(job.applicants);
+  if (!label) return '';
+  return `<span class="meta-pill" title="Applicant count when the job was scraped">${escHtml(label)}</span>`;
+}
+
 function rowSubHtml(job) {
   const viaText = jobViaText(job);
   const history = Array.isArray(job.company_history) ? job.company_history : [];
@@ -1427,6 +1472,7 @@ function rowSubHtml(job) {
           <span class="row-company">${escHtml(job.company || '')}</span>
           <span class="row-loc" title="${escHtml(job.location || '')}">${escHtml(job.location || '')}</span>
           ${viaText ? `<span class="row-via">via ${escHtml(viaText)}</span>` : ''}
+          ${rowApplicantsHtml(job)}
           ${seen}
         </div>`;
 }
@@ -1572,6 +1618,16 @@ function setApplicantPositionUI(id, value) {
     pill.textContent = value ? `#${value} at apply` : '';
     pill.title = value ? `You were roughly applicant #${value} when you applied` : '';
   }
+  const row = card.querySelector('[data-row-applicants]');
+  if (row) {
+    const scraped = formatApplicantsLabel(card.dataset.applicants || '');
+    const label = value ? `#${value} at apply` : scraped;
+    row.hidden = !label;
+    row.textContent = label || '';
+    row.title = value
+      ? `You were roughly applicant #${value} when you applied`
+      : (scraped ? 'Applicant count when the job was scraped' : '');
+  }
 }
 
 async function saveApplicantPosition(id, btn) {
@@ -1642,6 +1698,7 @@ function renderCard(job) {
     + ' has-fetch-select'
     + (isSelected ? ' fetch-selected' : '');
   card.id = `card-${job._id}`;
+  card.dataset.applicants = job.applicants || '';
 
   card.innerHTML = `
     ${selectBox}
@@ -1699,7 +1756,7 @@ function renderCard(job) {
         ${recBadge}
         ${job.matched_at ? `<span class="meta-pill" title="Matched on">Matched ${job.matched_at}</span>` : ''}
         ${postedPillHtml(job)}
-        ${job.applicants ? `<span class="meta-pill" title="Applicant count when the job was scraped">Applicants: ${escHtml(job.applicants)}</span>` : ''}
+        ${applicantsMetaPillHtml(job)}
         ${applicantPosPillHtml(job)}
       </div>
 

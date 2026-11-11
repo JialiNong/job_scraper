@@ -365,6 +365,34 @@ function rowViaHtml(job, extraClass) {
   return `<span class="${cls}">via ${escHtml(label)}</span>`;
 }
 
+function formatApplicantsLabel(raw) {
+  const text = String(raw || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const first = text.match(
+    /be among the first\s+([\d,]+)\s+applicants?|sei unter den ersten\s+([\d,]+)|geh[öo]ren sie zu den ersten\s+([\d,]+)/i
+  );
+  if (first) return `first ${first[1] || first[2] || first[3]}`;
+  if (/be an early applicant/i.test(text)) return 'early applicant';
+  const over = text.match(/(?:over|über)\s+([\d,]+)\+?\s+(?:applicants?|bewerber(?:innen)?)/i);
+  if (over) return `${over[1]}+ applicants`;
+  const n = text.match(/([\d,]+)\+?\s+(?:applicants?|bewerber(?:innen)?)/i);
+  if (n) return `${n[1]} applicants`;
+  if (/applicant|bewerber/i.test(text) && text.length <= 48) return text;
+  return '';
+}
+
+function rowApplicantsHtml(job) {
+  const label = formatApplicantsLabel(job.applicants);
+  if (!label) return '';
+  return `<span class="row-applicants" title="Applicant count when the job was scraped">${escHtml(label)}</span>`;
+}
+
+function applicantsMetaPillHtml(job) {
+  const label = formatApplicantsLabel(job.applicants);
+  if (!label) return '';
+  return `<span class="meta-pill" title="Applicant count when the job was scraped">${escHtml(label)}</span>`;
+}
+
 const GATE_PILLS = {
   german: 'German',
   stack: 'Backend',
@@ -417,6 +445,7 @@ function renderCard(job) {
           <span class="row-company">${escHtml(job.company || '')}</span>
           ${job.location ? `<span class="row-loc" title="${escHtml(job.location)}">${escHtml(job.location)}</span>` : ''}
           ${rowViaHtml(job)}
+          ${rowApplicantsHtml(job)}
         </div>
       </div>
       <div class="row-meta">
@@ -442,6 +471,7 @@ function renderCard(job) {
         ${gatePill}
         ${job.matched_at ? `<span class="meta-pill" title="Matched on">Matched ${escHtml(job.matched_at)}</span>` : ''}
         ${postedPillHtml(job)}
+        ${applicantsMetaPillHtml(job)}
         ${job.recommendation ? `<span class="meta-pill">${escHtml(job.recommendation)}</span>` : ''}
       </div>
 

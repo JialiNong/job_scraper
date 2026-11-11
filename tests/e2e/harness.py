@@ -118,10 +118,11 @@ def seed(db):
         db.drop_collection(name)
     yesterday = datetime.now() - timedelta(days=1)
     db.matched_jobs.insert_many([
-        _matched(PENDING_ID, "Backend Engineer", "Acme"),
+        _matched(PENDING_ID, "Backend Engineer", "Acme", applicants="Be among the first 25 applicants"),
         _matched(APPLIED_ID, "Node.js Developer", "Globex", status="applied", applied_at=yesterday,
-                 application_timeline=[{"step": "applied", "at": yesterday}]),
-        _matched(DELETE_ID, "Platform Engineer", "Initech"),
+                 application_timeline=[{"step": "applied", "at": yesterday}],
+                 applicants="47 applicants", applicant_position=12),
+        _matched(DELETE_ID, "Platform Engineer", "Initech", applicants="Over 200 applicants"),
     ])
     db.jobs.insert_many([
         {"job_id": "4100000003", "source": "linkedin", "title": "Platform Engineer", "company": "Initech"},
@@ -130,7 +131,7 @@ def seed(db):
          "link": "https://www.linkedin.com/jobs/view/4200000001/",
          "description": "Java and Spring required.", "match_score": 4.0,
          "matched_at": datetime.now(), "disqualification_reason": "Java backend required",
-         "summary": "Java role"},
+         "summary": "Java role", "applicants": "80 applicants"},
     ])
     db.timeout_jobs.insert_one({
         "_id": TIMEOUT_ID, "job_id": "4300000001", "source": "linkedin", "title": "Frontend Engineer",
