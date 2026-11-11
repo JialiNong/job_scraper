@@ -67,6 +67,20 @@ class StoredJdUsableTests(unittest.TestCase):
     def test_empty_jd_is_not_usable(self):
         self.assertFalse(mas.stored_jd_usable(_doc(description="")))
 
+    def test_replaced_link_stale_jd_is_not_usable(self):
+        from datetime import datetime
+        self.assertFalse(mas.stored_jd_usable(_doc(
+            details_fetched_at=datetime(2026, 10, 1),
+            link_replaced_at=datetime(2026, 11, 11),
+        )))
+
+    def test_fetched_after_replace_is_usable(self):
+        from datetime import datetime
+        self.assertTrue(mas.stored_jd_usable(_doc(
+            details_fetched_at=datetime(2026, 11, 11, 12, 0),
+            link_replaced_at=datetime(2026, 11, 11, 11, 0),
+        )))
+
 
 class TrackerJobUrlTests(unittest.TestCase):
     def test_relative_linkedin_link_uses_canonical_url(self):

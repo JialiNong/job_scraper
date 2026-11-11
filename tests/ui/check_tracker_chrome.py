@@ -106,6 +106,7 @@ def js_metrics(page):
         timeoutsSelect: selectStyle('.toolbar select'),
         sideSelect: selectStyle('.status-side-select'),
         applicantPosInput: selectStyle('.card.expanded .applicant-pos-input'),
+        replaceLinkInput: selectStyle('.card.expanded .replace-link-input'),
         headerScore: [...document.querySelectorAll(
           '.card.expanded .card-header .score-badge, .card.expanded .card-header .score-ring'
         )].filter(el => getComputedStyle(el).display !== 'none').length,
@@ -467,6 +468,10 @@ def run_phone(page, base, run: Runner):
     run.check("phone details: applicant # input uses --phone-ctrl-h",
               ap_input.get("h") == PHONE_CTRL_H,
               f"input={ap_input}")
+    rl_input = m.get("replaceLinkInput") or {}
+    run.check("phone details: replace-link input uses --phone-ctrl-h",
+              rl_input.get("h") == PHONE_CTRL_H,
+              f"input={rl_input}")
     page.locator(".card.expanded .ai-local").scroll_into_view_if_needed()
     page.wait_for_timeout(150)
     run.shot(page, "phone-details-ai.png")

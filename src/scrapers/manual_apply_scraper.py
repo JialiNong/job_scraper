@@ -74,6 +74,7 @@ from core.manual_log import (
     get_tracker_job,
     handle_existing_tracker,
     keep_manual_identity,
+    link_needs_refetch,
     mark_tracker_job_applied,
     normalize_manual_identity,
     reuse_saved_posting,
@@ -987,10 +988,11 @@ def fetch_job_details_for_matched_job(matched_doc: dict) -> dict:
         _fill_identity_from_description(job)
         if not job.get("title"):
             job["title"] = matched_doc.get("title") or ""
-        if not job.get("job_id"):
-            job["job_id"] = matched_doc.get("job_id")
-        if not job.get("source"):
-            job["source"] = matched_doc.get("source")
+        # Stay on this Tracker row even if the (replaced) page hashes to a new id.
+        job["job_id"] = matched_doc.get("job_id") or job.get("job_id")
+        job["source"] = matched_doc.get("source") or job.get("source")
+        if not str(job.get("link") or "").startswith("http"):
+            job["link"] = url
 
         saved = apply_scraped_details(job)
         if not saved.get("ok"):
@@ -1018,6 +1020,8 @@ def stored_jd_usable(matched_doc: dict | None) -> bool:
         return False
     description = str(doc.get("description") or "")
     if not description.strip():
+        return False
+    if link_needs_refetch(doc):
         return False
     from core.scraper_utils import assess_job_description
     assessment = assess_job_description(

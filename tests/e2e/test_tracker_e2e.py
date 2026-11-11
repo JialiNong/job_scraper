@@ -194,6 +194,30 @@ class TrackerE2E(unittest.TestCase):
         card.locator(".info-save-btn").click()
         wait_for(lambda: self.job(PENDING_ID)["title"] == "Senior Backend Engineer", "title saved")
 
+    def test_replace_posting_link(self):
+        pending = self.job(PENDING_ID)
+        self.db.jobs.insert_one({
+            "job_id": pending["job_id"],
+            "source": "linkedin",
+            "title": pending["title"],
+            "link": pending["link"],
+        })
+        self.open_card(PENDING_ID)
+        new_url = "https://jobs.ashbyhq.com/acme/0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b"
+        card = self.page.locator(f"#card-{PENDING_ID}")
+        card.locator(".replace-link-input").fill(new_url)
+        card.locator(".replace-link-wrap .btn-save").click()
+        wait_for(lambda: self.job(PENDING_ID)["source"] == "manual", "source = manual")
+        job = self.job(PENDING_ID)
+        self.assertEqual(job["link"], new_url)
+        self.assertIsNotNone(job.get("link_replaced_at"))
+        self.assertEqual(job.get("posting_key"), "ashby:0f1e2d3c-4b5a-6978-8a9b-0c1d2e3f4a5b")
+        twin = self.db.jobs.find_one({"job_id": job["job_id"], "source": "manual"})
+        self.assertIsNotNone(twin)
+        self.assertEqual(twin["link"], new_url)
+        expect(card.locator(".btn-apply")).to_have_attribute("href", new_url)
+        expect(card.locator(".btn-fetch-details")).to_be_visible()
+
     def test_delete_card_removes_matched_and_jobs_docs(self):
         self.open_card(DELETE_ID)
         self.page.click(f"#card-{DELETE_ID} .delete-job-btn")

@@ -211,6 +211,37 @@ class FetchDetailsTests(unittest.TestCase):
         ai.assert_not_called()
         save.assert_called_once()
 
+    def test_fetch_keeps_this_tracker_row_identity(self):
+        import scrapers.manual_apply_scraper as mas
+
+        scraped = {
+            "job_id": "other-hash",
+            "source": "manual",
+            "title": "Backend Engineer",
+            "company": "Acme",
+            "location": "Berlin",
+            "description": "Build things.",
+            "link": "https://acme.com/jobs/1",
+        }
+        page = MagicMock()
+        browser = MagicMock()
+        browser.contexts = [MagicMock(pages=[page])]
+        fake_pw = MagicMock()
+        fake_pw.return_value.__enter__.return_value = MagicMock()
+        fake_pw.return_value.__exit__.return_value = False
+
+        with patch.object(mas, "_load_playwright", return_value=(fake_pw, Exception)), patch(
+            "core.scraper_utils.connect_browser", return_value=browser
+        ), patch.object(mas, "scrape_job_page", return_value=scraped), patch.object(
+            mas, "apply_scraped_details", return_value={"ok": True, "error": None}
+        ) as save:
+            result = mas.fetch_job_details_for_matched_job(_agent_job())
+
+        self.assertTrue(result["ok"])
+        saved_job = save.call_args[0][0]
+        self.assertEqual(saved_job["job_id"], JOB_KEY)
+        self.assertEqual(saved_job["source"], "indeed")
+
     def test_fetch_allows_untagged_link_only_stub(self):
         import scrapers.manual_apply_scraper as mas
 

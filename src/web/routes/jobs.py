@@ -5,7 +5,9 @@ from bson import ObjectId
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
 
-from core.db_mongo import get_collection
+from core.db_mongo import get_collection, lookup_known_job
+from core.job_url import replacement_link_fields
+from core.manual_log import can_fetch_details
 from core.scraper_utils import indeed_job_id_variants
 from web.chrome_tasks import _fetch_batch_state, parse_batch_job_oids
 from web.list_query import JOBS_LIST_PROJECTION, _jobs_list_query_from_args
@@ -275,6 +277,93 @@ def api_update_applicant_position(job_id: str):
     if result.matched_count == 0:
         return jsonify({"error": "Job not found"}), 404
     return jsonify({"ok": True, "applicant_position": value})
+
+
+@bp.route("/api/jobs/<job_id>/link", methods=["PATCH"])
+@login_required
+def api_replace_job_link(job_id: str):
+    """
+    Replace the posting URL on a Tracker card.
+
+    Used when the original link is closed but the same (or a similar) role
+    is still on the company page. Updates link / source / job_id / posting_key
+    on matched_jobs and the twin jobs row so Fetch details can scrape the
+    new page. Does not scrape here.
+    """
+    data = request.get_json(silent=True) or {}
+    fields, error = replacement_link_fields(data.get("link") or data.get("url") or "")
+    if error:
+        return jsonify({"error": error}), 400
+
+    try:
+        oid = ObjectId(job_id)
+    except Exception:
+        return jsonify({"error": "Invalid job ID"}), 400
+
+    matched_col = get_collection("matched_jobs")
+    doc = matched_col.find_one({"_id": oid})
+    if not doc:
+        return jsonify({"error": "Job not found"}), 404
+
+    same_link = (doc.get("link") or "").strip() == fields["link"]
+    same_id = str(doc.get("job_id") or "") == fields["job_id"]
+    same_source = str(doc.get("source") or "") == fields["source"]
+    if same_link and same_id and same_source:
+        return jsonify({
+            "ok": True,
+            "unchanged": True,
+            "link": fields["link"],
+            "source": fields["source"],
+            "job_id": fields["job_id"],
+        }), 200
+
+    hit = lookup_known_job(fields["job_id"], fields["source"], link=fields["link"])
+    if hit and hit.get("_id") and hit["_id"] != str(oid):
+        title = (hit.get("title") or "another job").strip() or "another job"
+        if hit.get("on_tracker"):
+            msg = f"Already on Tracker as {title}"
+        else:
+            msg = f"This URL is already stored as another job ({title})"
+        return jsonify({"error": msg}), 409
+
+    now = datetime.utcnow()
+    set_fields = {
+        "link": fields["link"],
+        "source": fields["source"],
+        "job_id": fields["job_id"],
+        "link_replaced_at": now,
+        "updated_at": now,
+    }
+    update = {"$set": set_fields}
+    if fields.get("posting_key"):
+        set_fields["posting_key"] = fields["posting_key"]
+    else:
+        update["$unset"] = {"posting_key": ""}
+
+    result = matched_col.update_one({"_id": oid}, update)
+    if result.matched_count == 0:
+        return jsonify({"error": "Job not found"}), 404
+
+    old_job_id = doc.get("job_id") or ""
+    old_source = doc.get("source") or ""
+    if old_job_id and old_source:
+        jobs_col = get_collection("jobs")
+        if old_source == "indeed":
+            variants = indeed_job_id_variants(old_job_id) or [old_job_id]
+            jobs_query = {"job_id": {"$in": variants}, "source": "indeed"}
+        else:
+            jobs_query = {"job_id": old_job_id, "source": old_source}
+        jobs_col.update_many(jobs_query, update)
+
+    merged = {**doc, **set_fields}
+    return jsonify({
+        "ok": True,
+        "unchanged": False,
+        "link": fields["link"],
+        "source": fields["source"],
+        "job_id": fields["job_id"],
+        "can_fetch_details": can_fetch_details(merged),
+    })
 
 
 @bp.route("/api/jobs/<job_id>/info", methods=["PATCH"])

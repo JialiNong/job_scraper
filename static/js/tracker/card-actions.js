@@ -1,5 +1,72 @@
-/* Tracker card actions: notes, highlights, Q&A, edit info, delete one card.
+/* Tracker card actions: notes, highlights, Q&A, edit info, replace link, delete.
    Classic script — functions stay global. Loaded before index.js. */
+
+function renderReplaceLinkBlock(job) {
+  const id = job._id;
+  const link = String(job.link || '');
+  return `
+    <div class="replace-link-wrap" data-id="${id}" onclick="event.stopPropagation()">
+      <div class="panel-heading">Replace posting link</div>
+      <div class="rl-row">
+        <input type="text" class="replace-link-input" inputmode="url" autocomplete="off" spellcheck="false"
+               aria-label="Replacement job URL" value="${escHtml(link)}"
+               placeholder="https://company.com/jobs/…"
+               onkeydown="if(event.key==='Enter'){event.preventDefault();saveReplaceLink(this);}" />
+        <button type="button" class="btn-save" onclick="saveReplaceLink(this)">Save</button>
+      </div>
+      <span class="rl-hint">If the original posting is closed, paste the live company-page URL, save, then Fetch job details.</span>
+    </div>`;
+}
+
+async function saveReplaceLink(el) {
+  const wrap = el && el.closest ? el.closest('.replace-link-wrap') : null;
+  if (!wrap) return;
+  const id = wrap.dataset.id;
+  const input = wrap.querySelector('.replace-link-input');
+  const btn = wrap.querySelector('.btn-save');
+  const raw = ((input && input.value) || '').trim();
+  if (!raw) {
+    showToast('Paste a job URL', 'err');
+    if (input) input.focus();
+    return;
+  }
+  if (btn) {
+    btn.disabled = true;
+    btn.textContent = '⏳';
+  }
+  try {
+    const res = await fetch(`/api/jobs/${id}/link`, {
+      method: 'PATCH',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ link: raw }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    if (btn) {
+      btn.textContent = 'Saved ✓';
+      setTimeout(() => { if (btn.textContent === 'Saved ✓') btn.textContent = 'Save'; }, 2000);
+    }
+    showToast(data.unchanged
+      ? 'Link is already this URL'
+      : 'Link updated — Fetch job details to scrape the new page');
+    try {
+      const jobRes = await fetch(`/api/jobs/${id}`);
+      if (jobRes.ok) {
+        const job = await jobRes.json();
+        const old = document.getElementById(`card-${id}`);
+        const wasExpanded = old && old.classList.contains('expanded');
+        const fresh = renderCard(job);
+        if (wasExpanded) fresh.classList.add('expanded');
+        if (old) old.replaceWith(fresh);
+      }
+    } catch (_) {}
+  } catch (err) {
+    showToast('' + (err.message || 'Update failed'), 'err');
+    if (btn) btn.textContent = 'Save';
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
 /* ── Save notes ──────────────────────────────────────────────────── */
 async function saveNotes(btn) {
   const id    = btn.dataset.id;

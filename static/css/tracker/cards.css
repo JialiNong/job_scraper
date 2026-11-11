@@ -783,6 +783,33 @@
 }
 .applicant-pos-wrap .ap-hint { color: var(--muted); font-size: .72rem; }
 
+/* ── Replace posting link (dead URL → live company page) ─────────── */
+.replace-link-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  font-size: .78rem;
+}
+.replace-link-wrap .rl-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.replace-link-wrap .rl-row .btn-save { align-self: center; flex: none; }
+.replace-link-wrap .replace-link-input {
+  flex: 1 1 180px;
+  min-width: 0;
+  padding: 5px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+.replace-link-wrap .rl-hint { color: var(--muted); font-size: .72rem; }
+
 /* Tracker details: full AI summary next to the score (Unmatched is also unclamped) */
 .card-summary {
   overflow: visible;

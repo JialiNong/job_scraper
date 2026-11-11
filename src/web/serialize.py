@@ -109,6 +109,10 @@ def _normalize_link(job: dict) -> str:
     source = job.get("source", "")
 
     if source == "linkedin":
+        # A replaced company-page URL is stored as an absolute non-LinkedIn
+        # link; keep it so Apply / Fetch details do not reopen the dead post.
+        if str(link).startswith("http") and "linkedin.com" not in str(link).lower():
+            return link
         job_id = job.get("job_id", "")
         if job_id:
             # Always use the canonical LinkedIn job URL
@@ -130,6 +134,7 @@ def _serialize(job: dict) -> dict:
         "updated_at",
         "description_cleared_at",
         "details_fetched_at",
+        "link_replaced_at",
     ):
         if key in job and isinstance(job[key], datetime):
             job[key] = job[key].strftime("%Y-%m-%d %H:%M")

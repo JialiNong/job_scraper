@@ -107,9 +107,29 @@ def job_missing_details(job: dict | None) -> bool:
     return not str(job.get("summary") or "").strip()
 
 
+def link_needs_refetch(job: dict | None) -> bool:
+    """True when the posting URL was replaced after the last details fetch."""
+    job = job or {}
+    replaced = job.get("link_replaced_at")
+    if not replaced:
+        return False
+    fetched = job.get("details_fetched_at")
+    if not fetched:
+        return True
+    try:
+        return replaced > fetched
+    except TypeError:
+        return True
+
+
 def can_fetch_details(job: dict | None) -> bool:
-    """Show Fetch details / batch checkbox: missing JD, or agent-tagged."""
-    return job_missing_details(job) or is_agent_recommended(job)
+    """Show Fetch details: missing JD, agent-tagged, or a replaced posting URL."""
+    job = job or {}
+    return (
+        job_missing_details(job)
+        or is_agent_recommended(job)
+        or link_needs_refetch(job)
+    )
 
 
 def tracker_needs_scrape(job: dict | None) -> bool:

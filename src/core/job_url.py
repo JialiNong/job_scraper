@@ -255,6 +255,30 @@ def canonical_job_link(url: str, source: str = "", job_id: str = "") -> str:
     return canonicalize_url(url) if url else ""
 
 
+def replacement_link_fields(raw_url: str) -> tuple[dict | None, str | None]:
+    """
+    Parse a pasted replacement URL into Tracker identity fields.
+
+    Returns ({link, source, job_id, posting_key?}, None) or (None, error).
+    Expand Indeed short links the same way Log Job does. Does not write Mongo.
+    """
+    url = expand_short_job_url(normalize_pasted_job_url(raw_url))
+    if not url:
+        return None, "Paste a job URL"
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").strip()
+    if parsed.scheme not in ("http", "https") or not host:
+        return None, "Paste a full job URL (https://…)"
+    source = detect_source(url)
+    job_id = resolve_job_id(url, source)
+    if not job_id:
+        return None, "Could not parse a job id from this URL"
+    link = canonical_job_link(url, source, job_id)
+    fields = {"link": link, "source": source, "job_id": job_id}
+    fields.update(posting_key_fields(link))
+    return fields, None
+
+
 def link_only_job_title(url: str, source: str = "", job_id: str = "") -> str:
     source = source or detect_source(url)
     job_id = job_id or (resolve_job_id(url, source) or "")

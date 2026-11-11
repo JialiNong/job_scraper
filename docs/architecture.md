@@ -300,7 +300,9 @@ AI `special_match` / `special_match_reasons` are still written by the matcher fo
 
 **Tracker company history:** `GET /api/jobs` (and `GET /api/jobs/<id>`) attach `company_history` / `company_history_total` to each job: the other `matched_jobs` rows with the same company (case-insensitive exact match, one query per page). Cards show a "N× before" pill and, when expanded, a "seen this company before" box with each earlier job's outcome (Rejected / Applied · no reply yet / Interview / Not Applied / side status). Clicking a company name adds it as a chip in the search box (`?company=`, exact match, OR if several). The first chip resets the other filters so every job at that company is listed; later chips add companies. Each chip has its own ×. "Show all jobs at …" still opens a new tab with that one company.
 
-**Applicant position (LinkedIn):** `applicant_position` is a user-entered integer ("I was applicant #N when I applied"), saved with `PATCH /api/jobs/<id>/applicant-position`. It is separate from the scraped `applicants` text; scrapers and Log Job never write it. On the details sheet it sits in Application progress, above Notes (filled at apply time). Tracker List shows `#N at apply` on the row when this is set, otherwise the scraped count.
+**Applicant position (LinkedIn):** `applicant_position` is a user-entered integer ("I was applicant #N when I applied"), saved with `PATCH /api/jobs/<id>/applicant-position`. It is separate from the scraped `applicants` text; scrapers and Log Job never write it. On the details sheet it sits in Application progress, above Notes (filled at apply time). Tracker List shows `#N at apply` on the row when this is set, otherwise the scraped count. After a posting-link replace that changes `source` off LinkedIn, the block still shows when a number is already saved.
+
+**Replace posting link:** when an original URL is closed (common on agent-recommended company pages) but the same role is still on the company site, the details sheet has a Replace posting link row (`PATCH /api/jobs/<id>/link`). Save updates `link` / `source` / `job_id` / `posting_key` on `matched_jobs` and the twin `jobs` row, stamps `link_replaced_at`, and does not scrape. Fetch job details then opens the new URL. Until details are fetched again, Run AI also scrapes that new page instead of the old stored JD. A URL already stored on another card is rejected (409). Notes, timeline, status, and `recommended_by` are kept.
 
 ---
 
@@ -326,7 +328,7 @@ job_scraper/
 │   │   │   └── tracker.py       # unmatched list, application counts, heatmap
 │   │   ├── applied_location.py  # Germany + Remote bubble labels (no Mongo)
 │   │   ├── country.py           # Tracker country (agent field or location guess) + filter query
-│   │   ├── job_url.py           # Log Job URL parse / Indeed jk= / stubs
+│   │   ├── job_url.py           # Log Job URL parse / Indeed jk= / stubs / replace-link fields
 │   │   ├── manual_log.py        # Save Link Only / stub save (no Playwright)
 │   │   ├── scraper_utils.py     # title gates, Lingua, CDP helpers
 │   │   ├── challenge_wait.py    # Indeed captcha detect + auto-continue / Telegram resume

@@ -266,7 +266,8 @@ function applicantPosPillHtml(job) {
 }
 
 function renderApplicantPositionBlock(job) {
-  if (String(job.source || '').toLowerCase() !== 'linkedin') return '';
+  const isLi = String(job.source || '').toLowerCase() === 'linkedin';
+  if (!isLi && !job.applicant_position) return '';
   const id = job._id;
   const scraped = job.applicants ? `When scraped: ${job.applicants}. ` : '';
   return `
@@ -443,6 +444,7 @@ function renderCard(job) {
       ${renderNotesBlock(job)}
       </div>
 
+      ${renderReplaceLinkBlock(job)}
       <div class="card-actions-row">
         <a class="btn-apply ${isAppliedLike(status, job.application_timeline) ? 'btn-applied' : ''}"
            href="${escHtml(job.link || '#')}" target="_blank" rel="noopener">

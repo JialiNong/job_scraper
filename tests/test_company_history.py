@@ -197,10 +197,11 @@ class TrackerUiTests(unittest.TestCase):
         progress = js.find("${renderProgressBlock(job)}")
         applicant = js.find("${renderApplicantPositionBlock(job)}")
         notes = js.find("${renderNotesBlock(job)}")
+        replace = js.find("${renderReplaceLinkBlock(job)}")
         agent = js.find("${renderAgentReason(job)}")
         local = js.find("${renderLocalAiBlock(")
         desc = js.find("${renderOriginalDescription(job)}")
-        self.assertTrue(0 < hist < progress < applicant < notes < agent < local < desc)
+        self.assertTrue(0 < hist < progress < applicant < notes < replace < agent < local < desc)
         self.assertNotIn("${countryPillHtml(job)}", js)
         header = js.split('class="card-header"', 1)[1].split("card-meta", 1)[0]
         self.assertNotIn("score-badge", header)
