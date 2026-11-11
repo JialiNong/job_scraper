@@ -70,7 +70,7 @@ flowchart TB
 
 The browser pipeline (LinkedIn / Indeed) has **no schedule**: it runs on demand from Telegram `/jobs` (or the same script from a shell) on the Mac.
 
-The **API sources pipeline** (Arbeitnow, Bundesagentur, company ATS boards; Adzuna opt-in; `src/sources/run_sources.py`) runs **daily on GitHub Actions** (`.github/workflows/api-sources.yml`, 06:00 UTC), with no Mac needed. It uses the same title / language gates and the same AI matcher, and sends its own Telegram summary + match cards. Full source list, setup and watchlist: [`job_sources.md`](./job_sources.md).
+The **API sources pipeline** (Arbeitnow, Bundesagentur, company ATS boards; Adzuna opt-in; `src/sources/run_sources.py`) runs **daily on GitHub Actions** (`.github/workflows/api-sources.yml`, 09:17 UTC / 10:17 Berlin in winter), with no Mac needed. It uses the same title / language gates and the same AI matcher, and sends its own Telegram summary + match cards. Full source list, setup and watchlist: [`job_sources.md`](./job_sources.md).
 
 | Command | What it does | Typical time |
 |---------|--------------|--------------|

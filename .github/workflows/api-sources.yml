@@ -11,8 +11,9 @@ name: API job sources
 
 on:
   schedule:
-    # 06:00 UTC = 07:00 Berlin in winter, 08:00 in summer
-    - cron: "0 6 * * *"
+    # 09:17 UTC = 10:17 Berlin in winter, 11:17 in summer.
+    # Offset from :00 — GitHub may skip top-of-hour schedules under load.
+    - cron: "17 9 * * *"
   workflow_dispatch:
     inputs:
       days:

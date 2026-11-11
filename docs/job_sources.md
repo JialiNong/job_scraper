@@ -11,7 +11,7 @@ There are **5 ways to get jobs**, plus 2 ways to rescue jobs the pipeline alread
 | # | Way | Sources | Runs where / when | Needs | `jobs.source` | Tracker `origin` |
 |---|-----|---------|-------------------|-------|---------------|------------------|
 | 1 | **Browser scrapers** | LinkedIn, Indeed | Your Mac, on demand (Telegram `/jobs` → `scripts/run_jobs.sh`) | Mac on, debug Chrome, sometimes an Indeed captcha | `linkedin`, `indeed` | `pipeline` |
-| 2 | **Public job APIs** | Arbeitnow, Bundesagentur für Arbeit (Adzuna: opt-in, paid) | GitHub Actions, **daily 06:00 UTC** (Mac can be off), or by hand | Nothing (Adzuna: paid key) | `arbeitnow`, `arbeitsagentur`, `adzuna` | `api` |
+| 2 | **Public job APIs** | Arbeitnow, Bundesagentur für Arbeit (Adzuna: opt-in, paid) | GitHub Actions, **daily 09:17 UTC** (10:17 Berlin in winter; Mac can be off), or by hand | Nothing (Adzuna: paid key) | `arbeitnow`, `arbeitsagentur`, `adzuna` | `api` |
 | 3 | **Company ATS boards** | Greenhouse, Lever, Ashby, Personio, Recruitee, Workable — for companies on the watchlist | Same daily GitHub Actions run | Watchlist `config/ats_companies.json` | `ats` (+ `ats_provider`, `ats_slug`) | `api` |
 | 4 | **Manual Log Job** | Any job URL you paste | Tracker web UI **Log Job**, or `src/scrapers/manual_apply_scraper.py` | — | `linkedin` / `indeed` / `manual` | `manual` |
 | 5 | **Agent push** | Jobs an AI agent (Claude, …) recommends | `POST /api/agent/jobs` (Render) or `scripts/tools/log_recommended_jobs.py` | `AGENT_API_TOKEN` | from the URL | `agent` |
@@ -108,7 +108,7 @@ Telegram gets one summary (`🌐 API sources done … • Arbeitnow: 259 listed,
 
 ## 4. Automatic daily run (no Mac needed)
 
-`.github/workflows/api-sources.yml` runs on GitHub's servers every day at 06:00 UTC (07:00 Berlin in winter). It runs `run_sources.py`, which writes to the same MongoDB Atlas database the Tracker on Render reads. You can also start it by hand: GitHub → **Actions → API job sources → Run workflow** (choose days / sources).
+`.github/workflows/api-sources.yml` runs on GitHub's servers every day at 09:17 UTC (10:17 Berlin in winter, 11:17 in summer — after morning postings, before afternoon applications). The `:17` offset avoids GitHub skipping top-of-hour schedules under load. It runs `run_sources.py`, which writes to the same MongoDB Atlas database the Tracker on Render reads. You can also start it by hand: GitHub → **Actions → API job sources → Run workflow** (choose days / sources).
 
 The LinkedIn / Indeed lane cannot run there (it needs your logged-in Chrome and sometimes a human for Indeed's captcha), so it stays on Telegram `/jobs` on the Mac.
 
@@ -145,7 +145,7 @@ The LinkedIn / Indeed lane cannot run there (it needs your logged-in Chrome and 
 
 - GitHub Actions: free for public repos; private repos get 2,000 free minutes/month, and a daily run takes ~2–8 minutes.
 - OpenAI: the AI title check costs fractions of a cent per title. The full match (with a company web lookup, cached per company) runs only on saved jobs. The **first ATS run** saves every currently open matching role (~70 in the first dry run). After that only new openings are saved.
-- GitHub pauses scheduled workflows in a repo with no commits for 60 days. Any push, or one manual run, re-enables it.
+- GitHub pauses scheduled workflows in a repo with no commits for 60 days. Any push, or one manual run, re-enables it. Scheduled runs are best-effort: GitHub may delay or skip them under load (especially at `:00`). The cron is therefore at `:17`.
 
 ---
 
