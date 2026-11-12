@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# UI chrome check (Filters sheet, details mask, phone selects).
+# UI chrome check (Filters sheet, select-closes / custom-date in panel, details mask, phone selects).
 # Layout / overlay contracts only — does not assert MongoDB.
 # Throwaway mongod + server; never touches the real Tracker database.
 # Run this after editing templates/, static/css/, or static/js/.

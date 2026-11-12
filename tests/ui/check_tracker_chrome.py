@@ -5,7 +5,9 @@ UI chrome check — layout and overlay contracts, not MongoDB.
 A different layer from tests/e2e (those click through the app and assert
 database writes). This script opens phone + desktop viewports and checks
 that Filters, job details, Log Job selects, and sibling pages stay on
-screen and close the way a person expects.
+screen and close the way a person expects. Selecting a filter that
+searches should dismiss the pop; Custom Time / Custom Score keep it
+open, and those extra fields must stay inside the panel.
 
 Does not read or write the real Tracker database. Starts a throwaway
 mongod + server (same isolation as E2E).
@@ -97,6 +99,38 @@ def js_metrics(page):
           || document.getElementById('customDateGroup').classList.contains('hidden-filter'),
         customScoreHidden: !document.getElementById('customScoreGroup')
           || document.getElementById('customScoreGroup').classList.contains('hidden-filter'),
+        customDateInPop: (() => {
+          const group = document.getElementById('customDateGroup');
+          const from = document.getElementById('dateFrom');
+          const to = document.getElementById('dateTo');
+          if (!pop || pop.hidden || !group || group.classList.contains('hidden-filter')) return null;
+          const pb = pop.getBoundingClientRect();
+          const inside = (el) => {
+            if (!el) return false;
+            const b = el.getBoundingClientRect();
+            return b.width > 0 && b.height > 0
+              && b.left >= pb.left - 1 && b.right <= pb.right + 1
+              && b.top >= pb.top - 1 && b.bottom <= pb.bottom + 1;
+          };
+          return inside(from) && inside(to) && inside(group)
+            && pop.scrollWidth <= pop.clientWidth + 1;
+        })(),
+        customScoreInPop: (() => {
+          const group = document.getElementById('customScoreGroup');
+          const lo = document.getElementById('scoreMin');
+          const hi = document.getElementById('scoreMax');
+          if (!pop || pop.hidden || !group || group.classList.contains('hidden-filter')) return null;
+          const pb = pop.getBoundingClientRect();
+          const inside = (el) => {
+            if (!el) return false;
+            const b = el.getBoundingClientRect();
+            return b.width > 0 && b.height > 0
+              && b.left >= pb.left - 1 && b.right <= pb.right + 1
+              && b.top >= pb.top - 1 && b.bottom <= pb.bottom + 1;
+          };
+          return inside(lo) && inside(hi) && inside(group)
+            && pop.scrollWidth <= pop.clientWidth + 1;
+        })(),
         batchVisible: !!(bar && getComputedStyle(bar).display !== 'none'),
         batchInView: inView(bar ? bar.getBoundingClientRect().toJSON() : null),
         tlVisible: !!tl,
@@ -321,6 +355,33 @@ def open_filters(page):
     page.wait_for_timeout(200)
 
 
+def check_filter_select_closes(page, run: Runner, prefix: str):
+    """A searching select should apply and dismiss the pop; Custom Time stays open."""
+    open_filters(page)
+    page.select_option("#sourceFilter", "linkedin")
+    page.wait_for_timeout(150)
+    m = js_metrics(page)
+    run.check(f"{prefix} filters: selecting a filter closes the pop", m["popHidden"],
+              f"hidden={m['popHidden']}")
+    run.check(f"{prefix} filters: count label", m["filterBtn"].strip() == "Filters (1)",
+              f"text={m['filterBtn']!r}")
+
+    open_filters(page)
+    page.select_option("#timePreset", "custom")
+    page.wait_for_timeout(150)
+    m = js_metrics(page)
+    run.shot(page, f"{prefix.lower().replace(' ', '-')}-filters-custom-date.png")
+    run.check(f"{prefix} filters: Custom Time keeps the pop open",
+              (not m["popHidden"]) and (not m["customDateHidden"]),
+              f"hidden={m['popHidden']} dateHidden={m['customDateHidden']}")
+    run.check(f"{prefix} filters: custom date stays in viewport",
+              m["popInView"],
+              f"in={m['popInView']} box={m['popBox']}")
+    run.check(f"{prefix} filters: custom date stays inside the panel",
+              m["customDateInPop"] is True,
+              f"inPop={m['customDateInPop']} box={m['popBox']}")
+
+
 def tap_scrim_top(page, scrim_id):
     loc = page.locator(f"#{scrim_id}")
     loc.wait_for(state="visible")
@@ -401,18 +462,9 @@ def run_phone(page, base, run: Runner):
               m["lock"] and not m["filterScrimHidden"],
               f"lock={m['lock']} scrimHidden={m['filterScrimHidden']}")
 
-    page.select_option("#sourceFilter", "linkedin")
-    page.wait_for_timeout(100)
-    m = js_metrics(page)
-    run.check("phone filters: count label", m["filterBtn"].strip() == "Filters (1)",
-              f"text={m['filterBtn']!r}")
-
-    page.select_option("#timePreset", "custom")
-    page.wait_for_timeout(150)
-    m = js_metrics(page)
-    run.check("phone filters: custom date stays in viewport",
-              (not m["customDateHidden"]) and m["popInView"],
-              f"dateHidden={m['customDateHidden']} in={m['popInView']}")
+    page.keyboard.press("Escape")
+    page.wait_for_timeout(200)
+    check_filter_select_closes(page, run, "phone")
 
     page.keyboard.press("Escape")
     page.wait_for_timeout(200)
@@ -514,6 +566,24 @@ def run_phone(page, base, run: Runner):
     run.shot(page, "phone-unmatched-list.png")
     run.check("phone Unmatched list: score ring before title", m["listRingBeforeTitle"])
     open_filters(page)
+    page.select_option("#sourceFilter", "indeed")
+    page.wait_for_timeout(150)
+    m = js_metrics(page)
+    run.check("phone Unmatched filters: selecting a filter closes the pop", m["popHidden"],
+              f"hidden={m['popHidden']}")
+
+    open_filters(page)
+    page.select_option("#timePreset", "custom")
+    page.wait_for_timeout(150)
+    m = js_metrics(page)
+    run.shot(page, "phone-unmatched-filters-custom-date.png")
+    run.check("phone Unmatched filters: Custom Time keeps the pop open",
+              (not m["popHidden"]) and (not m["customDateHidden"]),
+              f"hidden={m['popHidden']} dateHidden={m['customDateHidden']}")
+    run.check("phone Unmatched filters: custom date stays inside the panel",
+              m["customDateInPop"] is True,
+              f"inPop={m['customDateInPop']} box={m['popBox']}")
+
     page.select_option("#scorePreset", "custom")
     page.wait_for_timeout(150)
     m = js_metrics(page)
@@ -521,6 +591,9 @@ def run_phone(page, base, run: Runner):
     run.check("phone Unmatched filters: sheet in viewport",
               m["popInView"] and m["popPos"] == "fixed" and not m["customScoreHidden"],
               f"in={m['popInView']} pos={m['popPos']} scoreHidden={m['customScoreHidden']}")
+    run.check("phone Unmatched filters: custom score stays inside the panel",
+              m["customScoreInPop"] is True,
+              f"inPop={m['customScoreInPop']} box={m['popBox']}")
     run.check("phone Unmatched filters: lock + scrim",
               m["lock"] and not m["filterScrimHidden"],
               f"lock={m['lock']} scrimHidden={m['filterScrimHidden']}")
@@ -559,6 +632,10 @@ def run_desktop(page, base, run: Runner):
     m = js_metrics(page)
     run.check("desktop filters: click outside closes", m["popHidden"],
               f"hidden={m['popHidden']}")
+
+    check_filter_select_closes(page, run, "desktop")
+    page.locator(".brand").click()
+    page.wait_for_timeout(150)
 
     m = js_metrics(page)
     run.shot(page, "desktop-list.png")

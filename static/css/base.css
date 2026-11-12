@@ -242,12 +242,14 @@ h1, h2, h3 { font-family: var(--f-display); font-weight: 600; letter-spacing: -0
 .pop {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 60;
   width: min(320px, calc(100vw - 32px));
+  max-width: calc(100vw - 32px);
   display: grid; gap: 10px;
   padding: 14px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: 10px;
   box-shadow: 0 12px 32px var(--shadow);
+  overflow-x: hidden;
 }
 .pop[hidden] { display: none; }
 .pop > label {
@@ -256,6 +258,8 @@ h1, h2, h3 { font-family: var(--f-display); font-weight: 600; letter-spacing: -0
 }
 .pop select, .pop input {
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   background: var(--bg);
   border: 1px solid var(--border);
   border-radius: 6px;
@@ -263,7 +267,22 @@ h1, h2, h3 { font-family: var(--f-display); font-weight: 600; letter-spacing: -0
   padding: 7px 9px;
   font-size: .88rem; font-weight: 400;
 }
-.pop .filter-group { display: flex; gap: 6px; align-items: center; }
+.pop .filter-group {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
+}
+/* Two native date inputs will not shrink below ~150px; stack them so the
+   range stays inside the 320px panel instead of spilling out the sides. */
+.pop .filter-dates {
+  grid-template-columns: minmax(0, 1fr);
+  justify-items: stretch;
+}
+.pop .filter-dates span { justify-self: center; }
 .pop .filter-group.hidden-filter { display: none; }
 
 /* Phone: dimmed layer behind the Filters sheet (and Tracker details). */

@@ -120,7 +120,7 @@ After any edit under `templates/`, `static/css/`, or `static/js/`, run **`./scri
 
 | Surface | Phone (~390×844) | Desktop (~1280×800) |
 |---------|------------------|---------------------|
-| Filters | fixed sheet in viewport, scrim, body lock, count label, custom date, Escape + tap-scrim close | absolute dropdown, no scrim/lock, click-outside close |
+| Filters | fixed sheet in viewport, scrim, body lock, count label, custom date, Escape + tap-scrim close; selecting a preset closes the pop; Custom Time / Custom Score keep it open; date/score extras stay inside the panel | absolute dropdown, no scrim/lock, click-outside close; same select-closes / custom-stays-open / in-panel date contract |
 | Job details | sheet in viewport, mask above it, tap scrim closes | side drawer (`top: 0`), no mask, page still scrolls |
 | Log Job / Timeouts selects | shared `--phone-ctrl-h` recipe (appearance none, padding, 16px) | (phone recipe only) |
 | Unmatched Filters | same sheet contract + custom score | — |

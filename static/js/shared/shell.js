@@ -89,6 +89,14 @@ function updateFilterCount() {
   btn.textContent = changed ? `Filters (${changed})` : 'Filters';
 }
 
+/** Custom Time / Custom Score still need the extra fields, so keep the pop open. */
+function filterChangeKeepsPopOpen(el) {
+  if (!el) return false;
+  if (el.id === 'timePreset' && el.value === 'custom') return true;
+  if (el.id === 'scorePreset' && el.value === 'custom') return true;
+  return Boolean(el.closest && el.closest('#customDateGroup, #customScoreGroup'));
+}
+
 document.addEventListener('click', (e) => {
   const pop = document.getElementById('filterPop');
   if (pop && !pop.hidden && !pop.contains(e.target)) closeFilterPop();
@@ -106,7 +114,10 @@ document.addEventListener('keydown', (e) => {
   }
 });
 document.addEventListener('change', (e) => {
-  if (e.target.closest && e.target.closest('#filterPop')) updateFilterCount();
+  const t = e.target;
+  if (!(t.closest && t.closest('#filterPop'))) return;
+  updateFilterCount();
+  if (!filterChangeKeepsPopOpen(t)) closeFilterPop({ returnFocus: true });
 });
 window.matchMedia('(max-width: 760px)').addEventListener('change', syncFilterScrim);
 window.matchMedia('(max-height: 520px)').addEventListener('change', syncFilterScrim);
