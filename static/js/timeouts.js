@@ -37,9 +37,9 @@ async function loadJobs() {
         </div>
       </div>
       <div class="actions">
-        <a class="btn" href="${esc(job.link || '#')}" target="_blank" rel="noopener">Open job</a>
+        <a class="btn btn-ok" href="${esc(job.link || '#')}" target="_blank" rel="noopener">Open job</a>
         ${job.review_status === 'open' ? `
-          <button class="btn btn-ok" onclick="addMatch('${esc(job._id)}')">Add as Not Applied</button>
+          <button class="btn" onclick="addMatch('${esc(job._id)}')">Add as Not Applied</button>
           <button class="btn btn-mute" onclick="dismiss('${esc(job._id)}')">Dismiss</button>
         ` : `<span class="pill">${esc(job.review_status)}</span>`}
       </div>

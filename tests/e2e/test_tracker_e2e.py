@@ -269,7 +269,9 @@ class TrackerE2E(unittest.TestCase):
 
     def test_timeout_add_as_not_applied(self):
         self.page.goto(self.base + "/timeouts")
-        self.page.click(f".card[data-id='{TIMEOUT_ID}'] .btn-ok")
+        self.page.locator(f".card[data-id='{TIMEOUT_ID}']").get_by_role(
+            "button", name="Add as Not Applied"
+        ).click()
         wait_for(lambda: self.db.matched_jobs.find_one({"job_id": "4300000001"}), "timeout job on Tracker")
         wait_for(
             lambda: self.db.timeout_jobs.find_one({"_id": TIMEOUT_ID})["review_status"] == "added",
