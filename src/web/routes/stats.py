@@ -105,7 +105,9 @@ def api_stats_daily():
     except (TypeError, ValueError):
         days = 120
     days = max(7, min(days, 366))
-    return jsonify({"days": get_daily_activity_stats(days=days)})
+    return jsonify({
+        "days": get_daily_activity_stats(days=days, match_threshold=MATCH_THRESHOLD),
+    })
 
 
 @bp.route("/api/stats/locations")

@@ -112,6 +112,19 @@ class SharedCardChromeTests(unittest.TestCase):
         ):
             self.assertIn(sel, css)
 
+    def test_unmatched_has_agent_recommended_chip(self):
+        html = page_source("unmatched")
+        self.assertIn('id="agentChip"', html)
+        self.assertIn("toggleAgentFilter", html)
+        self.assertIn("agent_recommended", html)
+        self.assertIn("agentAlsoHtml", html)
+
+    def test_overview_has_agent_unmatched_day_link(self):
+        html = page_source("index")
+        self.assertIn('id="calAgentUnmatchedLink"', html)
+        self.assertIn("unmatchedAgentDayUrl", html)
+        self.assertIn("agent_unmatched", html)
+
     def test_page_css_does_not_redefine_shared_ring(self):
         ring = re.compile(r"^\.score-ring \{", re.M)
         shared = SHARED_CSS.read_text()

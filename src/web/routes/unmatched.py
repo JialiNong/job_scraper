@@ -60,6 +60,8 @@ def api_unmatched_jobs():
     match_gate_filter = (request.args.get("match_gate") or "").strip()
     if match_gate_filter in ("", "all"):
         match_gate_filter = None
+    agent_flag = str(request.args.get("agent_recommended") or "").strip().lower()
+    agent_recommended = agent_flag in ("1", "true", "yes")
 
     jobs, total = get_unmatched_jobs(
         page=page,
@@ -73,6 +75,7 @@ def api_unmatched_jobs():
         score_max=score_max,
         user_status=user_status_filter,
         match_gate=match_gate_filter,
+        agent_recommended=agent_recommended,
     )
     jobs = [_serialize(j) for j in jobs]
     pages = max(1, (total + page_size - 1) // page_size) if total else 1

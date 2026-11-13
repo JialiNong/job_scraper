@@ -54,6 +54,7 @@ def lookup_known_job(job_id, source="linkedin", link=None):
     Returns:
         dict with keys collection, stage, on_tracker, _id, title, company,
         status, source, job_id, match_score — or None if not found.
+        jobs-collection hits also include match_gate.
         Tracker hits also include ai_pending, details_fetched_at, summary,
         and description (for Log Job refresh / details_missing).
 
@@ -93,6 +94,7 @@ def _lookup_by_query(id_query, job_id, source):
         "review_status": 1,
         "matched_at": 1,
         "match_score": 1,
+        "match_gate": 1,
         "ai_pending": 1,
         "details_fetched_at": 1,
         "summary": 1,
@@ -133,6 +135,7 @@ def _lookup_by_query(id_query, job_id, source):
             "source": scraped.get("source") or source,
             "job_id": scraped.get("job_id") or job_id,
             "match_score": scraped.get("match_score"),
+            "match_gate": scraped.get("match_gate") or "",
         }
 
     timeout = db[TIMEOUT_JOBS_COLLECTION].find_one(

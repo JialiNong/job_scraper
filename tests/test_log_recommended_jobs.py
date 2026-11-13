@@ -8,13 +8,14 @@ import os
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
+import core.agent_push as ap  # noqa: E402
 import core.db_mongo as db_mongo  # noqa: E402
 import core.manual_log as ml  # noqa: E402
 
@@ -37,10 +38,10 @@ class LogAgentJobsTests(unittest.TestCase):
             {"title": "no url"},
         ]
         outcomes = iter([{"ok": [URL_A]}, {"ok": [URL_B]}])
-        with patch.object(ml, "lookup_known_job", return_value=None), \
-                patch.object(ml, "save_link_only_urls",
+        with patch.object(ap, "lookup_known_job", return_value=None), \
+                patch.object(ap, "save_link_only_urls",
                              side_effect=lambda *a, **k: next(outcomes)) as save:
-            result = ml.log_agent_jobs(jobs, recommended_by="claude")
+            result = ap.log_agent_jobs(jobs, recommended_by="claude")
         self.assertEqual(save.call_count, 2)
         first = save.call_args_list[0]
         self.assertEqual(first.args[0], [URL_A])
@@ -54,35 +55,49 @@ class LogAgentJobsTests(unittest.TestCase):
         self.assertEqual(result["skipped"], [])
 
     def test_existing_job_id_in_any_collection_is_not_written(self):
-        for collection, stage in (
-            ("matched_jobs", "tracker"),
-            ("jobs", "unmatched"),
-            ("jobs", "awaiting_match"),
-            ("timeout_jobs", "timeout"),
+        oid = "a" * 24
+        for collection, stage, stamp in (
+            ("matched_jobs", "tracker", False),
+            ("jobs", "unmatched", True),
+            ("jobs", "awaiting_match", True),
+            ("timeout_jobs", "timeout", False),
         ):
             with self.subTest(stage=stage):
-                hit = {"collection": collection, "stage": stage}
-                with patch.object(ml, "lookup_known_job", return_value=hit) as lookup, \
-                        patch.object(ml, "save_link_only_urls") as save, \
-                        patch.object(ml, "stamp_recommended_by") as stamp_rec, \
-                        patch.object(ml, "stamp_manual_identity") as stamp_id:
-                    result = ml.log_agent_jobs([{"url": URL_A, "title": "Other title"}])
+                hit = {
+                    "collection": collection,
+                    "stage": stage,
+                    "on_tracker": stage == "tracker",
+                    "_id": oid,
+                    "title": "Java Engineer",
+                    "company": "Umbrella",
+                    "match_score": 4.0,
+                    "match_gate": "stack",
+                    "job_id": "4123456789",
+                }
+                with patch.object(ap, "lookup_known_job", return_value=hit) as lookup, \
+                        patch.object(ap, "save_link_only_urls") as save, \
+                        patch.object(ap, "stamp_agent_recommendation") as stamp_fn:
+                    result = ap.log_agent_jobs(
+                        [{"url": URL_A, "title": "Other title", "reason": "fits"}]
+                    )
                 lookup.assert_called_once_with("4123456789", "linkedin", link=URL_A)
                 save.assert_not_called()
-                stamp_rec.assert_not_called()
-                stamp_id.assert_not_called()
+                if stamp:
+                    stamp_fn.assert_called_once_with(hit, "claude", "fits")
+                else:
+                    stamp_fn.assert_not_called()
                 self.assertEqual(result["skipped"], [URL_A])
-                self.assertEqual(
-                    result["existing"],
-                    [{"url": URL_A, "job_id": "4123456789", "stage": stage}],
-                )
+                self.assertEqual(result["existing"][0]["stage"], stage)
+                self.assertEqual(result["existing"][0]["title"], "Java Engineer")
+                self.assertEqual(result["below_threshold"], 1 if stage == "unmatched" else 0)
+                self.assertEqual(result["already_on_tracker"], 1 if stage == "tracker" else 0)
 
     def test_career_page_url_is_deduped_by_hashed_id(self):
         url = "https://example.com/careers/jobs/123-backend"
-        hit = {"collection": "matched_jobs", "stage": "tracker"}
-        with patch.object(ml, "lookup_known_job", return_value=hit) as lookup, \
-                patch.object(ml, "save_link_only_urls") as save:
-            result = ml.log_agent_jobs([url])
+        hit = {"collection": "matched_jobs", "stage": "tracker", "on_tracker": True}
+        with patch.object(ap, "lookup_known_job", return_value=hit) as lookup, \
+                patch.object(ap, "save_link_only_urls") as save:
+            result = ap.log_agent_jobs([url])
         source = lookup.call_args.args[1]
         self.assertEqual(source, "manual")
         save.assert_not_called()
@@ -91,20 +106,20 @@ class LogAgentJobsTests(unittest.TestCase):
     def test_per_job_recommended_by_overrides_batch_default(self):
         jobs = [{"url": URL_A, "recommended_by": "Cursor"}, {"url": URL_B}]
         outcomes = iter([{"ok": [URL_A]}, {"ok": [URL_B]}])
-        with patch.object(ml, "lookup_known_job", return_value=None), \
-                patch.object(ml, "save_link_only_urls",
+        with patch.object(ap, "lookup_known_job", return_value=None), \
+                patch.object(ap, "save_link_only_urls",
                              side_effect=lambda *a, **k: next(outcomes)) as save:
-            ml.log_agent_jobs(jobs, recommended_by="claude")
+            ap.log_agent_jobs(jobs, recommended_by="claude")
         recs = [c.kwargs["recommended_by"] for c in save.call_args_list]
         self.assertEqual(recs, ["cursor", "claude"])
 
     def test_reason_is_passed_to_save(self):
         jobs = [{"url": URL_A, "reason": "  Python backend, English team  "}, {"url": URL_B}]
         outcomes = iter([{"ok": [URL_A]}, {"ok": [URL_B]}])
-        with patch.object(ml, "lookup_known_job", return_value=None), \
-                patch.object(ml, "save_link_only_urls",
+        with patch.object(ap, "lookup_known_job", return_value=None), \
+                patch.object(ap, "save_link_only_urls",
                              side_effect=lambda *a, **k: next(outcomes)) as save:
-            ml.log_agent_jobs(jobs)
+            ap.log_agent_jobs(jobs)
         reasons = [c.kwargs["recommend_reason"] for c in save.call_args_list]
         self.assertEqual(reasons, ["  Python backend, English team  ", None])
 
@@ -124,10 +139,43 @@ class LogAgentJobsTests(unittest.TestCase):
         self.assertIn("recommend_reason", ml.DETAILS_PRESERVE_FIELDS)
 
     def test_unknown_save_outcome_counts_as_failed(self):
-        with patch.object(ml, "lookup_known_job", return_value=None), \
-                patch.object(ml, "save_link_only_urls", return_value=None):
-            result = ml.log_agent_jobs([URL_A])
+        with patch.object(ap, "lookup_known_job", return_value=None), \
+                patch.object(ap, "save_link_only_urls", return_value=None):
+            result = ap.log_agent_jobs([URL_A])
         self.assertEqual(result["failed"], [URL_A])
+
+    def test_stamp_skips_tracker_and_writes_jobs_row(self):
+        oid = "d" * 24
+        col = MagicMock()
+        col.update_one.return_value.matched_count = 1
+        tracker_hit = {"collection": "matched_jobs", "_id": oid}
+        self.assertFalse(ap.stamp_agent_recommendation(tracker_hit, "cursor"))
+        jobs_hit = {"collection": "jobs", "_id": oid}
+        with patch.object(ap, "get_collection", return_value=col) as get_col:
+            self.assertTrue(ap.stamp_agent_recommendation(jobs_hit, "Cursor", "  fits  "))
+        get_col.assert_called_once_with("jobs")
+        fields = col.update_one.call_args[0][1]["$set"]
+        self.assertEqual(fields["agent_recommended_by"], "cursor")
+        self.assertEqual(fields["agent_recommend_reason"], "fits")
+        self.assertIn("agent_recommended_at", fields)
+
+    def test_unmatched_existing_payload_has_open_path(self):
+        oid = "b" * 24
+        hit = {
+            "collection": "jobs",
+            "stage": "unmatched",
+            "on_tracker": False,
+            "_id": oid,
+            "title": "Java Engineer",
+            "company": "Umbrella",
+            "match_score": "4.5",
+            "match_gate": "german",
+            "job_id": "4123456789",
+        }
+        row = ap.existing_from_hit(URL_A, "4123456789", hit)
+        self.assertEqual(row["open_path"], f"/unmatched?open={oid}")
+        self.assertEqual(row["match_score"], 4.5)
+        self.assertFalse(row["on_tracker"])
 
 
 class AgentJobsApiTests(unittest.TestCase):
@@ -191,7 +239,41 @@ class AgentJobsApiTests(unittest.TestCase):
         self.assertEqual(resp.status_code, 200)
         body = resp.get_json()
         self.assertEqual((body["saved"], body["skipped"], body["failed"]), (1, 1, 0))
+        self.assertEqual(body["below_threshold"], 0)
         self.assertEqual(log.call_args.kwargs["recommended_by"], "claude")
+
+    def test_reports_below_threshold_separately(self):
+        existing = [{
+            "url": URL_A,
+            "job_id": "4123456789",
+            "stage": "unmatched",
+            "on_tracker": False,
+            "title": "Java Engineer",
+            "company": "Umbrella",
+            "match_score": 4.0,
+            "match_gate": "stack",
+            "open_path": "/unmatched?open=" + "c" * 24,
+        }]
+        result = {
+            "ok": [],
+            "skipped": [URL_A],
+            "failed": [],
+            "existing": existing,
+            "already_on_tracker": 0,
+            "below_threshold": 1,
+            "awaiting_match": 0,
+            "timeout": 0,
+        }
+        with patch.dict(os.environ, {"AGENT_API_TOKEN": TOKEN}), \
+                patch.object(log_job_routes, "log_agent_jobs", return_value=result):
+            resp = self._post({"jobs": [{"url": URL_A}]})
+        self.assertEqual(resp.status_code, 200)
+        body = resp.get_json()
+        self.assertEqual(body["saved"], 0)
+        self.assertEqual(body["below_threshold"], 1)
+        self.assertEqual(body["already_on_tracker"], 0)
+        self.assertEqual(body["below_threshold_jobs"], existing)
+        self.assertIn("Unmatched", body["hint"])
 
 
 class BatchDeleteApiTests(unittest.TestCase):

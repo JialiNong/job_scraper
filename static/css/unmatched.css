@@ -93,8 +93,21 @@
 }
 .watchlist-chip:hover { background: var(--surface2); }
 .watchlist-chip.active { border-color: var(--warning); background: color-mix(in srgb, var(--warning) 12%, var(--surface)); }
+.watchlist-chip.agent-chip.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
 .watchlist-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--warning); flex-shrink: 0; }
+.agent-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex-shrink: 0; }
 .watchlist-count { font-family: var(--f-body); font-variant-numeric: tabular-nums; color: var(--muted); }
+.agent-also-pill { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.agent-reason {
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: .88rem;
+  line-height: 1.5;
+  color: var(--text);
+}
+.agent-reason strong { display: block; color: var(--accent); margin-bottom: 4px; font-size: .82rem; }
 
 /* ── Status select on card ─────────────────────────────────────── */
 .status-row { display: flex; gap: 8px; align-items: center; margin-top: 2px; }

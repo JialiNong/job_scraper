@@ -89,6 +89,7 @@ class LookupKnownJobTests(unittest.TestCase):
             hit = lookup_known_job("4200000001", "linkedin")
         self.assertEqual(hit["stage"], "unmatched")
         self.assertFalse(hit["on_tracker"])
+        self.assertEqual(hit.get("match_gate"), "")
 
     def test_timeout_is_last(self):
         matched = MagicMock()
@@ -153,6 +154,19 @@ class UnmatchedQueryTests(unittest.TestCase):
         self.assertLess(query["match_score"]["$lte"], 7.0)
         self.assertTrue(any("Java" in str(clause) for clause in query["$or"]))
 
+    def test_agent_recommended_filters_and_dates_the_push_day(self):
+        col = _chain_find([{"title": "Java Engineer"}])
+        with patch("core.mongo.tracker.get_db", return_value={"jobs": col}):
+            get_unmatched_jobs(
+                agent_recommended=True,
+                date_from="2026-11-13",
+                date_to="2026-11-13",
+            )
+        query = col.count_documents.call_args[0][0]
+        self.assertIn("agent_recommended_by", query)
+        self.assertIn("agent_recommended_at", query)
+        self.assertEqual(query["matched_at"], {"$exists": True})
+
     def test_parse_filter_date(self):
         self.assertIsNone(_parse_filter_date(""))
         start = _parse_filter_date("2026-11-11")
@@ -193,6 +207,40 @@ class DailyActivityTests(unittest.TestCase):
         self.assertEqual(len(rows), 3)
         self.assertEqual(by_date[today]["title_clicked"], 3)
         self.assertEqual(by_date[today]["german_filtered"], 1)
+        self.assertEqual(by_date[today]["agent_unmatched"], 0)
+
+    def test_heatmap_counts_agent_unmatched_by_push_day(self):
+        today = datetime.now().strftime("%Y-%m-%d")
+
+        class FakeColl:
+            def __init__(self, find=(), aggregate=()):
+                self._find = list(find)
+                self._agg = list(aggregate)
+                self.aggregate_calls = 0
+
+            def find(self, *args, **kwargs):
+                return self._find
+
+            def aggregate(self, *args, **kwargs):
+                self.aggregate_calls += 1
+                return self._agg
+
+        jobs = FakeColl(aggregate=[{"_id": today, "count": 2}])
+        db = {
+            "scraper_stats": FakeColl(find=[{
+                "_id": f"daily_{today}",
+                "date": today,
+                "title_passed_clicked": 1,
+                "german_filtered": 0,
+            }]),
+            "jobs": jobs,
+            "matched_jobs": FakeColl(),
+        }
+        with patch("core.mongo.tracker.get_db", return_value=db):
+            rows = get_daily_activity_stats(days=3)
+        by_date = {row["date"]: row for row in rows}
+        self.assertEqual(by_date[today]["agent_unmatched"], 2)
+        self.assertGreaterEqual(jobs.aggregate_calls, 1)
 
 
 if __name__ == "__main__":

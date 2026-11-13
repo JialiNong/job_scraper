@@ -6,12 +6,39 @@ let debounceTimer = null;
 let dateDebounceTimer = null;
 const PAGE_SIZE = 20;
 let watchlistOnly = false;  // Filter to show only "Can Apply" jobs
+let agentRecommendedOnly = false;  // Agent push that stayed on Unmatched
 /* ── Watchlist filter toggle ─────────────────────────────────────── */
 function toggleWatchlistFilter() {
   watchlistOnly = !watchlistOnly;
   const chip = document.getElementById('watchlistChip');
   chip.classList.toggle('active', watchlistOnly);
   goPage(1);
+}
+
+function toggleAgentFilter() {
+  agentRecommendedOnly = !agentRecommendedOnly;
+  const chip = document.getElementById('agentChip');
+  if (chip) chip.classList.toggle('active', agentRecommendedOnly);
+  goPage(1);
+}
+
+function applyUnmatchedQuery() {
+  const params = new URLSearchParams(location.search);
+  const agent = String(params.get('agent') || params.get('agent_recommended') || '').toLowerCase();
+  if (agent === '1' || agent === 'true' || agent === 'yes') {
+    agentRecommendedOnly = true;
+    const chip = document.getElementById('agentChip');
+    if (chip) chip.classList.add('active');
+  }
+  const from = (params.get('date_from') || '').slice(0, 10);
+  const to = (params.get('date_to') || '').slice(0, 10);
+  if (!from && !to) return;
+  const preset = document.getElementById('timePreset');
+  const custom = document.getElementById('customDateGroup');
+  if (preset) preset.value = 'custom';
+  if (custom) custom.classList.remove('hidden-filter');
+  if (from && document.getElementById('dateFrom')) document.getElementById('dateFrom').value = from;
+  if (to && document.getElementById('dateTo')) document.getElementById('dateTo').value = to;
 }
 
 /* ── Update unmatched job user_status ────────────────────────────── */
@@ -55,7 +82,10 @@ async function updateUnmatchedStatus(select) {
 
     // If in watchlist-only mode, reload to reflect removal
     if (watchlistOnly && userStatus !== 'watchlist') loadJobs();
-    else loadWatchlistCount();
+    else {
+      loadWatchlistCount();
+      loadAgentCount();
+    }
   } catch (err) {
     showToast('Mark failed', 'err');
   }
@@ -67,6 +97,15 @@ async function loadWatchlistCount() {
     const res = await fetch('/api/unmatched-jobs?page_size=1&user_status=watchlist');
     const data = await res.json();
     const el = document.getElementById('watchlistCount');
+    if (el) el.textContent = data.total > 0 ? `(${data.total})` : '';
+  } catch (_) {}
+}
+
+async function loadAgentCount() {
+  try {
+    const res = await fetch('/api/unmatched-jobs?page_size=1&agent_recommended=1');
+    const data = await res.json();
+    const el = document.getElementById('agentCount');
     if (el) el.textContent = data.total > 0 ? `(${data.total})` : '';
   } catch (_) {}
 }
@@ -136,6 +175,19 @@ function gateLabel(gate) {
   return GATE_PILLS[gate] || '';
 }
 
+function agentAlsoHtml(job) {
+  const key = String((job && job.agent_recommended_by) || '').toLowerCase();
+  const label = RECOMMENDED_BY_LABEL[key];
+  if (!label) return '';
+  return `<span class="meta-pill agent-also-pill" title="An agent pushed this URL; it stayed on Unmatched">Also: ${escHtml(label)}</span>`;
+}
+
+function agentReasonHtml(job) {
+  const reason = String((job && job.agent_recommend_reason) || '').trim();
+  if (!reason) return '';
+  return `<div class="agent-reason"><strong>Why the agent recommended this</strong>${escHtml(reason)}</div>`;
+}
+
 function renderCard(job) {
   const score = Number(job.match_score || 0);
   const reason = (job.disqualification_reason || '').trim();
@@ -174,6 +226,7 @@ function renderCard(job) {
       </div>
       <div class="row-meta">
         ${gatePill}
+        ${agentAlsoHtml(job)}
         ${channelChipHtml(job)}
         <span class="status-pill ${statusCls}" data-status-pill>${statusLabel}</span>
         ${openLink}
@@ -193,6 +246,7 @@ function renderCard(job) {
       <div class="card-meta">
         ${channelChipHtml(job)}
         ${gatePill}
+        ${agentAlsoHtml(job)}
         ${job.matched_at ? `<span class="meta-pill" title="Matched on">Matched ${escHtml(job.matched_at)}</span>` : ''}
         ${postedPillHtml(job)}
         ${applicantsMetaPillHtml(job)}
@@ -200,6 +254,7 @@ function renderCard(job) {
       </div>
 
       ${reason ? `<div class="reason-box"><strong>Why it was rejected</strong>${escHtml(reason)}</div>` : ''}
+      ${agentReasonHtml(job)}
       ${summary && summary !== reason ? `<div class="card-summary">${escHtml(summary)}</div>` : ''}
       ${!hasAnalysis ? `<div class="card-summary">This match has not saved detailed analysis yet. Run matcher again to write full analysis.</div>` : ''}
 
@@ -282,6 +337,7 @@ async function loadJobs() {
   if (scores.min !== '') params.set('score_min', scores.min);
   if (scores.max !== '') params.set('score_max', scores.max);
   if (watchlistOnly) params.set('user_status', 'watchlist');
+  if (agentRecommendedOnly) params.set('agent_recommended', '1');
 
   try {
     const res = await fetch('/api/unmatched-jobs?' + params.toString());
@@ -382,8 +438,10 @@ async function focusOpenJobFromQuery() {
   }
 }
 
+applyUnmatchedQuery();
 window.__pendingOpenJobId = consumeOpenJobId('/unmatched');
 
 setLayout(currentLayout);
 loadJobs().then(() => focusOpenJobFromQuery());
 loadWatchlistCount();
+loadAgentCount();

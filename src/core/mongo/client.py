@@ -90,6 +90,8 @@ def ensure_indexes():
         jobs.create_index("dedup_key", sparse=True)
         # Same ad under another URL / source (core.job_url.posting_key)
         jobs.create_index("posting_key", sparse=True)
+        # Agent push overlap with Unmatched (Overview daily reminder)
+        jobs.create_index("agent_recommended_at", sparse=True)
 
         matched = db["matched_jobs"]
         matched.create_index([("matched_at", -1)])

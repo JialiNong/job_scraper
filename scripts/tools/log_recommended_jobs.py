@@ -18,6 +18,7 @@ Input (file path or "-" for stdin):
     ]
 
 A job_id already in matched_jobs / jobs / timeout_jobs is skipped with no write.
+Skips on Unmatched are reported as below_threshold (not on the Tracker).
 """
 import argparse
 import json
@@ -33,7 +34,8 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(_SRC), ".env"))
 
 from core.db_mongo import init_db  # noqa: E402
-from core.manual_log import RECOMMENDED_BY_AGENTS, log_agent_jobs  # noqa: E402
+from core.agent_push import log_agent_jobs  # noqa: E402
+from core.manual_log import RECOMMENDED_BY_AGENTS  # noqa: E402
 
 
 def load_jobs(path: str) -> list:
@@ -75,10 +77,25 @@ def main():
     init_db()
     print(f"📂 Logging {len(jobs)} job(s) recommended by {args.recommended_by}")
     result = log_agent_jobs(jobs, recommended_by=args.recommended_by)
+    below = int(result.get("below_threshold") or 0)
     print(
-        f"\nTotal — ok: {len(result['ok'])}, skipped: {len(result['skipped'])}, "
+        f"\nTotal — ok: {len(result['ok'])}, skipped: {len(result['skipped'])} "
+        f"(Tracker {result.get('already_on_tracker', 0)}, "
+        f"Unmatched {below}, awaiting {result.get('awaiting_match', 0)}, "
+        f"timeout {result.get('timeout', 0)}), "
         f"failed: {len(result['failed'])}"
     )
+    if below:
+        print("Unmatched (agent recommended, not on Tracker):")
+        for item in result.get("existing") or []:
+            if item.get("stage") != "unmatched":
+                continue
+            score = item.get("match_score")
+            score_s = f" score {score}" if score is not None else ""
+            title = item.get("title") or item.get("url")
+            company = item.get("company") or ""
+            who = f"{title} @ {company}".strip(" @")
+            print(f"  • {who}{score_s}  {item.get('open_path') or ''}")
 
 
 if __name__ == "__main__":

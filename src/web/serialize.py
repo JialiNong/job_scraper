@@ -135,6 +135,7 @@ def _serialize(job: dict) -> dict:
         "description_cleared_at",
         "details_fetched_at",
         "link_replaced_at",
+        "agent_recommended_at",
     ):
         if key in job and isinstance(job[key], datetime):
             job[key] = job[key].strftime("%Y-%m-%d %H:%M")
@@ -178,6 +179,10 @@ def _serialize(job: dict) -> dict:
     rec = normalize_recommended_by(job.get("recommended_by"))
     job["recommended_by"] = rec
     job["recommend_reason"] = str(job.get("recommend_reason") or "")
+    job["agent_recommended_by"] = normalize_recommended_by(
+        job.get("agent_recommended_by")
+    )
+    job["agent_recommend_reason"] = str(job.get("agent_recommend_reason") or "")
     job["origin"] = infer_origin(job)
     job["details_missing"] = job_missing_details(job)
     job["country"] = job_country(job.get("location"), job.get("country"))

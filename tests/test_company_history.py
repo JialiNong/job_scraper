@@ -153,8 +153,17 @@ class ApplicantPositionTests(unittest.TestCase):
     def test_serialize_defaults_for_old_records(self):
         job = _serialize({"_id": ObjectId(), "title": "x"})
         self.assertIsNone(job["applicant_position"])
-        job = _serialize({"_id": ObjectId(), "applicant_position": 30})
+        self.assertEqual(job["agent_recommended_by"], "")
+        self.assertEqual(job["agent_recommend_reason"], "")
+        job = _serialize({
+            "_id": ObjectId(),
+            "applicant_position": 30,
+            "agent_recommended_by": "Cursor",
+            "agent_recommend_reason": "Python backend",
+        })
         self.assertEqual(job["applicant_position"], 30)
+        self.assertEqual(job["agent_recommended_by"], "cursor")
+        self.assertEqual(job["agent_recommend_reason"], "Python backend")
 
     def test_reset_not_applied_clears_it(self):
         fields = _status_update_fields({"applicant_position": 9}, "pending", datetime.now())

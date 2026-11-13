@@ -21,7 +21,6 @@ from core.job_url import (
     detect_source,
     job_stub_from_url,
     link_only_job_title,
-    expand_short_job_url,
     normalize_pasted_job_url,
     plan_manual_log_action,
     posting_key,
@@ -726,71 +725,3 @@ def save_link_only_urls(
         for u in results["failed"]:
             print(f"   • {u}")
     return results
-
-
-AGENT_JOBS_MAX = 50
-
-
-def log_agent_jobs(jobs: list, recommended_by="claude") -> dict:
-    """
-    Batch-log agent-recommended jobs as link-only Tracker stubs (pending).
-
-    Each item is {"url", "title"?, "company"?, "location"?, "recommended_by"?,
-    "reason"?, "country"?} or a bare URL string, saved separately so it keeps its own
-    identity fields. A per-item recommended_by overrides the batch default;
-    reason (why the job fits) is stored as matched_jobs.recommend_reason.
-    country (name, ISO code, or "Remote") is stored as matched_jobs.country
-    and wins over the country derived from location.
-
-    A job_id already known anywhere (matched_jobs, jobs, or timeout_jobs;
-    Indeed: all jk variants) is skipped with no write at all — unlike Log
-    Job, an agent push must not retag, rename, or wipe a scraped JD.
-    Returns {"ok", "skipped", "failed"} URL lists plus "existing":
-    [{"url", "job_id", "stage"}] for each skip.
-    """
-    merged = {"ok": [], "skipped": [], "failed": [], "existing": []}
-    for item in jobs or []:
-        if isinstance(item, str):
-            item = {"url": item}
-        if not isinstance(item, dict):
-            continue
-        raw = str(item.get("url") or "").strip()
-        url = expand_short_job_url(raw) or raw
-        if not url:
-            continue
-        source = detect_source(url)
-        job_id = resolve_job_id(url, source)
-        if not job_id:
-            print(f"  ❌ Cannot resolve job_id from URL: {url}")
-            merged["failed"].append(url)
-            continue
-        hit = lookup_known_job(job_id, source, link=url)
-        if hit:
-            print(
-                f"  ⏭️  Already in DB ({hit['collection']}, stage={hit['stage']}): "
-                f"job_id={job_id} source={source} — not written"
-            )
-            merged["skipped"].append(url)
-            merged["existing"].append(
-                {"url": url, "job_id": job_id, "stage": hit["stage"]}
-            )
-            continue
-        identity = normalize_manual_identity(
-            item.get("title"), item.get("company"), item.get("location")
-        )
-        rec = normalize_recommended_by(item.get("recommended_by")) or recommended_by
-        result = save_link_only_urls(
-            [url],
-            status="pending",
-            recommended_by=rec,
-            identity=identity,
-            recommend_reason=item.get("reason"),
-            country=item.get("country"),
-        ) or {}
-        if url in result.get("ok", []):
-            merged["ok"].append(url)
-        elif url in result.get("skipped", []):
-            merged["skipped"].append(url)
-        else:
-            merged["failed"].append(url)
-    return merged

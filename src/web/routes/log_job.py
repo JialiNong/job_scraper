@@ -7,12 +7,11 @@ from datetime import datetime
 from flask import Blueprint, jsonify, request
 from flask_login import login_required
 
+from core.agent_push import AGENT_JOBS_MAX, log_agent_jobs
 from core.db_mongo import lookup_known_job
 from core.manual_log import (
-    AGENT_JOBS_MAX,
     RECOMMENDED_BY_AGENTS,
     job_missing_details,
-    log_agent_jobs,
     normalize_manual_identity,
     normalize_recommended_by,
     tracker_needs_scrape,
@@ -270,7 +269,9 @@ def api_agent_jobs():
     remote role open across countries; it overrides the location guess.
     Saves link-only Tracker stubs (pending, ai_pending) synchronously — no
     Chrome / no AI, so it runs on Render. A job_id already in matched_jobs /
-    jobs / timeout_jobs is skipped with no write.
+    jobs / timeout_jobs is skipped with no write. Skips on Unmatched
+    (below_threshold) are listed separately so the agent does not treat
+    them as already on the Tracker.
     Disabled (503) when AGENT_API_TOKEN is not set.
     """
     expected = os.getenv("AGENT_API_TOKEN", "").strip()
@@ -305,13 +306,33 @@ def api_agent_jobs():
             return rec_error
 
     result = log_agent_jobs(jobs, recommended_by=raw_rec)
-    return jsonify({
+    below = int(result.get("below_threshold") or 0)
+    existing = result.get("existing") or []
+    body = {
         "recommended_by": raw_rec,
         "saved": len(result["ok"]),
         "skipped": len(result["skipped"]),
         "failed": len(result["failed"]),
-        "urls": result,
-    }), 200
+        "already_on_tracker": int(result.get("already_on_tracker") or 0),
+        "below_threshold": below,
+        "awaiting_match": int(result.get("awaiting_match") or 0),
+        "timeout": int(result.get("timeout") or 0),
+        "below_threshold_jobs": [
+            item for item in existing if item.get("stage") == "unmatched"
+        ],
+        "urls": {
+            "ok": result["ok"],
+            "skipped": result["skipped"],
+            "failed": result["failed"],
+            "existing": existing,
+        },
+    }
+    if below:
+        body["hint"] = (
+            "below_threshold jobs are already in Unmatched (scored below "
+            "the match cut-off). They were not added to the Tracker match list."
+        )
+    return jsonify(body), 200
 
 
 @bp.route("/api/manual-apply/status")

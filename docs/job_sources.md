@@ -21,7 +21,7 @@ Rescue paths (not new sources):
 - **Unmatched → Can Apply**: a job the matcher scored below 7.0 that you still want → copied to the Tracker.
 - **Timeouts → Add as Not Applied**: a job whose detail page did not load during scraping.
 
-Ways 1–3 go through the same filters and the same AI matcher. Only jobs scoring ≥ `MATCH_THRESHOLD` (7.0) appear on the Tracker; the rest stay on Unmatched. Ways 4–5 put the job on the Tracker directly.
+Ways 1–3 go through the same filters and the same AI matcher. Only jobs scoring ≥ `MATCH_THRESHOLD` (7.0) appear on the Tracker; the rest stay on Unmatched. Ways 4–5 put the job on the Tracker directly, except when **agent push** finds the URL already in `jobs` / `timeout_jobs`: it skips the write (does not copy Unmatched onto Tracker) and returns `below_threshold` so the agent can say the matcher already rejected it. Those skips are tagged `agent_recommended_by` and show on Overview that day plus the Unmatched **Agent recommended** chip.
 
 ---
 

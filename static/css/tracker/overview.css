@@ -505,6 +505,7 @@
 }
 .cal-detail-link:hover { text-decoration: underline; }
 .cal-detail-link[hidden] { display: none; }
+.cal-detail-link.cal-agent-unmatched { color: var(--accent); }
 .cal-cell.has-applied { cursor: pointer; }
 .cal-metrics {
   display: grid;

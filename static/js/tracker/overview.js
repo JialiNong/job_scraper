@@ -541,11 +541,27 @@ function showCalDetail(dateStr) {
   const link = document.getElementById('calDetailLink');
   link.hidden = !d.applied;
   link.href = appliedDayUrl(dateStr);
+  const agentN = Number(d.agent_unmatched) || 0;
+  const agentLink = document.getElementById('calAgentUnmatchedLink');
+  if (agentLink) {
+    agentLink.hidden = !agentN;
+    if (agentN) {
+      const noun = agentN === 1 ? 'job' : 'jobs';
+      agentLink.textContent = `Agent recommended, still Unmatched (${agentN} ${noun})`;
+      agentLink.href = unmatchedAgentDayUrl(dateStr);
+    }
+  }
 }
 
 /** Tracker URL listing the jobs applied (or reapplied) on one day. */
 function appliedDayUrl(dateStr) {
   return `/?applied=${encodeURIComponent(dateStr)}`;
+}
+
+/** Unmatched list for agent pushes that stayed below the match cut-off that day. */
+function unmatchedAgentDayUrl(dateStr) {
+  const day = encodeURIComponent(dateStr);
+  return `/unmatched?agent=1&date_from=${day}&date_to=${day}`;
 }
 
 async function loadDailyStats() {

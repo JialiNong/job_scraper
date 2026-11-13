@@ -124,7 +124,7 @@ def get_applied_location_stats() -> dict:
     return {"total": total, "locations": locations}
 
 
-def get_daily_activity_stats(days: int = 120) -> list:
+def get_daily_activity_stats(days: int = 120, match_threshold: float = 7.0) -> list:
     """
     Build per-day activity stats for the activity calendar heatmap.
 
@@ -137,6 +137,7 @@ def get_daily_activity_stats(days: int = 120) -> list:
           "german_filtered": int,  # non-English JDs skipped (UI: German Filtered)
           "ai_matched": int,       # jobs copied to matched_jobs
           "applied": int,          # applications dated by applied_at + Reapplied steps
+          "agent_unmatched": int,  # agent push that day, still Unmatched
         }
 
     title_clicked / german_filtered come from daily scraper_stats docs.
@@ -159,6 +160,7 @@ def get_daily_activity_stats(days: int = 120) -> list:
         "german_filtered": 0,
         "ai_matched": 0,
         "applied": 0,
+        "agent_unmatched": 0,
         "_has_scraper_daily": False,
     })
 
@@ -230,6 +232,26 @@ def get_daily_activity_stats(days: int = 120) -> list:
         if row["_id"]:
             buckets[row["_id"]]["applied"] += int(row["count"])
 
+    # 5) Agent push that day for a job the matcher already kept on Unmatched.
+    for row in db["jobs"].aggregate([
+        {"$match": {
+            "agent_recommended_at": {"$gte": start, "$lte": end},
+            "matched_at": {"$exists": True},
+            "match_score": {"$lt": float(match_threshold)},
+        }},
+        {"$group": {
+            "_id": {
+                "$dateToString": {
+                    "format": "%Y-%m-%d",
+                    "date": "$agent_recommended_at",
+                }
+            },
+            "count": {"$sum": 1},
+        }},
+    ]):
+        if row["_id"]:
+            buckets[row["_id"]]["agent_unmatched"] = int(row["count"])
+
     # Fill every calendar day in range so the heatmap has no gaps
     out = []
     cursor = start
@@ -242,6 +264,7 @@ def get_daily_activity_stats(days: int = 120) -> list:
             "german_filtered": b["german_filtered"],
             "ai_matched": b["ai_matched"],
             "applied": b["applied"],
+            "agent_unmatched": b["agent_unmatched"],
         })
         cursor += timedelta(days=1)
     return out
@@ -277,12 +300,15 @@ def get_unmatched_jobs(
     score_max=None,
     user_status=None,
     match_gate=None,
+    agent_recommended=False,
 ):
     """
     Return AI-analyzed jobs that scored below the match threshold.
 
-    Newest matched_at first. Optional time range, score range, and match_gate
-    filters are applied on top of the unmatched threshold.
+    Newest matched_at first. Optional time range, score range, match_gate,
+    and agent_recommended filters are applied on top of the unmatched
+    threshold. When agent_recommended is on, the time range uses
+    agent_recommended_at (the day an agent pushed the URL).
     """
     db = get_db()
     collection = db[COLLECTION_NAME]
@@ -301,6 +327,9 @@ def get_unmatched_jobs(
         "match_score": score_filter,
     }
 
+    if agent_recommended:
+        filter_dict["agent_recommended_by"] = {"$exists": True, "$nin": ["", None]}
+
     start = _parse_filter_date(date_from)
     end = _parse_filter_date(date_to, end_of_day=True)
     if start or end:
@@ -309,7 +338,8 @@ def get_unmatched_jobs(
             time_filter["$gte"] = start
         if end:
             time_filter["$lte"] = end
-        filter_dict["matched_at"] = time_filter
+        date_key = "agent_recommended_at" if agent_recommended else "matched_at"
+        filter_dict[date_key] = time_filter
 
     if source:
         filter_dict["source"] = source
