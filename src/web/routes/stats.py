@@ -1,4 +1,4 @@
-"""Summary bar, funnel, heatmap, locations, and Application Journey."""
+"""Summary bar, funnel, heatmap, flow charts, locations, and Application Journey."""
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 
@@ -17,6 +17,7 @@ from core.db_mongo import (
     reapplied_count,
     resolve_applied_at,
 )
+from web.flow import build_sankey, build_weekly_by_platform
 from web.status import (
     GOT_INTERVIEW_FILTER,
     JOURNEY_INTERVIEW_STEPS,
@@ -37,6 +38,17 @@ JOURNEY_PROJECTION = {
     "company": 1,
     "title": 1,
     "status": 1,
+    "application_timeline": 1,
+    "applied_at": 1,
+    "updated_at": 1,
+    "matched_at": 1,
+}
+
+# Sankey + weekly bars: timeline / status / apply date / source. Same
+# APPLICATION_QUERY set as Journey; no JD or AI breakdowns.
+FLOW_PROJECTION = {
+    "status": 1,
+    "source": 1,
     "application_timeline": 1,
     "applied_at": 1,
     "updated_at": 1,
@@ -122,6 +134,24 @@ def api_stats_locations():
     are listed; `total` still counts every application.
     """
     return jsonify(get_applied_location_stats())
+
+
+@bp.route("/api/stats/flow")
+@login_required
+def api_stats_flow():
+    """
+    Overview application-flow boards.
+
+    Sankey: one current-state path per application record.
+    Weekly bars: applications per ISO week by LinkedIn / Indeed / Other,
+    including Reapplied steps (same counting as funnel Applied).
+    """
+    collection = get_collection("matched_jobs")
+    jobs = list(collection.find(APPLICATION_QUERY, FLOW_PROJECTION))
+    return jsonify({
+        "sankey": build_sankey(jobs),
+        "weekly": build_weekly_by_platform(jobs),
+    })
 
 
 @bp.route("/api/journey")

@@ -91,7 +91,7 @@ Phones have **no hover**. Do not ship desktop-only affordances (`:hover` tooltip
 |---------|-----------------|
 | Hover shows detail / count / preview | Single tap shows the same detail |
 | Click navigates or opens a filtered view | Double-tap (or an explicit link/button) navigates |
-| Copy says “hover” | Copy says “tap” (`TOUCH_UI` / `POINT_VERB` / `[data-point-verb]` in `static/js/shared/job_list.js`; Overview visuals live in `static/js/tracker/overview.js` / `static/css/tracker/overview.css`) |
+| Copy says “hover” | Copy says “tap” (`TOUCH_UI` / `POINT_VERB` / `[data-point-verb]` in `static/js/shared/job_list.js`; Overview visuals live in `static/js/tracker/overview.js` / `flow.js` and `static/css/tracker/overview.css` / `flow.css`) |
 
 Patterns already in the Tracker:
 
@@ -132,7 +132,7 @@ If the script fails, fix the UI and re-run before finishing. Mention the result 
 
 ### First-load request order
 
-On Tracker cold entry, **`/api/jobs` is critical path**. Chips (`/api/stats`) and Overview (journey / heatmap / locations) load **after** the first job list (`loadAfterJobList` / `listReady` in `static/js/tracker/index.js`; Overview fetches in `static/js/tracker/overview.js`). Do not reintroduce parallel `/api/stats` on init without a reason. Tracker assets live in folders: `static/js/shared/` + `static/css/shared/` (job-list chrome, also used by Unmatched), `static/js/tracker/` + `static/css/tracker/` (overview, cards, batch, timeline, card-actions, page init). Single-file pages stay `static/js/<page>.js`.
+On Tracker cold entry, **`/api/jobs` is critical path**. Chips (`/api/stats`) and Overview (journey / heatmap / locations / flow) load **after** the first job list (`loadAfterJobList` / `listReady` in `static/js/tracker/index.js`; Overview fetches in `static/js/tracker/overview.js` and `static/js/tracker/flow.js`). Do not reintroduce parallel `/api/stats` on init without a reason. Tracker assets live in folders: `static/js/shared/` + `static/css/shared/` (job-list chrome, also used by Unmatched), `static/js/tracker/` + `static/css/tracker/` (overview, flow, cards, batch, timeline, card-actions, page init). Single-file pages stay `static/js/<page>.js`.
 
 ## Matching source of truth
 
@@ -201,7 +201,7 @@ After a split: grep the old names, point tests at the **implementing** module wh
 
 - **Folders, not a flat pile.** Shared chrome goes in `static/js/shared/` and `static/css/shared/`. A page with more than one script/stylesheet gets `static/js/<page>/` and `static/css/<page>/`. A page that is still one file stays `static/js/<page>.js` (Timeouts, Log Job, Unmatched today).
 - Shared job-list chrome (score ring, row, channel chip, breakdown, toast, expand / sheet): `static/js/shared/job_list.js` + `static/css/shared/job_list.css`. Tracker and Unmatched both load that pair first. Shell (`shared/shell.js`) is also shared.
-- Tracker-only: `static/js/tracker/` (`overview.js`, `cards.js`, `batch.js`, `timeline.js`, `card-actions.js`, `index.js`) and `static/css/tracker/` (`overview.css`, `cards.css`, `index.css`).
+- Tracker-only: `static/js/tracker/` (`overview.js`, `flow.js`, `cards.js`, `batch.js`, `timeline.js`, `card-actions.js`, `index.js`) and `static/css/tracker/` (`overview.css`, `flow.css`, `cards.css`, `index.css`).
 - Phone vs desktop and `--phone-ctrl-h`: see **Web UI** above. After template/CSS/JS edits run `./scripts/check_ui.sh`.
 - Unit tests for JS helpers: `tests/js/` (Node) plus a thin `tests/test_*.py` wrapper. `page_source()` concatenates the template and every `static_url()` asset so a missing `<script>` fails.
 - `tests/e2e` is **data** (click, then assert Mongo). Overlay / viewport contracts stay in `check_ui.sh`.

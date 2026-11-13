@@ -9,6 +9,7 @@
   <link rel="stylesheet" href="{{ static_url('css/base.css') }}" />
   <link rel="stylesheet" href="{{ static_url('css/shared/job_list.css') }}" />
   <link rel="stylesheet" href="{{ static_url('css/tracker/overview.css') }}" />
+  <link rel="stylesheet" href="{{ static_url('css/tracker/flow.css') }}" />
   <link rel="stylesheet" href="{{ static_url('css/tracker/cards.css') }}" />
   <link rel="stylesheet" href="{{ static_url('css/tracker/index.css') }}" />
 </head>
@@ -273,6 +274,35 @@
       </div>
     </div>
 
+    <div class="flow-section panel" id="flowSection">
+      <h2 class="flow-title">Application flow <span>one path per job</span></h2>
+      <div id="flowRoot" class="flow-root">
+        <div class="flow-empty">Loading…</div>
+      </div>
+      <p class="flow-caption" id="flowCaption">
+        <span class="cal-hint-hover">Hover a band for the count</span>
+        <span class="cal-hint-touch">Tap a band for the count</span>
+      </p>
+    </div>
+
+    <div class="weekly-section panel" id="weeklySection">
+      <div class="weekly-header">
+        <h2 class="weekly-title">Weekly applications <span>by platform</span></h2>
+        <div class="weekly-legend" id="weeklyLegend" hidden>
+          <span class="weekly-swatch sw-linkedin"></span>LinkedIn
+          <span class="weekly-swatch sw-indeed"></span>Indeed
+          <span class="weekly-swatch sw-other"></span>Other
+        </div>
+      </div>
+      <div id="weeklyRoot" class="weekly-root">
+        <div class="flow-empty">Loading…</div>
+      </div>
+      <p class="flow-caption" id="weeklyCaption">
+        <span class="cal-hint-hover">Hover a week for the split</span>
+        <span class="cal-hint-touch">Tap a week for the split</span>
+      </p>
+    </div>
+
     <div class="journey-section panel" id="journeySection">
       <h2 class="journey-title">Application journey <span>one line per company</span></h2>
       <div id="journeyRoot">
@@ -300,6 +330,7 @@
 <script src="{{ static_url('js/shared/shell.js') }}"></script>
 <script src="{{ static_url('js/shared/job_list.js') }}"></script>
 <script src="{{ static_url('js/tracker/overview.js') }}"></script>
+<script src="{{ static_url('js/tracker/flow.js') }}"></script>
 <script src="{{ static_url('js/tracker/cards.js') }}"></script>
 <script src="{{ static_url('js/tracker/batch.js') }}"></script>
 <script src="{{ static_url('js/tracker/timeline.js') }}"></script>

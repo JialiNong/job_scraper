@@ -299,6 +299,10 @@ def check_funnel_rail(page, run: Runner, prefix: str, expect_h: int):
               page.locator("#f-offer").count() == 1)
     run.check(f"{prefix}: got-interview slot is in the pipeline rail",
               page.locator("#f-interview").count() == 1)
+    run.check(f"{prefix}: application flow board is on Overview",
+              page.locator("#flowSection").is_visible())
+    run.check(f"{prefix}: weekly applications board is on Overview",
+              page.locator("#weeklySection").is_visible())
     page.wait_for_function(
         """() => {
           const interview = document.getElementById('fp-interview');

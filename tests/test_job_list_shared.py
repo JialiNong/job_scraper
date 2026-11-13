@@ -35,6 +35,7 @@ PAGE_SCRIPTS = {
     "index": (
         "shared/job_list.js",
         "tracker/overview.js",
+        "tracker/flow.js",
         "tracker/cards.js",
         "tracker/batch.js",
         "tracker/timeline.js",
@@ -124,6 +125,14 @@ class SharedCardChromeTests(unittest.TestCase):
         self.assertIn('id="calAgentUnmatchedLink"', html)
         self.assertIn("unmatchedAgentDayUrl", html)
         self.assertIn("agent_unmatched", html)
+
+    def test_overview_has_flow_boards(self):
+        html = page_source("index")
+        self.assertIn('id="flowSection"', html)
+        self.assertIn('id="weeklySection"', html)
+        self.assertIn("function loadFlowStats", html)
+        self.assertIn("static_url('js/tracker/flow.js')", (ROOT / "templates" / "index.html").read_text())
+        self.assertIn("static_url('css/tracker/flow.css')", (ROOT / "templates" / "index.html").read_text())
 
     def test_page_css_does_not_redefine_shared_ring(self):
         ring = re.compile(r"^\.score-ring \{", re.M)

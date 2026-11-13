@@ -449,7 +449,5 @@ async function deleteSelectedJobs() {
   clearFetchSelection();
   await loadJobs();
   loadStats();
-  loadJourney();
-  loadLocationStats();
-  loadDailyStats();
+  loadOverviewData();
 }

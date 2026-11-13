@@ -115,8 +115,11 @@ function showTrackerView(view) {
   tabJobs.tabIndex = overview ? -1 : 0;
   tabOverview.tabIndex = overview ? 0 : -1;
   if (overview) {
-    // Heatmap and bubbles measure their width; re-measure now they are visible
-    requestAnimationFrame(() => window.dispatchEvent(new Event('resize')));
+    // Heatmap, bubbles, and flow boards measure width; re-measure now they are visible
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new Event('resize'));
+      if (typeof renderFlowBoards === 'function') renderFlowBoards();
+    });
   }
 }
 
@@ -611,6 +614,7 @@ function loadOverviewData() {
   loadJourney();
   loadLocationStats();
   loadDailyStats();
+  loadFlowStats();
 }
 
 function loadAfterJobList() {

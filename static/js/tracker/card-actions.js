@@ -260,9 +260,7 @@ async function deleteMatchedJob(jobId, btn) {
     removeMatchedCardSilently(card);
     // Background stats only — do not reload the job list (no spinner / flash)
     loadStats();
-    loadJourney();
-    loadLocationStats();
-    loadDailyStats();
+    loadOverviewData();
     showToast('Job deleted');
   } catch (err) {
     if (btn) btn.disabled = false;

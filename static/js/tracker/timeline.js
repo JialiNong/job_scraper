@@ -122,9 +122,7 @@ async function saveTimeline(jobId, timeline) {
     removeMatchedCardSilently(document.getElementById(`card-${jobId}`));
   }
   loadStats();
-  loadJourney();
-  loadLocationStats();
-  loadDailyStats();
+  loadOverviewData();
   return data;
 }
 
@@ -223,9 +221,7 @@ async function updateSideStatus(select) {
     }
     showToast(`Status updated to "${STATUS_LABEL[status]}"`);
     loadStats();
-    loadJourney();
-    loadLocationStats();
-    loadDailyStats();
+    loadOverviewData();
   } catch (err) {
     showToast('Status update failed', 'err');
   }
